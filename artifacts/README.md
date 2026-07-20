@@ -1,6 +1,6 @@
 # MNA HTML artifacts
 
-The implementation result files were provided in the ChatGPT session and could not be uploaded directly through the available GitHub connector because the connector only accepts inline UTF-8 content for file writes and does not expose a local-file upload parameter.
+Implementation result files tracked for the MNA / ESD network optimization prototype.
 
 Intended artifact set:
 
