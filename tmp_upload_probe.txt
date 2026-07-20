@@ -1,1 +1,1 @@
-hello
+probe complete; retained only because delete was not requested
