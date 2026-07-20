@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAD to VSS Interactive MNA Backprop with SOA Visuals</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --text:#17202a; --muted:#5b6673; --line:#d9dee7;
+  --accent:#2e6fdd; --green:#1f9d55; --orange:#d97706; --purple:#7c3aed;
+  --danger:#c2410c; --black:#111827; --gray:#64748b; --soft:#f1f4f8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.42}
+.wrap{max-width:1260px;margin:0 auto;padding:22px}
+h1{font-size:25px;margin:0 0 6px}
+h2{font-size:18px;margin:0 0 12px}
+h3{font-size:15px;margin:14px 0 8px}
+p{margin:6px 0}
+.subtitle{color:var(--muted);margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.span-4{grid-column:span 4}.span-6{grid-column:span 6}.span-12{grid-column:span 12}
+@media(max-width:980px){.span-4,.span-6,.span-12{grid-column:span 12}}
+.eq{font-family:var(--mono);background:var(--soft);border:1px solid #e1e7f0;border-radius:10px;padding:10px 12px;white-space:pre-wrap;overflow-x:auto;font-size:13px}
+.note{color:var(--muted);font-size:13px}
+.inputs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}
+@media(max-width:1100px){.inputs{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:820px){.inputs{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:580px){.inputs{grid-template-columns:1fr}}
+label{display:block;font-size:13px;font-weight:700;margin-bottom:4px}
+.hint{font-size:12px;color:var(--muted);margin-top:3px;min-height:30px}
+input{width:100%;height:34px;border:1px solid #cfd6e2;border-radius:9px;padding:6px 8px;font-family:var(--mono);font-size:13px;background:#fff}
+input:focus{outline:2px solid rgba(46,111,221,.18);border-color:var(--accent)}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+button{height:36px;border:0;border-radius:9px;padding:0 14px;font-weight:700;cursor:pointer}
+.primary{background:var(--accent);color:#fff}.secondary{background:#e9eef7;color:#253044}
+.status{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:900px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fbfcfe}
+.metric .k{font-size:12px;color:var(--muted)}
+.metric .v{font-family:var(--mono);font-size:16px;font-weight:800;margin-top:4px}
+.pass{color:var(--green)}.fail{color:var(--danger)}
+.chart{width:100%;height:286px;border:1px solid var(--line);border-radius:12px;background:#fcfdff}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px;font-size:13px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:2px;vertical-align:-1px}
+.lA::before{background:var(--accent)}.lC::before{background:var(--green)}.lR::before{background:var(--orange)}
+.lV::before{background:var(--purple)}.lCost::before{background:var(--gray)}.lLoss::before{background:var(--black)}
+.lVV::before{background:#7c3aed}.lVI::before{background:#a855f7}.lUV::before{background:#2e6fdd}.lUI::before{background:#60a5fa}.lCV::before{background:#1f9d55}.lCI::before{background:#86efac}
+.table-scroll{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:right;white-space:nowrap}
+th{background:#f8fafc;color:#344054;position:sticky;top:0;z-index:1}
+.gauge-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:900px){.gauge-grid{grid-template-columns:1fr}}
+.gauge{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fbfcfe}
+.gauge-head{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px}
+.gauge-name{font-weight:800}.gauge-val{font-family:var(--mono);color:var(--muted)}
+.bar{height:18px;border-radius:999px;background:#eef2f7;position:relative;overflow:hidden;border:1px solid #dde3ed}
+.bar .safe{position:absolute;top:0;bottom:0;background:rgba(31,157,85,.22)}
+.bar .bad-left,.bar .bad-right{position:absolute;top:0;bottom:0;background:rgba(194,65,12,.18)}
+.marker{position:absolute;top:-3px;width:4px;height:24px;background:#111827;border-radius:3px;transform:translateX(-50%)}
+.marker::after{content:"";position:absolute;left:50%;top:-5px;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:5px solid #111827}
+.gauge-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px}
+.tight-list{display:grid;gap:8px}
+.tight-row{display:grid;grid-template-columns:1.35fr 64px 1fr 58px;gap:8px;align-items:center;font-size:13px}
+.tbar{height:10px;border-radius:999px;background:#eef2f7;overflow:hidden;border:1px solid #dde3ed}
+.tfill{height:100%;background:var(--accent)}
+.soa-map-wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:980px){.soa-map-wrap{grid-template-columns:1fr}}
+.soa-map{border:1px solid var(--line);border-radius:12px;background:#fcfdff;padding:8px}
+.soa-title{font-weight:800;font-size:13px;margin:0 0 6px 2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PAD → VSS 단일 경로: Interactive 선형 MNA + Backpropagation</h1>
+  <div class="subtitle">
+    A/C는 minimum과 maximum window rule을 만족해야 하고, victim/protection device는 voltage SOA와 current SOA를 모두 만족해야 합니다.
+  </div>
+
+  <div class="grid">
+    <section class="card span-12">
+      <h2>1. 설정값 입력</h2>
+      <div class="inputs">
+        <div><label for="initA">Initial A</label><input id="initA" type="number" step="0.001" value="2.0"><div class="hint">Up diode 초기 device size</div></div>
+        <div><label for="initC">Initial C</label><input id="initC" type="number" step="0.001" value="2.0"><div class="hint">Clamp 초기 device size</div></div>
+        <div><label for="initR">Initial Rrail</label><input id="initR" type="number" step="0.001" value="0.5"><div class="hint">초기 rail 저항[Ω]</div></div>
+        <div><label for="iforce">Injected current I</label><input id="iforce" type="number" step="0.001" value="1.0"><div class="hint">PAD forcing 전류[A]</div></div>
+
+        <div><label for="minA">A minimum rule</label><input id="minA" type="number" step="0.001" value="1.0"><div class="hint">A ≥ Amin</div></div>
+        <div><label for="maxA">A maximum rule</label><input id="maxA" type="number" step="0.001" value="10.0"><div class="hint">A ≤ Amax</div></div>
+        <div><label for="minC">C minimum rule</label><input id="minC" type="number" step="0.001" value="1.0"><div class="hint">C ≥ Cmin</div></div>
+        <div><label for="maxC">C maximum rule</label><input id="maxC" type="number" step="0.001" value="10.0"><div class="hint">C ≤ Cmax</div></div>
+
+        <div><label for="victimVfail">Victim Vfail</label><input id="victimVfail" type="number" step="0.001" value="4.0"><div class="hint">Victim voltage SOA</div></div>
+        <div><label for="victimIfail">Victim Ifail</label><input id="victimIfail" type="number" step="0.001" value="0.10"><div class="hint">Victim current SOA</div></div>
+        <div><label for="victimICoeff">Victim current coupling</label><input id="victimICoeff" type="number" step="0.001" value="0.05"><div class="hint">Ivictim = coeff · Iforce</div></div>
+        <div><label for="ground">Ground</label><input id="ground" type="text" value="VSS = 0 V" disabled><div class="hint">현재 예제는 VSS ground</div></div>
+
+        <div><label for="vonD">Up diode Von</label><input id="vonD" type="number" step="0.001" value="0.7"><div class="hint">Up diode offset voltage[V]</div></div>
+        <div><label for="kD">Up diode Ron coefficient</label><input id="kD" type="number" step="0.001" value="2.0"><div class="hint">Ron_up = kD/A</div></div>
+        <div><label for="upVfail">Up diode Vfail</label><input id="upVfail" type="number" step="0.001" value="2.0"><div class="hint">Protection voltage SOA</div></div>
+        <div><label for="upIfail">Up diode Ifail</label><input id="upIfail" type="number" step="0.001" value="2.0"><div class="hint">Protection current SOA</div></div>
+
+        <div><label for="vonC">Clamp Von</label><input id="vonC" type="number" step="0.001" value="1.5"><div class="hint">Clamp offset voltage[V]</div></div>
+        <div><label for="kC">Clamp Ron coefficient</label><input id="kC" type="number" step="0.001" value="3.0"><div class="hint">Ron_clamp = kC/C</div></div>
+        <div><label for="clampVfail">Clamp Vfail</label><input id="clampVfail" type="number" step="0.001" value="3.0"><div class="hint">Clamp voltage SOA</div></div>
+        <div><label for="clampIfail">Clamp Ifail</label><input id="clampIfail" type="number" step="0.001" value="2.0"><div class="hint">Clamp current SOA</div></div>
+
+        <div><label for="wA">A size cost weight</label><input id="wA" type="number" step="0.001" value="1.0"><div class="hint">A가 커지는 비용</div></div>
+        <div><label for="wC">C size cost weight</label><input id="wC" type="number" step="0.001" value="1.0"><div class="hint">C가 커지는 비용</div></div>
+        <div><label for="wRoute">Low-R routing cost weight</label><input id="wRoute" type="number" step="0.001" value="0.0"><div class="hint">Cost += wRoute·Rref/R</div></div>
+        <div><label for="rRef">Routing Rref</label><input id="rRef" type="number" step="0.001" value="0.5"><div class="hint">Routing cost 기준 저항</div></div>
+
+        <div><label for="wCap">PAD cap cost weight</label><input id="wCap" type="number" step="0.001" value="0.0"><div class="hint">PAD cap 비용 가중치</div></div>
+        <div><label for="capA">A cap coefficient</label><input id="capA" type="number" step="0.001" value="1.0"><div class="hint">PAD cap = capA·A + capC·C</div></div>
+        <div><label for="capC">C cap coefficient</label><input id="capC" type="number" step="0.001" value="0.2"><div class="hint">Clamp cap 상대 영향</div></div>
+        <div><label for="wLeak">Leakage cost weight</label><input id="wLeak" type="number" step="0.001" value="0.0"><div class="hint">Leakage 비용 가중치</div></div>
+
+        <div><label for="leakA">A leakage coefficient</label><input id="leakA" type="number" step="0.001" value="0.1"><div class="hint">Leakage = leakA·A + leakC·C</div></div>
+        <div><label for="leakC">C leakage coefficient</label><input id="leakC" type="number" step="0.001" value="0.1"><div class="hint">Clamp leakage 상대 계수</div></div>
+        <div><label for="muSOA">SOA penalty μ</label><input id="muSOA" type="number" step="0.001" value="10.61"><div class="hint">Victim/protection SOA penalty</div></div>
+        <div><label for="muRule">Rule penalty μ</label><input id="muRule" type="number" step="0.001" value="20.0"><div class="hint">A/C window rule penalty</div></div>
+
+        <div><label for="beta">Softplus β</label><input id="beta" type="number" step="0.001" value="50"><div class="hint">fail/pass 경계 sharpness</div></div>
+        <div><label for="lr">Learning rate</label><input id="lr" type="number" step="0.001" value="0.02"><div class="hint">Adam update step size</div></div>
+        <div><label for="iters">Iterations</label><input id="iters" type="number" step="1" value="5000"><div class="hint">반복 횟수</div></div>
+        <div><label for="logEvery">Table interval</label><input id="logEvery" type="number" step="1" value="250"><div class="hint">Table 기록 간격</div></div>
+
+        <div><label for="maxSize">Numerical A/C ceiling</label><input id="maxSize" type="number" step="0.1" value="100"><div class="hint">수치 안정용 상한</div></div>
+        <div><label for="minRnum">Numerical R floor</label><input id="minRnum" type="number" step="0.000001" value="0.001"><div class="hint">0 division 방지용</div></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="startBtn">Start iteration</button>
+        <button class="secondary" id="resetBtn">Reset defaults</button>
+        <span class="status" id="status">Ready.</span>
+      </div>
+    </section>
+
+    <section class="card span-12">
+      <h2>2. Final constraint position</h2>
+      <div class="gauge-grid" id="gaugePanel"></div>
+      <p class="note">Window rule은 양쪽 경계가 있고, voltage/current SOA는 상한 경계가 있습니다. Marker가 safe 영역 안에 있어야 PASS입니다.</p>
+    </section>
+
+    <section class="card span-6">
+      <h2>3. Constraint tightness ranking</h2>
+      <div class="tight-list" id="tightList"></div>
+      <p class="note">Usage가 100%에 가까울수록 active constraint 후보입니다. 100%를 넘으면 FAIL입니다.</p>
+    </section>
+
+    <section class="card span-6">
+      <h2>4. 현재 결과</h2>
+      <div class="metrics">
+        <div class="metric"><div class="k">Overall</div><div class="v" id="mOverall">-</div></div>
+        <div class="metric"><div class="k">A window</div><div class="v" id="mARule">-</div></div>
+        <div class="metric"><div class="k">C window</div><div class="v" id="mCRule">-</div></div>
+        <div class="metric"><div class="k">Victim SOA</div><div class="v" id="mVictim">-</div></div>
+        <div class="metric"><div class="k">Up diode SOA</div><div class="v" id="mUp">-</div></div>
+        <div class="metric"><div class="k">Clamp SOA</div><div class="v" id="mClamp">-</div></div>
+        <div class="metric"><div class="k">A / C / R</div><div class="v" id="mVars">-</div></div>
+        <div class="metric"><div class="k">Vpad</div><div class="v" id="mVp">-</div></div>
+        <div class="metric"><div class="k">Cost</div><div class="v" id="mCost">-</div></div>
+        <div class="metric"><div class="k">SOA penalty</div><div class="v" id="mSOAPen">-</div></div>
+        <div class="metric"><div class="k">Rule penalty</div><div class="v" id="mRulePen">-</div></div>
+        <div class="metric"><div class="k">Total loss</div><div class="v" id="mLoss">-</div></div>
+      </div>
+    </section>
+
+    <section class="card span-12">
+      <h2>5. Protection / victim V-I SOA map</h2>
+      <div class="soa-map-wrap">
+        <div class="soa-map"><p class="soa-title">Victim V-I SOA</p><div id="mapVictim"></div></div>
+        <div class="soa-map"><p class="soa-title">Up diode V-I SOA</p><div id="mapUp"></div></div>
+        <div class="soa-map"><p class="soa-title">Clamp V-I SOA</p><div id="mapClamp"></div></div>
+      </div>
+      <p class="note">현재는 단일 forcing current이므로 final operating point가 점으로 표시됩니다. Current sweep으로 확장하면 점들이 curve가 됩니다.</p>
+    </section>
+
+    <section class="card span-6">
+      <h2>6. Normalized SOA usage iteration</h2>
+      <div id="chartUsage" class="chart"></div>
+      <div class="legend">
+        <span class="lVV">Victim V</span><span class="lVI">Victim I</span>
+        <span class="lUV">Up V</span><span class="lUI">Up I</span>
+        <span class="lCV">Clamp V</span><span class="lCI">Clamp I</span>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>7. A/C/R iteration</h2>
+      <div id="chartVars" class="chart"></div>
+      <div class="legend">
+        <span class="lA">A</span><span class="lC">C</span><span class="lR">Rrail</span>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>8. Vpad / Cost / Loss iteration</h2>
+      <div id="chartLoss" class="chart"></div>
+      <div class="legend">
+        <span class="lV">Vpad</span><span class="lCost">Cost</span><span class="lLoss">Loss</span>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>9. MNA / loss definition</h2>
+      <div class="eq" id="mnaEq"></div>
+      <h3>Loss</h3>
+      <div class="eq" id="lossEq"></div>
+    </section>
+
+    <section class="card span-12">
+      <h2>10. Iteration table</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>iter</th><th>A</th><th>C</th><th>Rrail</th>
+              <th>Vpad</th><th>Ivictim</th><th>Vup</th><th>Iup</th><th>Vclamp</th><th>Iclamp</th>
+              <th>Victim V use</th><th>Victim I use</th><th>Up V use</th><th>Up I use</th><th>Clamp V use</th><th>Clamp I use</th>
+              <th>A min viol</th><th>A max viol</th><th>C min viol</th><th>C max viol</th>
+              <th>Cost</th><th>SOA pen</th><th>Rule pen</th><th>Loss</th><th>Overall</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <p class="note">최신 iteration이 가장 위에 표시됩니다.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+const defaults = {
+  initA:2.0, initC:2.0, initR:0.5, iforce:1.0,
+  minA:1.0, maxA:10.0, minC:1.0, maxC:10.0,
+  victimVfail:4.0, victimIfail:0.10, victimICoeff:0.05,
+  vonD:0.7, kD:2.0, upVfail:2.0, upIfail:2.0,
+  vonC:1.5, kC:3.0, clampVfail:3.0, clampIfail:2.0,
+  wA:1.0, wC:1.0, wRoute:0.0, rRef:0.5,
+  wCap:0.0, capA:1.0, capC:0.2,
+  wLeak:0.0, leakA:0.1, leakC:0.1,
+  muSOA:10.61, muRule:20.0, beta:50,
+  lr:0.02, iters:5000, logEvery:250, maxSize:100, minRnum:0.001
+};
+let chartData = [];
+
+function val(id){
+  const x = Number(document.getElementById(id).value);
+  if (!Number.isFinite(x)) throw new Error(`${id} is not a valid number`);
+  return x;
+}
+function params(){
+  return {
+    initA:val("initA"), initC:val("initC"), initR:val("initR"), I:val("iforce"),
+    minA:val("minA"), maxA:val("maxA"), minC:val("minC"), maxC:val("maxC"),
+    victimVfail:val("victimVfail"), victimIfail:val("victimIfail"), victimICoeff:val("victimICoeff"),
+    vonD:val("vonD"), kD:val("kD"), upVfail:val("upVfail"), upIfail:val("upIfail"),
+    vonC:val("vonC"), kC:val("kC"), clampVfail:val("clampVfail"), clampIfail:val("clampIfail"),
+    wA:val("wA"), wC:val("wC"), wRoute:val("wRoute"), rRef:val("rRef"),
+    wCap:val("wCap"), capA:val("capA"), capC:val("capC"),
+    wLeak:val("wLeak"), leakA:val("leakA"), leakC:val("leakC"),
+    muSOA:val("muSOA"), muRule:val("muRule"), beta:val("beta"),
+    lr:val("lr"), iters:Math.max(1, Math.floor(val("iters"))),
+    logEvery:Math.max(1, Math.floor(val("logEvery"))),
+    maxSize:Math.max(1, val("maxSize")), minRnum:Math.max(1e-12, val("minRnum"))
+  };
+}
+function sigmoid(z){ z=Math.max(-50,Math.min(50,z)); return 1/(1+Math.exp(-z)); }
+function softplus(h,beta){
+  const z=beta*h;
+  if(z>50) return h;
+  if(z<-50) return 0;
+  return Math.log1p(Math.exp(z))/beta;
+}
+function usage(value, limit){ return limit > 0 ? value / limit : Infinity; }
+function evalPoint(A,C,R,p,iter){
+  const Vup = p.vonD + p.I*p.kD/A;
+  const Vrail = p.I*R;
+  const Vclamp = p.vonC + p.I*p.kC/C;
+  const Vpad = Vup + Vrail + Vclamp;
+  const Iup = p.I;
+  const Iclamp = p.I;
+  const Ivictim = p.victimICoeff * p.I;
+
+  const hSOAvv = Vpad - p.victimVfail;
+  const hSOAvi = Ivictim - p.victimIfail;
+  const hSOAuv = Vup - p.upVfail;
+  const hSOAui = Iup - p.upIfail;
+  const hSOAcv = Vclamp - p.clampVfail;
+  const hSOAci = Iclamp - p.clampIfail;
+
+  const hAmin = p.minA - A;
+  const hAmax = A - p.maxA;
+  const hCmin = p.minC - C;
+  const hCmax = C - p.maxC;
+
+  const padCap = p.capA*A + p.capC*C;
+  const leakage = p.leakA*A + p.leakC*C;
+  const routeCost = p.wRoute * p.rRef / R;
+  const cost = p.wA*A + p.wC*C + routeCost + p.wCap*padCap + p.wLeak*leakage;
+
+  const soaPenalty = p.muSOA * (
+    softplus(hSOAvv,p.beta) + softplus(hSOAvi,p.beta) +
+    softplus(hSOAuv,p.beta) + softplus(hSOAui,p.beta) +
+    softplus(hSOAcv,p.beta) + softplus(hSOAci,p.beta)
+  );
+  const rulePenalty = p.muRule * (
+    softplus(hAmin,p.beta) + softplus(hAmax,p.beta) +
+    softplus(hCmin,p.beta) + softplus(hCmax,p.beta)
+  );
+  const loss = cost + soaPenalty + rulePenalty;
+
+  const passVictim = hSOAvv <= 0 && hSOAvi <= 0;
+  const passUp = hSOAuv <= 0 && hSOAui <= 0;
+  const passClamp = hSOAcv <= 0 && hSOAci <= 0;
+  const passA = hAmin <= 0 && hAmax <= 0;
+  const passC = hCmin <= 0 && hCmax <= 0;
+  const passAll = passVictim && passUp && passClamp && passA && passC;
+
+  return {
+    iter,A,C,R,Vup,Vrail,Vclamp,Vpad,Iup,Iclamp,Ivictim,
+    hSOAvv,hSOAvi,hSOAuv,hSOAui,hSOAcv,hSOAci,hAmin,hAmax,hCmin,hCmax,
+    padCap,leakage,routeCost,cost,soaPenalty,rulePenalty,loss,
+    passVictim,passUp,passClamp,passA,passC,passAll,
+    uVictimV:usage(Vpad,p.victimVfail), uVictimI:usage(Ivictim,p.victimIfail),
+    uUpV:usage(Vup,p.upVfail), uUpI:usage(Iup,p.upIfail),
+    uClampV:usage(Vclamp,p.clampVfail), uClampI:usage(Iclamp,p.clampIfail)
+  };
+}
+function fmt(x,d=6){ return Number(x).toFixed(d); }
+function pct(x){ return Number(100*x).toFixed(1) + "%"; }
+
+function validate(p){
+  const xs = Object.values(p).filter(v => typeof v === "number");
+  if(xs.some(x => !Number.isFinite(x))) throw new Error("Invalid numeric input");
+  if(p.initA<=0 || p.initC<=0 || p.initR<=0 || p.I<0) throw new Error("Initial A/C/R must be positive and current must be non-negative.");
+  if(p.minA<=0 || p.maxA<=0 || p.minC<=0 || p.maxC<=0) throw new Error("A/C min/max must be positive.");
+  if(p.minA>p.maxA || p.minC>p.maxC) throw new Error("Minimum rule cannot exceed maximum rule.");
+  if(p.victimVfail<=0 || p.victimIfail<=0 || p.upVfail<=0 || p.upIfail<=0 || p.clampVfail<=0 || p.clampIfail<=0) throw new Error("SOA limits must be positive.");
+  if(p.kD<=0 || p.kC<=0 || p.beta<=0 || p.lr<=0 || p.rRef<=0) throw new Error("kD/kC, beta, learning rate, Rref must be positive.");
+  if(p.wA<0 || p.wC<0 || p.wRoute<0 || p.wCap<0 || p.wLeak<0 || p.muSOA<0 || p.muRule<0) throw new Error("Cost and penalty weights must be non-negative.");
+}
+
+function runIteration(){
+  const p = params();
+  validate(p);
+  let y = [Math.log(p.initA), Math.log(p.initC), Math.log(p.initR)];
+  let m = [0,0,0], v = [0,0,0];
+  const b1=0.9, b2=0.999, eps=1e-8;
+  const rows = [];
+  const selected = new Set([0,1,2,3,4,5,10,20,50,100,200,500,1000,p.iters]);
+
+  for(let it=0; it<=p.iters; it++){
+    const A=Math.exp(y[0]), C=Math.exp(y[1]), R=Math.exp(y[2]);
+    const r=evalPoint(A,C,R,p,it);
+    if(selected.has(it) || it % p.logEvery === 0) rows.push(r);
+    if(it === p.iters) break;
+
+    const dVup_dA = -p.I*p.kD/(A*A);
+    const dVclamp_dC = -p.I*p.kC/(C*C);
+    const dVpad_dA = dVup_dA;
+    const dVpad_dC = dVclamp_dC;
+    const dVpad_dR = p.I;
+
+    const dCostdA = p.wA + p.wCap*p.capA + p.wLeak*p.leakA;
+    const dCostdC = p.wC + p.wCap*p.capC + p.wLeak*p.leakC;
+    const dCostdR = -p.wRoute*p.rRef/(R*R);
+
+    const dRuleA = p.muRule * (-sigmoid(p.beta*r.hAmin) + sigmoid(p.beta*r.hAmax));
+    const dRuleC = p.muRule * (-sigmoid(p.beta*r.hCmin) + sigmoid(p.beta*r.hCmax));
+
+    const dSOAdA = p.muSOA * (
+      sigmoid(p.beta*r.hSOAvv)*dVpad_dA +
+      sigmoid(p.beta*r.hSOAuv)*dVup_dA
+    );
+    const dSOAdC = p.muSOA * (
+      sigmoid(p.beta*r.hSOAvv)*dVpad_dC +
+      sigmoid(p.beta*r.hSOAcv)*dVclamp_dC
+    );
+    const dSOAdR = p.muSOA * sigmoid(p.beta*r.hSOAvv)*dVpad_dR;
+
+    const gradA = dCostdA + dSOAdA + dRuleA;
+    const gradC = dCostdC + dSOAdC + dRuleC;
+    const gradR = dCostdR + dSOAdR;
+    const grads = [gradA*A, gradC*C, gradR*R];
+
+    const t = it+1;
+    for(let k=0;k<3;k++){
+      m[k] = b1*m[k] + (1-b1)*grads[k];
+      v[k] = b2*v[k] + (1-b2)*grads[k]*grads[k];
+      const mhat = m[k]/(1-Math.pow(b1,t));
+      const vhat = v[k]/(1-Math.pow(b2,t));
+      y[k] -= p.lr*mhat/(Math.sqrt(vhat)+eps);
+    }
+    y[0]=Math.max(Math.log(1e-9),Math.min(Math.log(p.maxSize),y[0]));
+    y[1]=Math.max(Math.log(1e-9),Math.min(Math.log(p.maxSize),y[1]));
+    y[2]=Math.max(Math.log(p.minRnum),Math.min(Math.log(1e6),y[2]));
+  }
+  return rows;
+}
+
+function updateEquations(){
+  const p=params();
+  document.getElementById("mnaEq").textContent =
+`Vup     = VonD + I·kD/A
+Vrail   = I·Rrail
+Vclamp  = VonC + I·kC/C
+Vpad    = Vup + Vrail + Vclamp
+
+Ivictim = victimICoeff·I
+Iup     = I
+Iclamp  = I`;
+  document.getElementById("lossEq").textContent =
+`Rules:
+${p.minA} ≤ A ≤ ${p.maxA}
+${p.minC} ≤ C ≤ ${p.maxC}
+
+SOA:
+Vvictim=Vpad ≤ ${p.victimVfail}
+Ivictim ≤ ${p.victimIfail}
+Vup ≤ ${p.upVfail}, Iup ≤ ${p.upIfail}
+Vclamp ≤ ${p.clampVfail}, Iclamp ≤ ${p.clampIfail}
+
+Loss = Cost
+     + μSOA·Σ softplus(stress-limit)
+     + μRule·Σ softplus(rule violation)`;
+}
+
+function renderTable(rows){
+  const tb=document.getElementById("tbody");
+  tb.innerHTML = rows.slice().reverse().map(r=>`
+    <tr>
+      <td>${r.iter}</td><td>${fmt(r.A,4)}</td><td>${fmt(r.C,4)}</td><td>${fmt(r.R,6)}</td>
+      <td>${fmt(r.Vpad,6)}</td><td>${fmt(r.Ivictim,6)}</td><td>${fmt(r.Vup,6)}</td><td>${fmt(r.Iup,6)}</td><td>${fmt(r.Vclamp,6)}</td><td>${fmt(r.Iclamp,6)}</td>
+      <td>${pct(r.uVictimV)}</td><td>${pct(r.uVictimI)}</td><td>${pct(r.uUpV)}</td><td>${pct(r.uUpI)}</td><td>${pct(r.uClampV)}</td><td>${pct(r.uClampI)}</td>
+      <td>${fmt(Math.max(0,r.hAmin),6)}</td><td>${fmt(Math.max(0,r.hAmax),6)}</td><td>${fmt(Math.max(0,r.hCmin),6)}</td><td>${fmt(Math.max(0,r.hCmax),6)}</td>
+      <td>${fmt(r.cost,6)}</td><td>${fmt(r.soaPenalty,6)}</td><td>${fmt(r.rulePenalty,6)}</td><td>${fmt(r.loss,6)}</td>
+      <td class="${r.passAll?'pass':'fail'}">${r.passAll?'PASS':'FAIL'}</td>
+    </tr>
+  `).join("");
+}
+function setStatus(id, pass){
+  const el=document.getElementById(id);
+  el.textContent=pass?"PASS":"FAIL";
+  el.className="v "+(pass?"pass":"fail");
+}
+function renderMetrics(r){
+  setStatus("mOverall",r.passAll); setStatus("mARule",r.passA); setStatus("mCRule",r.passC);
+  setStatus("mVictim",r.passVictim); setStatus("mUp",r.passUp); setStatus("mClamp",r.passClamp);
+  document.getElementById("mVars").textContent=`${fmt(r.A,3)} / ${fmt(r.C,3)} / ${fmt(r.R,4)}`;
+  document.getElementById("mVp").textContent=fmt(r.Vpad,6);
+  document.getElementById("mCost").textContent=fmt(r.cost,6);
+  document.getElementById("mSOAPen").textContent=fmt(r.soaPenalty,6);
+  document.getElementById("mRulePen").textContent=fmt(r.rulePenalty,6);
+  document.getElementById("mLoss").textContent=fmt(r.loss,6);
+}
+
+function clamp01(x){ return Math.max(0,Math.min(1,x)); }
+function gaugeHtml(name, valueText, minLabel, maxLabel, kind, marker, pass){
+  // kind window: safe range 20-80 with marker scaled in expanded domain.
+  // kind upper: safe range 0-80 with marker scaled to 120% limit.
+  const status = pass ? "PASS" : "FAIL";
+  const stClass = pass ? "pass" : "fail";
+  if(kind==="window"){
+    const left=20, width=60;
+    const x = 20 + 60*marker;
+    return `<div class="gauge">
+      <div class="gauge-head"><span class="gauge-name">${name}</span><span class="gauge-val ${stClass}">${valueText} · ${status}</span></div>
+      <div class="bar">
+        <div class="bad-left" style="left:0;width:${left}%"></div>
+        <div class="safe" style="left:${left}%;width:${width}%"></div>
+        <div class="bad-right" style="left:${left+width}%;width:${100-left-width}%"></div>
+        <div class="marker" style="left:${clamp01(x/100)*100}%"></div>
+      </div>
+      <div class="gauge-labels"><span>below</span><span>${minLabel}</span><span>${maxLabel}</span><span>above</span></div>
+    </div>`;
+  } else {
+    const safeW=80, x=80*marker;
+    return `<div class="gauge">
+      <div class="gauge-head"><span class="gauge-name">${name}</span><span class="gauge-val ${stClass}">${valueText} · ${status}</span></div>
+      <div class="bar">
+        <div class="safe" style="left:0;width:${safeW}%"></div>
+        <div class="bad-right" style="left:${safeW}%;width:${100-safeW}%"></div>
+        <div class="marker" style="left:${clamp01(x/100)*100}%"></div>
+      </div>
+      <div class="gauge-labels"><span>0</span><span></span><span>${maxLabel}</span><span>over</span></div>
+    </div>`;
+  }
+}
+function renderGauges(r,p){
+  const Apos=(r.A-p.minA)/(p.maxA-p.minA);
+  const Cpos=(r.C-p.minC)/(p.maxC-p.minC);
+  const gauges=[
+    gaugeHtml("A size window",`A=${fmt(r.A,3)}`,`min ${p.minA}`,`max ${p.maxA}`,"window",Apos,r.passA),
+    gaugeHtml("C size window",`C=${fmt(r.C,3)}`,`min ${p.minC}`,`max ${p.maxC}`,"window",Cpos,r.passC),
+    gaugeHtml("Victim voltage SOA",`${fmt(r.Vpad,3)} / ${p.victimVfail} V`,"",`Vfail ${p.victimVfail}`,"upper",r.uVictimV,r.hSOAvv<=0),
+    gaugeHtml("Victim current SOA",`${fmt(r.Ivictim,4)} / ${p.victimIfail} A`,"",`Ifail ${p.victimIfail}`,"upper",r.uVictimI,r.hSOAvi<=0),
+    gaugeHtml("Up diode voltage SOA",`${fmt(r.Vup,3)} / ${p.upVfail} V`,"",`Vfail ${p.upVfail}`,"upper",r.uUpV,r.hSOAuv<=0),
+    gaugeHtml("Up diode current SOA",`${fmt(r.Iup,3)} / ${p.upIfail} A`,"",`Ifail ${p.upIfail}`,"upper",r.uUpI,r.hSOAui<=0),
+    gaugeHtml("Clamp voltage SOA",`${fmt(r.Vclamp,3)} / ${p.clampVfail} V`,"",`Vfail ${p.clampVfail}`,"upper",r.uClampV,r.hSOAcv<=0),
+    gaugeHtml("Clamp current SOA",`${fmt(r.Iclamp,3)} / ${p.clampIfail} A`,"",`Ifail ${p.clampIfail}`,"upper",r.uClampI,r.hSOAci<=0)
+  ];
+  document.getElementById("gaugePanel").innerHTML=gauges.join("");
+}
+function renderTightness(r){
+  const items=[
+    ["Victim voltage",r.uVictimV,r.hSOAvv<=0],
+    ["Victim current",r.uVictimI,r.hSOAvi<=0],
+    ["Up diode voltage",r.uUpV,r.hSOAuv<=0],
+    ["Up diode current",r.uUpI,r.hSOAui<=0],
+    ["Clamp voltage",r.uClampV,r.hSOAcv<=0],
+    ["Clamp current",r.uClampI,r.hSOAci<=0],
+  ].sort((a,b)=>b[1]-a[1]);
+  document.getElementById("tightList").innerHTML=items.map(([name,u,pass])=>{
+    const w=Math.min(100,Math.max(0,u*100));
+    return `<div class="tight-row">
+      <div>${name}</div><div class="${pass?'pass':'fail'}">${pct(u)}</div>
+      <div class="tbar"><div class="tfill" style="width:${w}%;background:${pass?'var(--accent)':'var(--danger)'}"></div></div>
+      <div class="${pass?'pass':'fail'}">${pass?'PASS':'FAIL'}</div>
+    </div>`;
+  }).join("");
+}
+
+function drawLineChart(elId, data, series, opts){
+  const el=document.getElementById(elId);
+  const width=el.clientWidth||540, height=el.clientHeight||286;
+  const margin={left:58,right:22,top:18,bottom:38};
+  const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+  const svgNS="http://www.w3.org/2000/svg";
+  el.innerHTML="";
+  const svg=document.createElementNS(svgNS,"svg");
+  svg.setAttribute("width",width); svg.setAttribute("height",height); svg.setAttribute("viewBox",`0 0 ${width} ${height}`);
+  el.appendChild(svg);
+  if(!data.length) return;
+  const xVals=data.map(d=>d.iter), xMin=Math.min(...xVals), xMax=Math.max(...xVals);
+  let yVals=[]; series.forEach(s=>data.forEach(d=>yVals.push(d[s.key])));
+  if(opts.yRef!==undefined) yVals.push(opts.yRef);
+  if(opts.yRefs){ opts.yRefs.forEach(ref=>yVals.push(ref.value)); }
+  let yMinRaw=Math.min(...yVals), yMaxRaw=Math.max(...yVals);
+  let pad=(yMaxRaw-yMinRaw)*0.08||1;
+  let yMin=Math.min(0,yMinRaw-pad), yMax=yMaxRaw+pad;
+  const xScale=x=>margin.left+(x-xMin)/(xMax-xMin||1)*innerW;
+  const yScale=y=>margin.top+(yMax-y)/(yMax-yMin||1)*innerH;
+  function line(x1,y1,x2,y2,stroke,w=1,dash=""){
+    const l=document.createElementNS(svgNS,"line");
+    l.setAttribute("x1",x1); l.setAttribute("y1",y1); l.setAttribute("x2",x2); l.setAttribute("y2",y2);
+    l.setAttribute("stroke",stroke); l.setAttribute("stroke-width",w); if(dash)l.setAttribute("stroke-dasharray",dash);
+    svg.appendChild(l);
+  }
+  function text(x,y,t,anchor="middle",size=11,color="#5b6673"){
+    const tx=document.createElementNS(svgNS,"text");
+    tx.setAttribute("x",x); tx.setAttribute("y",y); tx.setAttribute("text-anchor",anchor); tx.setAttribute("font-size",size); tx.setAttribute("fill",color);
+    tx.textContent=t; svg.appendChild(tx);
+  }
+  for(let i=0;i<=4;i++){
+    const yy=margin.top+i*innerH/4; line(margin.left,yy,margin.left+innerW,yy,"#e5e7eb");
+    const val=yMax-i*(yMax-yMin)/4; text(margin.left-8,yy+4,val.toFixed(opts.yDigits??1),"end");
+  }
+  line(margin.left,margin.top+innerH,margin.left+innerW,margin.top+innerH,"#98a2b3",1.2);
+  line(margin.left,margin.top,margin.left,margin.top+innerH,"#98a2b3",1.2);
+  const ticks=[0,Math.round(xMax*.25),Math.round(xMax*.5),Math.round(xMax*.75),xMax];
+  [...new Set(ticks)].forEach(x=>{const xx=xScale(x);line(xx,margin.top+innerH,xx,margin.top+innerH+4,"#98a2b3");text(xx,height-14,String(x));});
+  if(opts.yRef!==undefined){
+    const yy=yScale(opts.yRef); line(margin.left,yy,margin.left+innerW,yy,opts.yRefColor||"#c2410c",1.2,"5,4");
+    text(margin.left+innerW-4,yy-6,opts.yRefLabel||"ref","end",11,opts.yRefColor||"#c2410c");
+  }
+  if(opts.yRefs){ opts.yRefs.forEach((ref,idx)=>{const yy=yScale(ref.value);line(margin.left,yy,margin.left+innerW,yy,ref.color||"#94a3b8",1,ref.dash||"3,4");text(margin.left+innerW-4,yy-4-(idx%2)*10,ref.label||"","end",10,ref.color||"#64748b");}); }
+  series.forEach(s=>{
+    const path=document.createElementNS(svgNS,"path");
+    const d=data.map((p,i)=>`${i===0?"M":"L"}${xScale(p.iter).toFixed(2)},${yScale(p[s.key]).toFixed(2)}`).join(" ");
+    path.setAttribute("d",d); path.setAttribute("fill","none"); path.setAttribute("stroke",s.color);
+    path.setAttribute("stroke-width",2.1); path.setAttribute("stroke-linejoin","round"); path.setAttribute("stroke-linecap","round"); svg.appendChild(path);
+  });
+  text(margin.left+innerW/2,height-2,"iteration","middle",11,"#5b6673");
+}
+
+function drawSOAMap(elId, title, V, I, Vlim, Ilim){
+  const el=document.getElementById(elId);
+  const width=el.clientWidth||340, height=240;
+  const m={left:46,right:18,top:12,bottom:34};
+  const iw=width-m.left-m.right, ih=height-m.top-m.bottom;
+  const vmax=Math.max(Vlim*1.25,V*1.15,1e-9), imax=Math.max(Ilim*1.25,I*1.15,1e-9);
+  const x=v=>m.left+v/vmax*iw, y=i=>m.top+(imax-i)/imax*ih;
+  const svgNS="http://www.w3.org/2000/svg";
+  el.innerHTML="";
+  const svg=document.createElementNS(svgNS,"svg");
+  svg.setAttribute("width",width);svg.setAttribute("height",height);svg.setAttribute("viewBox",`0 0 ${width} ${height}`);
+  el.appendChild(svg);
+  function rect(x0,y0,w,h,fill,stroke){const r=document.createElementNS(svgNS,"rect");r.setAttribute("x",x0);r.setAttribute("y",y0);r.setAttribute("width",w);r.setAttribute("height",h);r.setAttribute("fill",fill);if(stroke){r.setAttribute("stroke",stroke);}svg.appendChild(r);}
+  function line(x1,y1,x2,y2,stroke,w=1,dash=""){const l=document.createElementNS(svgNS,"line");l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("stroke",stroke);l.setAttribute("stroke-width",w);if(dash)l.setAttribute("stroke-dasharray",dash);svg.appendChild(l);}
+  function text(x0,y0,t,anchor="middle",size=11,color="#5b6673"){const tx=document.createElementNS(svgNS,"text");tx.setAttribute("x",x0);tx.setAttribute("y",y0);tx.setAttribute("text-anchor",anchor);tx.setAttribute("font-size",size);tx.setAttribute("fill",color);tx.textContent=t;svg.appendChild(tx);}
+  rect(m.left,m.top,iw,ih,"#fff", "#e5e7eb");
+  rect(m.left,y(Ilim),x(Vlim)-m.left,y(0)-y(Ilim),"rgba(31,157,85,.16)","");
+  line(x(Vlim),m.top,x(Vlim),m.top+ih,"#c2410c",1.2,"5,4");
+  line(m.left,y(Ilim),m.left+iw,y(Ilim),"#c2410c",1.2,"5,4");
+  line(m.left,m.top+ih,m.left+iw,m.top+ih,"#98a2b3",1.2); line(m.left,m.top,m.left,m.top+ih,"#98a2b3",1.2);
+  const pass=V<=Vlim && I<=Ilim;
+  const c=document.createElementNS(svgNS,"circle");
+  c.setAttribute("cx",x(V));c.setAttribute("cy",y(I));c.setAttribute("r",5.5);c.setAttribute("fill",pass?"#1f9d55":"#c2410c");svg.appendChild(c);
+  text(m.left+iw/2,height-6,"Voltage","middle",11);
+  text(12,m.top+ih/2,"I","middle",11);
+  text(x(Vlim)-4,m.top+12,"Vlim","end",10,"#c2410c");
+  text(m.left+4,y(Ilim)-5,"Ilim","start",10,"#c2410c");
+  text(m.left+iw-4,m.top+ih-6,`${V.toFixed(3)}V, ${I.toFixed(3)}A`,"end",11,pass?"#1f9d55":"#c2410c");
+}
+
+function renderCharts(rows){
+  chartData=rows;
+  const p=params();
+  drawLineChart("chartUsage",rows,[
+    {key:"uVictimV",color:"#7c3aed"},{key:"uVictimI",color:"#a855f7"},
+    {key:"uUpV",color:"#2e6fdd"},{key:"uUpI",color:"#60a5fa"},
+    {key:"uClampV",color:"#1f9d55"},{key:"uClampI",color:"#86efac"}
+  ],{yDigits:1,yRef:1.0,yRefLabel:"SOA boundary",yRefColor:"#c2410c"});
+  drawLineChart("chartVars",rows,[
+    {key:"A",color:"#2e6fdd"},{key:"C",color:"#1f9d55"},{key:"R",color:"#d97706"}
+  ],{yDigits:2,yRefs:[
+    {value:p.minA,label:"Amin",color:"#2e6fdd",dash:"3,4"},
+    {value:p.maxA,label:"Amax",color:"#2e6fdd",dash:"7,4"},
+    {value:p.minC,label:"Cmin",color:"#1f9d55",dash:"3,4"},
+    {value:p.maxC,label:"Cmax",color:"#1f9d55",dash:"7,4"}
+  ]});
+  drawLineChart("chartLoss",rows,[
+    {key:"Vpad",color:"#7c3aed"},{key:"cost",color:"#64748b"},{key:"loss",color:"#111827"}
+  ],{yDigits:1,yRef:p.victimVfail,yRefLabel:`Victim Vfail=${p.victimVfail}V`,yRefColor:"#c2410c"});
+}
+function renderSOAMaps(r,p){
+  drawSOAMap("mapVictim","Victim",r.Vpad,r.Ivictim,p.victimVfail,p.victimIfail);
+  drawSOAMap("mapUp","Up diode",r.Vup,r.Iup,p.upVfail,p.upIfail);
+  drawSOAMap("mapClamp","Clamp",r.Vclamp,r.Iclamp,p.clampVfail,p.clampIfail);
+}
+
+function runAll(){
+  try{
+    updateEquations();
+    document.getElementById("status").textContent="Running...";
+    const rows=runIteration();
+    const last=rows[rows.length-1];
+    const p=params();
+    renderTable(rows); renderMetrics(last); renderGauges(last,p); renderTightness(last); renderSOAMaps(last,p); renderCharts(rows);
+    document.getElementById("status").textContent=`Done. Final: A=${fmt(last.A,4)}, C=${fmt(last.C,4)}, R=${fmt(last.R,6)}, Vpad=${fmt(last.Vpad,6)} V, ${last.passAll?"PASS":"FAIL"}`;
+  }catch(e){
+    document.getElementById("status").textContent="Error: "+e.message;
+  }
+}
+function resetDefaults(){
+  Object.entries(defaults).forEach(([k,v])=>{const el=document.getElementById(k); if(el) el.value=v;});
+  runAll();
+}
+document.getElementById("startBtn").addEventListener("click",runAll);
+document.getElementById("resetBtn").addEventListener("click",resetDefaults);
+window.addEventListener("resize",()=>{ if(chartData.length){ const rows=chartData; const p=params(); const last=rows[rows.length-1]; renderSOAMaps(last,p); renderCharts(rows); }});
+runAll();
+</script>
+</body>
+</html>

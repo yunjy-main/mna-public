@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAD to VSS ESD MNA + Backpropagation Toy Example</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #17202a;
+    --muted: #5b6673;
+    --line: #d9dee7;
+    --accent: #2e6fdd;
+    --accent2: #1f9d55;
+    --accent3: #d97706;
+    --danger: #c2410c;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.45;
+  }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 26px;
+    margin: 0 0 8px;
+  }
+  h2 {
+    font-size: 18px;
+    margin: 0 0 12px;
+  }
+  h3 {
+    font-size: 15px;
+    margin: 14px 0 8px;
+  }
+  p { margin: 6px 0; }
+  .subtitle {
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .span-4 { grid-column: span 4; }
+  .span-5 { grid-column: span 5; }
+  .span-6 { grid-column: span 6; }
+  .span-7 { grid-column: span 7; }
+  .span-8 { grid-column: span 8; }
+  .span-12 { grid-column: span 12; }
+  @media (max-width: 900px) {
+    .span-4,.span-5,.span-6,.span-7,.span-8,.span-12 { grid-column: span 12; }
+  }
+  .eq {
+    font-family: var(--mono);
+    background: #f1f4f8;
+    border: 1px solid #e1e7f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 6px 12px;
+    font-size: 14px;
+  }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  .pill {
+    display: inline-block;
+    border: 1px solid var(--line);
+    background: #f9fafb;
+    border-radius: 999px;
+    padding: 4px 9px;
+    margin: 2px 4px 2px 0;
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    border-bottom: 1px solid var(--line);
+    padding: 7px 8px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  th {
+    background: #f8fafc;
+    color: #344054;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  td:first-child, th:first-child { text-align: right; }
+  .table-scroll {
+    max-height: 520px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .ok { color: var(--accent2); font-weight: 700; }
+  .warn { color: var(--danger); font-weight: 700; }
+  .svgbox {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fcfdff;
+  }
+  .chart {
+    width: 100%;
+    height: 260px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 2px;
+    vertical-align: -1px;
+  }
+  .lA::before { background: var(--accent); }
+  .lC::before { background: var(--accent2); }
+  .lW::before { background: var(--accent3); }
+  .lV::before { background: #7c3aed; }
+  .lLoss::before { background: #111827; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PAD → VSS 단일 경로: 선형 MNA + Backpropagation 예제</h1>
+  <div class="subtitle">
+    목적: PAD에 +1 A를 forcing하고 VSS를 ground로 둔 toy ESD network에서
+    up diode area A, clamp area C, rail width W를 연속값으로 최적화하는 전체 흐름.
+  </div>
+
+  <div class="grid">
+    <section class="card span-7">
+      <h2>1. 회로 구조와 전류 경로</h2>
+      <svg class="svgbox" viewBox="0 0 820 300" role="img" aria-label="PAD to VSS ESD circuit diagram">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#2e6fdd"></path>
+          </marker>
+        </defs>
+        <rect x="20" y="20" width="780" height="260" rx="14" fill="#ffffff" stroke="#d9dee7"/>
+        <circle cx="90" cy="145" r="22" fill="#eef4ff" stroke="#2e6fdd" stroke-width="2"/>
+        <text x="90" y="150" text-anchor="middle" font-size="14" font-weight="700">PAD P</text>
+
+        <line x1="112" y1="145" x2="210" y2="145" stroke="#344054" stroke-width="3"/>
+        <polygon points="225,128 225,162 255,145" fill="#f8fafc" stroke="#344054" stroke-width="2"/>
+        <line x1="258" y1="128" x2="258" y2="162" stroke="#344054" stroke-width="2"/>
+        <text x="240" y="104" text-anchor="middle" font-size="13">Up diode</text>
+        <text x="240" y="123" text-anchor="middle" font-size="12" fill="#5b6673">Ron=2/A, Von=0.7V</text>
+
+        <line x1="260" y1="145" x2="350" y2="145" stroke="#344054" stroke-width="3"/>
+        <circle cx="370" cy="145" r="22" fill="#f0fdf4" stroke="#1f9d55" stroke-width="2"/>
+        <text x="370" y="150" text-anchor="middle" font-size="14" font-weight="700">U</text>
+        <text x="370" y="178" text-anchor="middle" font-size="12" fill="#5b6673">VDD near PAD</text>
+
+        <line x1="392" y1="145" x2="520" y2="145" stroke="#344054" stroke-width="3"/>
+        <path d="M420 145 l10 -14 l10 28 l10 -28 l10 28 l10 -28 l10 28 l10 -14" fill="none" stroke="#344054" stroke-width="2"/>
+        <text x="455" y="104" text-anchor="middle" font-size="13">Rail R</text>
+        <text x="455" y="123" text-anchor="middle" font-size="12" fill="#5b6673">R=1/W</text>
+
+        <circle cx="545" cy="145" r="22" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+        <text x="545" y="150" text-anchor="middle" font-size="14" font-weight="700">C</text>
+        <text x="545" y="178" text-anchor="middle" font-size="12" fill="#5b6673">Clamp node</text>
+
+        <line x1="567" y1="145" x2="660" y2="145" stroke="#344054" stroke-width="3"/>
+        <rect x="660" y="122" width="70" height="46" rx="8" fill="#f8fafc" stroke="#344054" stroke-width="2"/>
+        <text x="695" y="141" text-anchor="middle" font-size="13">Clamp</text>
+        <text x="695" y="158" text-anchor="middle" font-size="11" fill="#5b6673">Ron=3/C</text>
+        <line x1="730" y1="145" x2="765" y2="145" stroke="#344054" stroke-width="3"/>
+        <line x1="765" y1="125" x2="765" y2="165" stroke="#344054" stroke-width="3"/>
+        <line x1="755" y1="168" x2="775" y2="168" stroke="#344054" stroke-width="2"/>
+        <line x1="760" y1="174" x2="770" y2="174" stroke="#344054" stroke-width="2"/>
+        <text x="765" y="196" text-anchor="middle" font-size="13" font-weight="700">VSS=0</text>
+
+        <line x1="70" y1="85" x2="70" y2="122" stroke="#2e6fdd" stroke-width="3" marker-end="url(#arrow)"/>
+        <text x="70" y="72" text-anchor="middle" font-size="13" fill="#2e6fdd" font-weight="700">+1 A forcing</text>
+
+        <path d="M105 210 C230 250, 540 250, 730 190" fill="none" stroke="#2e6fdd" stroke-width="2" stroke-dasharray="6,5" marker-end="url(#arrow)"/>
+        <text x="390" y="268" text-anchor="middle" font-size="13" fill="#2e6fdd">ESD current path: PAD → up diode → VDD rail → clamp → VSS</text>
+      </svg>
+    </section>
+
+    <section class="card span-5">
+      <h2>2. 설정값</h2>
+      <div class="kv">
+        <div>Initial A, C, W</div><div><b>2.0, 2.0, 2.0</b></div>
+        <div>Forced current</div><div><b>1.0 A</b></div>
+        <div>Ground</div><div><b>VSS = 0 V</b></div>
+        <div>Victim SOA</div><div><b>V<sub>PAD</sub> ≤ 4.0 V</b></div>
+        <div>Up diode</div><div><b>Von=0.7 V, Ron=2/A Ω</b></div>
+        <div>Clamp</div><div><b>Von=1.5 V, Ron=3/C Ω</b></div>
+        <div>Rail</div><div><b>R=1/W Ω</b></div>
+        <div>Optimizer</div><div><b>Adam, lr=0.02</b></div>
+      </div>
+      <h3>최종 연속해</h3>
+      <span class="pill">A=3.2576</span>
+      <span class="pill">C=3.9897</span>
+      <span class="pill">W=2.3035</span>
+      <span class="pill">Vpad=4.000007 V</span>
+      <p class="note">단일 initial condition의 continuous optimization 결과이므로 최종해는 1개입니다.</p>
+    </section>
+
+    <section class="card span-6">
+      <h2>3. 선형 MNA 식</h2>
+      <div class="eq">Unknowns: V = [V_P, V_U, V_C]^T
+
+g_D = A/2,  g_R = W,  g_C = C/3
+
+[  g_D      -g_D        0   ] [V_P]   [ I + g_D·Von_D ]
+[ -g_D   g_D+g_R    -g_R   ] [V_U] = [-g_D·Von_D     ]
+[   0       -g_R   g_R+g_C ] [V_C]   [ g_C·Von_C     ]</div>
+      <p class="note">
+        이 toy 회로는 직렬 경로이므로 해가 간단히
+        <b>Vpad = 2.2 + 2/A + 3/C + 1/W</b>로 정리됩니다.
+      </p>
+    </section>
+
+    <section class="card span-6">
+      <h2>4. Loss와 gradient 흐름</h2>
+      <div class="eq">h = V_PAD - Vfail
+
+Loss = A + C + W
+     + μ · softplus(β·h)/β
+
+μ = 10.61, β = 50.0
+
+Backprop:
+A,C,W → g_D,g_C,g_R → MNA solve → V_PAD → Loss
+Loss gradient → A,C,W update</div>
+      <p class="note">
+        softplus는 hard fail/pass의 계단형 판정을 부드럽게 만든 것입니다.
+        실제 sign-off 판정은 hard condition Vpad ≤ Vfail로 다시 확인합니다.
+      </p>
+    </section>
+
+    <section class="card span-6">
+      <h2>5. Area 변수 수렴</h2>
+      <div id="chartAreas" class="chart"></div>
+      <div class="legend">
+        <span class="lA">A: up diode area</span>
+        <span class="lC">C: clamp area</span>
+        <span class="lW">W: rail width</span>
+      </div>
+    </section>
+
+    <section class="card span-6">
+      <h2>6. Vpad와 Loss 변화</h2>
+      <div id="chartLoss" class="chart"></div>
+      <div class="legend">
+        <span class="lV">Vpad</span>
+        <span class="lLoss">Total loss</span>
+      </div>
+    </section>
+
+    <section class="card span-12">
+      <h2>7. Backpropagation iteration table</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>iter</th>
+              <th>A</th>
+              <th>C</th>
+              <th>W</th>
+              <th>Vpad</th>
+              <th>h=Vpad−Vfail</th>
+              <th>Area</th>
+              <th>SOA penalty</th>
+              <th>Total loss</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+    <tr>
+      <td>0</td>
+      <td>2.0000</td>
+      <td>2.0000</td>
+      <td>2.0000</td>
+      <td>5.200000</td>
+      <td>1.200000</td>
+      <td>6.000000</td>
+      <td>12.732000</td>
+      <td>18.732000</td>
+    </tr>
+    
+
+    <tr>
+      <td>1</td>
+      <td>2.0404</td>
+      <td>2.0404</td>
+      <td>2.0404</td>
+      <td>5.140596</td>
+      <td>1.140596</td>
+      <td>6.121208</td>
+      <td>12.101724</td>
+      <td>18.222932</td>
+    </tr>
+    
+
+    <tr>
+      <td>2</td>
+      <td>2.0816</td>
+      <td>2.0816</td>
+      <td>2.0816</td>
+      <td>5.082421</td>
+      <td>1.082421</td>
+      <td>6.244737</td>
+      <td>11.484484</td>
+      <td>17.729221</td>
+    </tr>
+    
+
+    <tr>
+      <td>3</td>
+      <td>2.1235</td>
+      <td>2.1236</td>
+      <td>2.1234</td>
+      <td>5.025483</td>
+      <td>1.025483</td>
+      <td>6.370538</td>
+      <td>10.880378</td>
+      <td>17.250916</td>
+    </tr>
+    
+
+    <tr>
+      <td>4</td>
+      <td>2.1662</td>
+      <td>2.1663</td>
+      <td>2.1660</td>
+      <td>4.969792</td>
+      <td>0.969792</td>
+      <td>6.498552</td>
+      <td>10.289488</td>
+      <td>16.788040</td>
+    </tr>
+    
+
+    <tr>
+      <td>5</td>
+      <td>2.2097</td>
+      <td>2.2098</td>
+      <td>2.2092</td>
+      <td>4.915352</td>
+      <td>0.915352</td>
+      <td>6.628709</td>
+      <td>9.711882</td>
+      <td>16.340592</td>
+    </tr>
+    
+
+    <tr>
+      <td>10</td>
+      <td>2.4372</td>
+      <td>2.4381</td>
+      <td>2.4331</td>
+      <td>4.662061</td>
+      <td>0.662061</td>
+      <td>7.308460</td>
+      <td>7.024462</td>
+      <td>14.332923</td>
+    </tr>
+    
+
+    <tr>
+      <td>20</td>
+      <td>2.9314</td>
+      <td>2.9404</td>
+      <td>2.8847</td>
+      <td>4.249198</td>
+      <td>0.249198</td>
+      <td>8.756472</td>
+      <td>2.643989</td>
+      <td>11.400461</td>
+    </tr>
+    
+
+    <tr>
+      <td>30</td>
+      <td>3.4219</td>
+      <td>3.4632</td>
+      <td>3.2101</td>
+      <td>3.962240</td>
+      <td>-0.037760</td>
+      <td>10.095216</td>
+      <td>0.029911</td>
+      <td>10.125127</td>
+    </tr>
+    
+
+    <tr>
+      <td>50</td>
+      <td>3.3180</td>
+      <td>3.6117</td>
+      <td>2.4730</td>
+      <td>4.037763</td>
+      <td>0.037763</td>
+      <td>9.402756</td>
+      <td>0.430574</td>
+      <td>9.833330</td>
+    </tr>
+    
+
+    <tr>
+      <td>80</td>
+      <td>3.3277</td>
+      <td>3.9042</td>
+      <td>2.3071</td>
+      <td>4.002883</td>
+      <td>0.002883</td>
+      <td>9.538901</td>
+      <td>0.162928</td>
+      <td>9.701829</td>
+    </tr>
+    
+
+    <tr>
+      <td>100</td>
+      <td>3.2854</td>
+      <td>3.9648</td>
+      <td>2.2927</td>
+      <td>4.001591</td>
+      <td>0.001591</td>
+      <td>9.542841</td>
+      <td>0.155693</td>
+      <td>9.698534</td>
+    </tr>
+    
+
+    <tr>
+      <td>150</td>
+      <td>3.2558</td>
+      <td>3.9907</td>
+      <td>2.3039</td>
+      <td>4.000086</td>
+      <td>0.000086</td>
+      <td>9.550385</td>
+      <td>0.147541</td>
+      <td>9.697925</td>
+    </tr>
+    
+
+    <tr>
+      <td>200</td>
+      <td>3.2576</td>
+      <td>3.9898</td>
+      <td>2.3034</td>
+      <td>4.000002</td>
+      <td>0.000002</td>
+      <td>9.550827</td>
+      <td>0.147097</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>300</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550798</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>500</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>800</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>1000</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>1500</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>2000</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>3000</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+
+    <tr>
+      <td>5000</td>
+      <td>3.2576</td>
+      <td>3.9897</td>
+      <td>2.3035</td>
+      <td>4.000007</td>
+      <td>0.000007</td>
+      <td>9.550799</td>
+      <td>0.147125</td>
+      <td>9.697924</td>
+    </tr>
+    
+          </tbody>
+        </table>
+      </div>
+      <p class="note">
+        초기에는 SOA violation이 크므로 A/C/W가 증가합니다.
+        이후 SOA 경계 근처에서 area cost와 SOA penalty가 균형을 이루며
+        A≈3.258, C≈3.990, W≈2.303로 수렴합니다.
+      </p>
+    </section>
+  </div>
+</div>
+
+<script>
+const data = [{"iter": 0, "A": 2.0, "C": 2.0, "W": 2.0, "Vp": 5.2, "loss": 18.732, "area": 6.0, "h": 1.2000000000000002, "soaPenalty": 12.732000000000001}, {"iter": 1, "A": 2.0404026800061152, "C": 2.040402680024185, "W": 2.040402679930038, "Vp": 5.140596019993826, "loss": 18.222931812094828, "area": 6.121208039960338, "h": 1.1405960199938256, "soaPenalty": 12.10172377213449}, {"iter": 2, "A": 2.0815849790627845, "C": 2.081589979105478, "W": 2.081562195145887, "Vp": 5.082420751419575, "loss": 17.729221325875844, "area": 6.24473715331415, "h": 1.0824207514195754, "soaPenalty": 11.484484172561695}, {"iter": 3, "A": 2.1235355577108694, "C": 2.123554633022582, "W": 2.1234479182250503, "Vp": 5.025483332401803, "loss": 17.250916265741633, "area": 6.370538108958502, "h": 1.0254833324018033, "soaPenalty": 10.880378156783133}, {"iter": 4, "A": 2.166240771620484, "C": 2.166287672489193, "W": 2.1660234872199715, "Vp": 4.9697915404724755, "loss": 16.788040175742616, "area": 6.498551931329649, "h": 0.9697915404724755, "soaPenalty": 10.289488244412965}, {"iter": 5, "A": 2.20968460101863, "C": 2.209778392213041, "W": 2.2092464226131607, "Vp": 4.915351776676477, "loss": 16.340591766382254, "area": 6.628709415844832, "h": 0.9153517766764772, "soaPenalty": 9.711882350537422}, {"iter": 10, "A": 2.437249031001952, "C": 2.4380986353533514, "W": 2.433112607506208, "Vp": 4.662060531279783, "loss": 14.332922510740012, "area": 7.308460273861511, "h": 0.6620605312797831, "soaPenalty": 7.0244622368785015}, {"iter": 20, "A": 2.9313900376715596, "C": 2.940402116663352, "W": 2.8846798827581592, "Vp": 4.249197709307509, "loss": 11.400460556007216, "area": 8.756472037093072, "h": 0.24919770930750929, "soaPenalty": 2.6439885189141443}, {"iter": 30, "A": 3.4219282203444537, "C": 3.463164247068073, "W": 3.2101234898764557, "Vp": 3.96224010056618, "loss": 10.125127010235229, "area": 10.095215957288982, "h": -0.03775989943382019, "soaPenalty": 0.029911052946246314}, {"iter": 50, "A": 3.318020966647145, "C": 3.61171349504533, "W": 2.47302187141936, "Vp": 4.0377632048321646, "loss": 9.833330378855013, "area": 9.402756333111835, "h": 0.037763204832164554, "soaPenalty": 0.43057404574317854}, {"iter": 80, "A": 3.327695559264627, "C": 3.9041543988110337, "W": 2.307050966379403, "Vp": 4.002882548172225, "loss": 9.701829194109932, "area": 9.538900924455064, "h": 0.002882548172225441, "soaPenalty": 0.1629282696548685}, {"iter": 100, "A": 3.285437516839461, "C": 3.964751749046469, "W": 2.292652105439501, "Vp": 4.001590809971699, "loss": 9.698534221197093, "area": 9.54284137132543, "h": 0.0015908099716988033, "soaPenalty": 0.15569284987166268}, {"iter": 150, "A": 3.255795118227043, "C": 3.990661550210646, "W": 2.3039279339586436, "Vp": 4.000085678744484, "loss": 9.697925446640204, "area": 9.550384602396333, "h": 8.567874448406343e-05, "soaPenalty": 0.1475408442438698}, {"iter": 200, "A": 3.257641728220463, "C": 3.9897781480241736, "W": 2.3034070153963047, "Vp": 4.000002075801495, "loss": 9.69792373576843, "area": 9.550826891640941, "h": 2.0758014951383075e-06, "soaPenalty": 0.1470968441274895}, {"iter": 300, "A": 3.257599101803464, "C": 3.9897289068415267, "W": 2.3034704309307683, "Vp": 4.000007437515795, "loss": 9.697923730980056, "area": 9.550798439575757, "h": 7.43751579523888e-06, "soaPenalty": 0.14712529140429886}, {"iter": 500, "A": 3.2575996071540847, "C": 3.989728411886738, "W": 2.3034707725994323, "Vp": 4.000007371163331, "loss": 9.697923730979573, "area": 9.550798791640254, "h": 7.371163331271191e-06, "soaPenalty": 0.1471249393393194}, {"iter": 800, "A": 3.2575996071469286, "C": 3.989728411900456, "W": 2.3034707726042254, "Vp": 4.000007371161192, "loss": 9.697923730979577, "area": 9.55079879165161, "h": 7.371161191649378e-06, "soaPenalty": 0.14712493932796658}, {"iter": 1000, "A": 3.2575996071469295, "C": 3.9897284119004577, "W": 2.303470772604227, "Vp": 4.000007371161191, "loss": 9.697923730979575, "area": 9.550798791651614, "h": 7.3711611907612e-06, "soaPenalty": 0.1471249393279619}, {"iter": 1500, "A": 3.2575996071469286, "C": 3.989728411900457, "W": 2.3034707726042267, "Vp": 4.000007371161192, "loss": 9.697923730979578, "area": 9.550798791651612, "h": 7.371161191649378e-06, "soaPenalty": 0.14712493932796658}, {"iter": 2000, "A": 3.257599607146927, "C": 3.989728411900455, "W": 2.3034707726042245, "Vp": 4.0000073711611925, "loss": 9.697923730979578, "area": 9.550798791651607, "h": 7.371161192537556e-06, "soaPenalty": 0.1471249393279713}, {"iter": 3000, "A": 3.257599607146926, "C": 3.989728411900456, "W": 2.303470772604224, "Vp": 4.0000073711611925, "loss": 9.697923730979577, "area": 9.550798791651605, "h": 7.371161192537556e-06, "soaPenalty": 0.1471249393279713}, {"iter": 5000, "A": 3.2575996071469353, "C": 3.989728411900464, "W": 2.303470772604234, "Vp": 4.000007371161187, "loss": 9.697923730979577, "area": 9.550798791651633, "h": 7.371161187208486e-06, "soaPenalty": 0.14712493932794304}];
+
+function drawLineChart(elId, series, opts) {
+  const el = document.getElementById(elId);
+  const width = el.clientWidth || 520;
+  const height = el.clientHeight || 260;
+  const margin = {left: 52, right: 24, top: 20, bottom: 38};
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const svgNS = "http://www.w3.org/2000/svg";
+  el.innerHTML = "";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  el.appendChild(svg);
+
+  const xVals = data.map(d => d.iter);
+  const xMin = Math.min(...xVals);
+  const xMax = Math.max(...xVals);
+  let yVals = [];
+  series.forEach(s => data.forEach(d => yVals.push(d[s.key])));
+  if (opts.yRef !== undefined) yVals.push(opts.yRef);
+  const yMinRaw = Math.min(...yVals);
+  const yMaxRaw = Math.max(...yVals);
+  const pad = (yMaxRaw - yMinRaw) * 0.08 || 1;
+  const yMin = Math.max(0, yMinRaw - pad);
+  const yMax = yMaxRaw + pad;
+
+  const xScale = x => margin.left + (x - xMin) / (xMax - xMin) * innerW;
+  const yScale = y => margin.top + (yMax - y) / (yMax - yMin) * innerH;
+
+  function line(x1,y1,x2,y2,stroke,w=1,dash="") {
+    const l = document.createElementNS(svgNS, "line");
+    l.setAttribute("x1", x1); l.setAttribute("y1", y1);
+    l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+    l.setAttribute("stroke", stroke); l.setAttribute("stroke-width", w);
+    if (dash) l.setAttribute("stroke-dasharray", dash);
+    svg.appendChild(l);
+  }
+  function text(x,y,t,anchor="middle",size=11,color="#5b6673") {
+    const tx = document.createElementNS(svgNS, "text");
+    tx.setAttribute("x", x); tx.setAttribute("y", y);
+    tx.setAttribute("text-anchor", anchor);
+    tx.setAttribute("font-size", size);
+    tx.setAttribute("fill", color);
+    tx.textContent = t;
+    svg.appendChild(tx);
+  }
+
+  // grid
+  for (let i=0; i<=4; i++) {
+    const yy = margin.top + i * innerH / 4;
+    line(margin.left, yy, margin.left+innerW, yy, "#e5e7eb", 1);
+    const val = yMax - i*(yMax-yMin)/4;
+    text(margin.left-8, yy+4, val.toFixed(opts.yDigits ?? 1), "end");
+  }
+  line(margin.left, margin.top+innerH, margin.left+innerW, margin.top+innerH, "#98a2b3", 1.2);
+  line(margin.left, margin.top, margin.left, margin.top+innerH, "#98a2b3", 1.2);
+
+  const xticks = [0, 1000, 2000, 3000, 4000, 5000];
+  xticks.forEach(x => {
+    const xx = xScale(x);
+    line(xx, margin.top+innerH, xx, margin.top+innerH+4, "#98a2b3", 1);
+    text(xx, height-14, String(x), "middle");
+  });
+
+  if (opts.yRef !== undefined) {
+    const yy = yScale(opts.yRef);
+    line(margin.left, yy, margin.left+innerW, yy, opts.yRefColor || "#c2410c", 1.2, "5,4");
+    text(margin.left+innerW-4, yy-6, opts.yRefLabel || "", "end", 11, opts.yRefColor || "#c2410c");
+  }
+
+  series.forEach(s => {
+    const path = document.createElementNS(svgNS, "path");
+    const d = data.map((p,i) => `${i===0 ? "M" : "L"}${xScale(p.iter).toFixed(2)},${yScale(p[s.key]).toFixed(2)}`).join(" ");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", s.color);
+    path.setAttribute("stroke-width", 2.2);
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-linecap", "round");
+    svg.appendChild(path);
+    data.forEach((p, idx) => {
+      if (idx % 3 === 0 || idx === data.length - 1) {
+        const c = document.createElementNS(svgNS, "circle");
+        c.setAttribute("cx", xScale(p.iter));
+        c.setAttribute("cy", yScale(p[s.key]));
+        c.setAttribute("r", 2.5);
+        c.setAttribute("fill", s.color);
+        svg.appendChild(c);
+      }
+    });
+  });
+
+  text(margin.left + innerW/2, height-2, "iteration", "middle", 11, "#5b6673");
+}
+
+drawLineChart("chartAreas", [
+  {key:"A", color:"#2e6fdd"},
+  {key:"C", color:"#1f9d55"},
+  {key:"W", color:"#d97706"}
+], {yDigits:1});
+
+drawLineChart("chartLoss", [
+  {key:"Vp", color:"#7c3aed"},
+  {key:"loss", color:"#111827"}
+], {yDigits:1, yRef:4.0, yRefLabel:"Vfail=4.0V", yRefColor:"#c2410c"});
+
+window.addEventListener("resize", () => {
+  drawLineChart("chartAreas", [
+    {key:"A", color:"#2e6fdd"},
+    {key:"C", color:"#1f9d55"},
+    {key:"W", color:"#d97706"}
+  ], {yDigits:1});
+  drawLineChart("chartLoss", [
+    {key:"Vp", color:"#7c3aed"},
+    {key:"loss", color:"#111827"}
+  ], {yDigits:1, yRef:4.0, yRefLabel:"Vfail=4.0V", yRefColor:"#c2410c"});
+});
+</script>
+</body>
+</html>
