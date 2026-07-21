@@ -307,15 +307,15 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "VSS", "role": "기준(ref) node — MNA 미지수에서 제외"},
         ],
         "branches": [
-            {"name": "I_ESD", "type": "current source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
-            {"name": "Rio", "type": "resistor", "nodes": "IO–N1", "param": "0.1Ω (≈70µm)"},
-            {"name": "D_up", "type": "nonlinear (model1 diode)", "nodes": "N1→N2", "param": "x1={}".format(x1)},
-            {"name": "D_down", "type": "nonlinear (model1 미러, D2)", "nodes": "VSS→N1", "param": "x1 미러 — 음(−) 스트레스 경로"},
-            {"name": "Rvdd", "type": "resistor", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), L 변수(D7)"},
-            {"name": "Clamp", "type": "nonlinear (model2 clamp)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
-            {"name": "Resd", "type": "resistor", "nodes": "IO–OUT", "param": "500Ω (victim 보호 직렬 저항)"},
-            {"name": "PMOS drain 접합", "type": "junction (Von 0.7 + Ron 10Ω)", "nodes": "OUT→N3", "param": "양(+) 스트레스 시 순방향 — victim 전류 경로"},
-            {"name": "NMOS drain 접합", "type": "SG NFET 1stk_1rx (SOA)", "nodes": "OUT→VSS", "param": "terminal 3.1V · oxide inv/acc 2.9/3.3V (docs/victim_soa_model.html)"},
+            {"name": "I_ESD", "type": "source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
+            {"name": "Rio", "type": "device — R (metal)", "nodes": "IO–N1", "param": "0.1Ω (≈70µm)"},
+            {"name": "D_up", "type": "device — diode (model1)", "nodes": "N1→N2", "param": "x1={}".format(x1)},
+            {"name": "D_down", "type": "device — diode (model1 미러, D2)", "nodes": "VSS→N1", "param": "x1 미러 — 음(−) 스트레스 경로"},
+            {"name": "Rvdd", "type": "device — R (metal)", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), L 변수(D7)"},
+            {"name": "Clamp", "type": "device — clamp (model2)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
+            {"name": "Resd", "type": "device — R (ESD 직렬)", "nodes": "IO–OUT", "param": "500Ω (victim 보호)"},
+            {"name": "PMOS drain 접합", "type": "device — FET 접합 (victim)", "nodes": "OUT→N3", "param": "Von 0.7 + Ron 10Ω, 양(+) 스트레스 시 순방향"},
+            {"name": "NMOS drain 접합", "type": "device — FET (victim, SG 1stk_1rx SOA)", "nodes": "OUT→VSS", "param": "terminal 3.1V · oxide inv/acc 2.9/3.3V"},
         ],
         "mna": {
             "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(OUT)"],
@@ -396,9 +396,9 @@ def entities():
     """Entity catalog (20 items) with implementation status and where to see each one."""
     IMPL, PART, PLAN = "구현", "부분", "계획"
     items = [
-        (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증"),
+        (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증. R 계열(Rio/Rvdd/Resd)도 device로 취급(사용자 규정) — #3이 R-device 담당"),
         (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
-        (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
+        (3, "MetalModel (R-device)", PART, "화면: circuit, optimize", "R 계열도 device(사용자 규정): Rio·Rvdd(metal, 0.5Ω/350µm·L 변수)·Resd(ESD 직렬 500Ω). EM/Joule/자원 SOA 보유"),
         (4, "VictimModel", IMPL, "server/victim_soa.py · docs/victim_soa_model.html · 화면: circuit, models §2, spec, optimize", "inverter(IO─Resd 500Ω→OUT) + 측정 SOA: SG NFET/PFET 1stk_1rx(터미널 3.1/3.3V, oxide inv/acc 2.9/3.3·3.3/3.8V), 부호 있는 VGS/VGD/VGB 검사, Uoverall=max. 음(−) 스트레스 대칭은 잔여"),
         (5, "CalibrationPipeline", PART, "server/calibtable.py · assets/calib_table.json", "β/scale·V(I) 사전계산 테이블(48격자×2corner, rel<5e-3) 구현; anchor 절차 코드화 잔여"),
         (6, "Netlist/Topology", PART, "화면: circuit", "강화 토폴로지: VDD/IO/VSS 레일 + up/down diode + clamp + victim inverter(노드 5+ref, MNA 5×5); 일반화는 Phase 5"),
@@ -423,7 +423,8 @@ def entities():
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
-                     "창립: rule 비대칭 · 3단계 해(M 1.0/1.2/1.5) · Top Cell port SOA · 2단계 loss · ground 명시",
+                     "창립: rule 비대칭 · 3단계 해(M 1.0/1.2/1.5) · Top Cell port SOA · 2단계 loss · ground 명시 · "
+                     "R 계열(Rio/Rvdd/Resd)도 device",
         "entities": [{"id": i, "name": n, "status": s, "where": w, "note": t}
                      for i, n, s, w, t in items],
     }
