@@ -37,8 +37,8 @@ def _refs():
 def meta():
     return {
         "app": "mna-esd-solver",
-        "version": "0.0.1",
-        "phase": "0 — regression baseline (tests/golden.json, 50 checks)",
+        "version": "0.0.3",
+        "phase": "0 — regression baseline + display screens (models/circuit/spec/meta)",
         "runtime": "python {} / fastapi".format(sys.version.split()[0]),
         "refs": _refs(),
     }
@@ -53,7 +53,61 @@ def regression():
     return {"exit": p.returncode, "output": (p.stdout + p.stderr).strip()}
 
 
+A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
+VICTIM = {"kV": 1.0, "vfail": 4.0}
+
 _models_cache = {}
+_calib_cache = {}
+
+
+def _cal(dev, x, corner):
+    key = (dev["id"], round(x, 9), corner)
+    if key not in _calib_cache:
+        _calib_cache[key] = M.calib(dev, x, corner)
+    return _calib_cache[key]
+
+
+def _window_error(x1, x2):
+    for dev, x in ((M.D1, x1), (M.D2, x2)):
+        lo, hi = M.xwindow(dev)
+        if not (lo <= x <= hi):
+            return PlainTextResponse(
+                "{} x={} outside D5 window [{:.4g}, {:.4g}]".format(dev["id"], x, lo, hi),
+                status_code=422)
+    return None
+
+
+def _GofI(br, i):
+    """Interpolate branch conductance at a given current (None beyond endpoint)."""
+    I, G = br["I"], br["G"]
+    n = len(I) - 1
+    asc = I[n] >= 0
+    if (i > I[n]) if asc else (i < I[n]):
+        return None
+    lo, hi = 0, n
+    while hi - lo > 1:
+        m2 = (lo + hi) // 2
+        if (I[m2] <= i) if asc else (I[m2] >= i):
+            lo = m2
+        else:
+            hi = m2
+    f = (i - I[lo]) / ((I[hi] - I[lo]) or 1)
+    return G[lo] + f * (G[hi] - G[lo])
+
+
+def _victim_cross(c1, c2, vfail):
+    """Bisect the smallest I where V_IO(I) = vfail (None if never reached)."""
+    ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+    if M.series_vio(c1, c2, ifail) < vfail:
+        return None, ifail
+    lo, hi = 0.0, ifail
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if M.series_vio(c1, c2, mid) < vfail:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2, ifail
 
 
 def _downsample_curve(cal, step=16):
@@ -79,20 +133,17 @@ def models(x1: float = 2.56, x2: float = 1415.232):
     if key in _models_cache:
         return _models_cache[key]
 
-    for dev, x in ((M.D1, x1), (M.D2, x2)):
-        lo, hi = M.xwindow(dev)
-        if not (lo <= x <= hi):
-            return PlainTextResponse(
-                "{} x={} outside D5 window [{:.4g}, {:.4g}]".format(dev["id"], x, lo, hi),
-                status_code=422)
+    err = _window_error(x1, x2)
+    if err:
+        return err
 
-    out = {"x1": x1, "x2": x2, "victim": {"kV": 1.0, "vfail": 4.0},
+    out = {"x1": x1, "x2": x2, "victim": dict(VICTIM),
            "rio": M.RIO, "rvdd": M.RVDD, "devices": {}, "soa": {}, "path": {}}
     cals = {}
     for dev, x in ((M.D1, x1), (M.D2, x2)):
         entry = {"x": x, "measured_range": dev["range"], "window": M.xwindow(dev)}
         for corner in ("worst", "best"):
-            c = M.calib(dev, x, corner)
+            c = _cal(dev, x, corner)
             cals[(dev["id"], corner)] = c
             cal_info = ({"beta_p": c["cp"]["q"], "beta_n": c["cn"]["q"]} if dev["method"] == "exp"
                         else {"scale_p": c["cp"]["s"], "scale_n": c["cn"]["s"]})
@@ -141,9 +192,164 @@ def models(x1: float = 2.56, x2: float = 1415.232):
     return out
 
 
+@app.get(PREFIX + "/api/circuit")
+def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner: str = "worst"):
+    """Text circuit diagram + node/branch list + MNA matrix meta at an operating point."""
+    err = _window_error(x1, x2)
+    if err:
+        return err
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
+    ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+    op = None
+    if 0 <= i <= ifail:
+        v1, v2 = M.VofI(c1["pos"], i), M.VofI(c2["pos"], i)
+        gD, gC = _GofI(c1["pos"], i), _GofI(c2["pos"], i)
+        gRio, gRvdd = 1 / M.RIO, 1 / M.RVDD
+        matrix = [
+            [gRio, -gRio, 0, 0],
+            [-gRio, gRio + gD, -gD, 0],
+            [0, -gD, gD + gRvdd, -gRvdd],
+            [0, 0, -gRvdd, gRvdd + gC],
+        ]
+        op = {"i": i, "v_diode": v1, "v_clamp": v2,
+              "v_io": i * (M.RIO + M.RVDD) + v1 + v2,
+              "gD": gD, "gC": gC, "gRio": gRio, "gRvdd": gRvdd,
+              "matrix": matrix, "b": [i, 0, 0, 0]}
+    ascii_lines = [
+        "        Rio 0.1Ω(≈70µm)     D_up: diode(x1)     Rvdd 0.5Ω(≈350µm)",
+        " IO ○──────/\\/\\/\\──────○ N1 ─────────▶|───────── ○ N2 ──────/\\/\\/\\────── ○ N3",
+        "  │                                                                        │",
+        " (I_ESD ↑ spec 주입)                                                  Clamp(x2)",
+        "  │                                                                        │",
+        " VSS ○─────────────────────────────────────────────────────────────────────○",
+        "  ┆",
+        "  └╌╌╌▶|╌╌╌ D_down = model1 미러 (IO←VSS, 음(−) 스트레스 담당 — D2 결정, Phase 2에서 경로 계산 반영)",
+        "",
+        " 금속 규칙: 0.5Ω / 350µm (L만 설계변수, W 고정 — D7)",
+    ]
+    return {
+        "ascii": ascii_lines,
+        "x1": x1, "x2": x2, "corner": corner,
+        "nodes": [
+            {"name": "IO", "role": "stress 주입 node (current source)"},
+            {"name": "N1", "role": "Rio–D_up 사이"},
+            {"name": "N2", "role": "D_up–Rvdd 사이 (VDD rail 시작)"},
+            {"name": "N3", "role": "Rvdd–Clamp 사이 (VDD rail 끝)"},
+            {"name": "VSS", "role": "기준(ref) node — MNA 미지수에서 제외"},
+        ],
+        "branches": [
+            {"name": "I_ESD", "type": "current source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
+            {"name": "Rio", "type": "resistor", "nodes": "IO–N1", "param": "0.1Ω (≈70µm)"},
+            {"name": "D_up", "type": "nonlinear (model1 diode)", "nodes": "N1–N2", "param": "x1={}".format(x1)},
+            {"name": "Rvdd", "type": "resistor", "nodes": "N2–N3", "param": "0.5Ω (≈350µm)"},
+            {"name": "Clamp", "type": "nonlinear (model2 clamp)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
+            {"name": "D_down", "type": "nonlinear (model1 미러)", "nodes": "VSS→IO", "param": "Phase 2 반영 예정"},
+        ],
+        "mna": {
+            "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)"],
+            "ref": "VSS", "size": "4×4", "nnz": "10 / 16 (tridiagonal)",
+            "form": "G(v)·Δv = −F(v)  (Newton 일반형, Phase 4)",
+            "solve_mode": "현재: 전류구동 직렬 경로 → V(I) 1D 역산 합성 (Newton 불필요, 검증된 fast path)",
+        },
+        "op": op, "ifail": ifail,
+    }
+
+
+@app.get(PREFIX + "/api/spec")
+def spec(x1: float = 2.56, x2: float = 1415.232):
+    """ESD spec table: kV levels -> injected current (1kV=1.33A) -> PASS/FAIL per corner."""
+    err = _window_error(x1, x2)
+    if err:
+        return err
+    out = {"a_per_kv": A_PER_KV, "victim": dict(VICTIM), "x1": x1, "x2": x2,
+           "rio": M.RIO, "rvdd": M.RVDD, "levels": [], "summary": {}}
+    cs = {}
+    for corner in ("worst", "best"):
+        c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
+        cross, ifail = _victim_cross(c1, c2, VICTIM["vfail"])
+        cs[corner] = (c1, c2)
+        out["summary"][corner] = {
+            "ifail": ifail,
+            "limiter": "diode" if c1["e"]["ip"] < c2["e"]["ip"] else "clamp",
+            "victim_cross_I": cross,
+            "max_kv_victim": (cross if cross is not None else ifail) / A_PER_KV,
+            "max_kv_soa": ifail / A_PER_KV,
+        }
+    for kv in (0.5, 1.0, 1.5, 2.0, 3.0, 4.0):
+        i = A_PER_KV * kv
+        row = {"kv": kv, "i": i, "named_spec": kv == VICTIM["kV"], "corners": {}}
+        for corner in ("worst", "best"):
+            c1, c2 = cs[corner]
+            ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+            if i > ifail:
+                row["corners"][corner] = {"status": "FAIL_SOA", "vio": None,
+                                          "note": "I > It2 (경로 파괴, Ifail={:.3f}A)".format(ifail)}
+            else:
+                v = M.series_vio(c1, c2, i)
+                ok = v <= VICTIM["vfail"]
+                row["corners"][corner] = {"status": "PASS" if ok else "FAIL_VICTIM", "vio": v,
+                                          "margin": VICTIM["vfail"] - v,
+                                          "usage_diode": i / c1["e"]["ip"], "usage_clamp": i / c2["e"]["ip"]}
+        out["levels"].append(row)
+    return out
+
+
+@app.get(PREFIX + "/api/entities")
+def entities():
+    """Entity catalog (20 items) with implementation status and where to see each one."""
+    IMPL, PART, PLAN = "구현", "부분", "계획"
+    items = [
+        (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증"),
+        (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3", "envelope 8종+양 corner 평가(D3)+±50% 창(D5); curve-endpoint 규약 문서화 예정"),
+        (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
+        (4, "VictimModel", PART, "화면: models §2, spec", "Vb=kV·V_IO (kV=1), Vfail=4V box"),
+        (5, "CalibrationPipeline", PLAN, "Phase 1A", "anchor 절차 코드화 + β/scale 사전계산 테이블"),
+        (6, "Netlist/Topology", PART, "화면: circuit", "고정 직렬 토폴로지(노드 4+ref); 일반화는 Phase 5"),
+        (7, "StressCase & ESDSpec", PART, "화면: spec", "HBM 양(+) 스트레스 1종, 1kV↔1.33A(사용자 확정)"),
+        (8, "DesignVariableRegistry", PART, "api/models 422 가드", "x1/x2 + D5 ±50% 창; L 변수는 Phase 2"),
+        (9, "ProblemSchema (JSON/YAML)", PLAN, "Phase 1A~", "GUI↔solver 경계 계약"),
+        (10, "TopologyCompiler", PLAN, "Phase 5", "flatten + hierarchy + Top Cell SOA 집계"),
+        (11, "MNAAssembler", PART, "화면: circuit (심볼릭+수치 G 미리보기)", "실제 조립/solve는 Phase 4"),
+        (12, "NewtonSolver", PART, "server/model.py VofI", "직렬 fast path(1D 역산)만 구현; 일반 Newton은 Phase 4"),
+        (13, "SensitivityEngine", PLAN, "Phase 3", "완전 미분 체인(β/scale/endpoint 포함) — 공식 검증 완료"),
+        (14, "LossFunction", PLAN, "Phase 3", "usage 정규화 + cost 승계"),
+        (15, "Optimizer", PLAN, "Phase 3", "Adam log-공간 + continuation sweep"),
+        (16, "PassFailEvaluator", PART, "화면: spec, models §2", "victim/SOA 판정, corner 양쪽"),
+        (17, "ResultStore", PART, "server 메모리 캐시", "직렬화·파라미터 동봉 저장은 추후"),
+        (18, "TopologyEditor GUI", PLAN, "Phase 5", ""),
+        (19, "AnalysisReport GUI", PART, "화면: models, spec, circuit, meta", "화면 4종 증분 확장 중"),
+        (20, "RegressionHarness", IMPL, "tests/ · api/regression · 홈 버튼", "골든 50건, Python+JS 이중 러너"),
+    ]
+    return {
+        "service": {"version": "0.0.3", "grid_N": M.N, "golden_checks": 50,
+                    "runtime": "python {} / fastapi".format(sys.version.split()[0])},
+        "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
+                     "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A",
+        "entities": [{"id": i, "name": n, "status": s, "where": w, "note": t}
+                     for i, n, s, w, t in items],
+    }
+
+
 @app.get(PREFIX + "/models")
 def models_page():
     return FileResponse(os.path.join(ROOT, "frontend", "models.html"))
+
+
+@app.get(PREFIX + "/circuit")
+def circuit_page():
+    return FileResponse(os.path.join(ROOT, "frontend", "circuit.html"))
+
+
+@app.get(PREFIX + "/spec")
+def spec_page():
+    return FileResponse(os.path.join(ROOT, "frontend", "spec.html"))
+
+
+@app.get(PREFIX + "/meta")
+def meta_page():
+    return FileResponse(os.path.join(ROOT, "frontend", "entities.html"))
 
 
 @app.get(PREFIX + "/ref/{path:path}")

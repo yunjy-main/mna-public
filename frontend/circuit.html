@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mna — circuit / MNA</title>
+<style>
+  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
+  header{background:#20252b;color:#fff;padding:14px 22px}
+  header h1{margin:0;font-size:17px}
+  header a{color:#9ecbff;font-size:12px;text-decoration:none}
+  main{max-width:1100px;margin:auto;padding:16px}
+  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
+  h2{font-size:14px;margin:0 0 10px}
+  pre{background:#f3f5f7;border-radius:6px;padding:12px;overflow-x:auto;font:12px/1.5 Consolas,monospace;margin:0}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  th,td{border:1px solid #d9dee5;padding:6px 8px;text-align:left}
+  th{background:#eef1f4}
+  .ctl{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:8px}
+  .ctl label{font-size:12px;color:#5b6673;display:block}
+  .ctl input,.ctl select{width:120px;padding:6px}
+  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
+  .cap{font-size:12px;color:#5b6673;margin-top:6px}
+  .err{color:#b3261e;font-size:13px}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>Circuit / MNA 행렬 메타</h1>
+  <a href="./">← mna 홈</a>
+</header>
+<main>
+  <div class="card">
+    <div class="ctl">
+      <div><label>diode x1</label><input id="x1" type="number" step="any" value="2.56"></div>
+      <div><label>clamp x2</label><input id="x2" type="number" step="any" value="1415.232"></div>
+      <div><label>동작점 전류 I (A)</label><input id="iop" type="number" step="any" value="1.33"></div>
+      <div><label>SOA corner</label><select id="corner"><option>worst</option><option>best</option></select></div>
+      <button id="loadBtn">계산</button>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>1. 회로도 (텍스트)</h2>
+    <pre id="ascii"></pre>
+  </div>
+
+  <div class="card">
+    <h2>2. Node / Branch</h2>
+    <table id="nodes"><tr><th>node</th><th>역할</th></tr></table>
+    <table id="branches"><tr><th>branch</th><th>종류</th><th>연결</th><th>파라미터</th></tr></table>
+  </div>
+
+  <div class="card">
+    <h2>3. MNA 행렬 (동작점 선형화)</h2>
+    <pre id="mna"></pre>
+    <div class="cap" id="mnaCap"></div>
+  </div>
+</main>
+<script>
+'use strict';
+function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?4:d);}
+function load(){
+  const err=document.getElementById('err'); err.textContent='';
+  const q='api/circuit?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
+        +'&i='+encodeURIComponent(iop.value)+'&corner='+corner.value;
+  fetch(q).then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
+    document.getElementById('ascii').textContent=m.ascii.join('\n');
+    document.getElementById('nodes').innerHTML='<tr><th>node</th><th>역할</th></tr>'
+      +m.nodes.map(n=>'<tr><td>'+n.name+'</td><td>'+n.role+'</td></tr>').join('');
+    document.getElementById('branches').innerHTML='<tr><th>branch</th><th>종류</th><th>연결</th><th>파라미터</th></tr>'
+      +m.branches.map(b=>'<tr><td>'+b.name+'</td><td>'+b.type+'</td><td>'+b.nodes+'</td><td>'+b.param+'</td></tr>').join('');
+    let s='형식: '+m.mna.form+'\n미지수: ['+m.mna.unknowns.join(', ')+']   (ref: '+m.mna.ref+')\n'
+         +'크기: '+m.mna.size+'   비영(nnz): '+m.mna.nnz+'\n해법: '+m.mna.solve_mode+'\n';
+    if(m.op){
+      const g=m.op.matrix, lbl=['IO ','N1 ','N2 ','N3 '];
+      s+='\n동작점 I='+f(m.op.i,3)+'A ('+m.corner+'): V_diode='+f(m.op.v_diode,3)+'V, V_clamp='+f(m.op.v_clamp,3)
+        +'V, V_IO='+f(m.op.v_io,3)+'V\n소신호 컨덕턴스: gD='+f(m.op.gD,4)+' S, gC='+f(m.op.gC,4)
+        +' S, gRio='+f(m.op.gRio,1)+' S, gRvdd='+f(m.op.gRvdd,1)+' S\n\n'
+        +'G (4×4, S 단위)                                      b\n';
+      for(let r=0;r<4;r++){
+        s+=lbl[r]+'[ '+g[r].map(v=>String(f(v,3)).padStart(9)).join(' ')+' ]   [ '+f(m.op.b[r],3)+' ]\n';
+      }
+      document.getElementById('mnaCap').textContent =
+        '경로 한계 Ifail='+f(m.ifail,3)+'A. 주의: 위 G는 동작점 선형화 미리보기(개체 #11 MNAAssembler의 심볼릭 자리) — '
+        +'실제 수치 해는 현재 전류구동 1D 역산으로 계산되며, Newton/조립 solve는 Phase 4 산출물.';
+    } else {
+      s+='\n동작점 I가 경로 한계(Ifail='+f(m.ifail,3)+'A)를 벗어나 선형화 생략.';
+      document.getElementById('mnaCap').textContent='';
+    }
+    document.getElementById('mna').textContent=s;
+  }).catch(e=>{err.textContent=String(e.message||e);});
+}
+document.getElementById('loadBtn').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mna — ESD spec</title>
+<style>
+  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
+  header{background:#20252b;color:#fff;padding:14px 22px}
+  header h1{margin:0;font-size:17px}
+  header a{color:#9ecbff;font-size:12px;text-decoration:none}
+  main{max-width:1100px;margin:auto;padding:16px}
+  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
+  h2{font-size:14px;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid #d9dee5;padding:6px 8px;text-align:left}
+  th{background:#eef1f4}
+  .ctl{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .ctl label{font-size:12px;color:#5b6673;display:block}
+  .ctl input{width:130px;padding:6px}
+  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
+  .pass{color:#0a7d38;font-weight:700}
+  .failv{color:#b3261e;font-weight:700}
+  .fails{color:#7a1fa2;font-weight:700}
+  .named{background:#fff8e6}
+  .cap{font-size:12px;color:#5b6673;margin-top:8px;white-space:pre-line}
+  .err{color:#b3261e;font-size:13px}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>ESD spec 판정 — 1kV ↔ 1.33A (HBM)</h1>
+  <a href="./">← mna 홈</a>
+</header>
+<main>
+  <div class="card">
+    <div class="ctl">
+      <div><label>diode x1</label><input id="x1" type="number" step="any" value="2.56"></div>
+      <div><label>clamp x2</label><input id="x2" type="number" step="any" value="1415.232"></div>
+      <button id="loadBtn">판정</button>
+      <span style="font-size:12px;color:#5b6673">경로: IO→Rio 0.1Ω→diode→Rvdd 0.5Ω→clamp→VSS · victim Vfail=4V(Vb=1.0·V_IO) · corner 양쪽 평가(D3)</span>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>Spec 레벨별 판정</h2>
+    <table id="tbl"></table>
+    <div class="cap">판정: <span class="pass">PASS</span> = V_IO ≤ 4V · <span class="failv">FAIL victim</span> = V_IO &gt; 4V (경로는 생존) · <span class="fails">FAIL SOA</span> = I &gt; It2 (보호소자 파괴). 노란 행 = 명명 spec(1kV).</div>
+  </div>
+
+  <div class="card">
+    <h2>최대 통과 spec</h2>
+    <div class="cap" id="summary"></div>
+  </div>
+</main>
+<script>
+'use strict';
+function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?3:d);}
+function cell(c){
+  if(c.status==='FAIL_SOA') return '<td class="fails">FAIL SOA</td><td>—</td><td>'+c.note+'</td>';
+  const cls=c.status==='PASS'?'pass':'failv';
+  const lbl=c.status==='PASS'?'PASS':'FAIL victim';
+  return '<td class="'+cls+'">'+lbl+'</td><td>'+f(c.vio)+' V</td><td>margin '+f(c.margin)
+        +' V · usage diode '+ (c.usage_diode*100).toFixed(1)+'% / clamp '+(c.usage_clamp*100).toFixed(1)+'%</td>';
+}
+function load(){
+  const err=document.getElementById('err'); err.textContent='';
+  fetch('api/spec?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value))
+  .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
+    let h='<tr><th rowspan="2">spec</th><th rowspan="2">I 주입 (A)</th><th colspan="3">worst corner</th><th colspan="3">best corner</th></tr>'
+         +'<tr><th>판정</th><th>V_IO</th><th>상세</th><th>판정</th><th>V_IO</th><th>상세</th></tr>';
+    for(const row of m.levels){
+      h+='<tr'+(row.named_spec?' class="named"':'')+'><td>'+row.kv+' kV'+(row.named_spec?' ★':'')+'</td><td>'+f(row.i,3)+'</td>'
+        +cell(row.corners.worst)+cell(row.corners.best)+'</tr>';
+    }
+    document.getElementById('tbl').innerHTML=h;
+    const s=m.summary, lines=[];
+    for(const c of ['worst','best']){
+      const u=s[c];
+      lines.push(c+': victim 기준 최대 '+f(u.max_kv_victim,3)+' kV ('+f(u.max_kv_victim*m.a_per_kv,3)+' A)'
+        +' · 소자 파괴 기준 최대 '+f(u.max_kv_soa,3)+' kV (Ifail='+f(u.ifail,3)+' A, '+u.limiter+' 병목)');
+    }
+    const worstOf=Math.min(s.worst.max_kv_victim, s.best.max_kv_victim);
+    lines.push('\n종합(양 corner 비관값): 이 설계는 최대 '+f(worstOf,3)+' kV까지 victim-PASS — 1kV spec은 '
+      +(worstOf>=1?'만족 ✓':'불만족 ✗'));
+    document.getElementById('summary').textContent=lines.join('\n');
+  }).catch(e=>{err.textContent=String(e.message||e);});
+}
+document.getElementById('loadBtn').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mna — meta / 개체 현황</title>
+<style>
+  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
+  header{background:#20252b;color:#fff;padding:14px 22px}
+  header h1{margin:0;font-size:17px}
+  header a{color:#9ecbff;font-size:12px;text-decoration:none}
+  main{max-width:1100px;margin:auto;padding:16px}
+  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
+  h2{font-size:14px;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid #d9dee5;padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:#eef1f4}
+  .cap{font-size:12px;color:#5b6673;margin-top:6px;white-space:pre-line}
+  .b{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:700}
+  .impl{background:#e0f2e7;color:#0a7d38}
+  .part{background:#fff3d6;color:#8a6100}
+  .plan{background:#e9ecf0;color:#5b6673}
+  a{color:#1f5f99;text-decoration:none}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>Meta — 서비스 · MNA · 개체(entity) 구현 현황</h1>
+  <a href="./">← mna 홈</a>
+</header>
+<main>
+  <div class="card">
+    <h2>서비스 / MNA meta</h2>
+    <div class="cap" id="svc">불러오는 중…</div>
+  </div>
+  <div class="card">
+    <h2>확정 결정 (D1~D9)</h2>
+    <div class="cap" id="dec"></div>
+  </div>
+  <div class="card">
+    <h2>개체 20종 — 구현 현황</h2>
+    <table id="tbl"></table>
+    <div class="cap">화면 링크: <a href="models">models</a> · <a href="circuit">circuit</a> · <a href="spec">spec</a> · <a href="meta">meta(이 화면)</a></div>
+  </div>
+</main>
+<script>
+'use strict';
+Promise.all([
+  fetch('api/entities').then(r=>r.json()),
+  fetch('api/circuit').then(r=>r.json()),
+]).then(([e, c])=>{
+  const s=e.service;
+  document.getElementById('svc').textContent =
+    'mna-esd-solver v'+s.version+' · '+s.runtime+'\n'
+    +'적분 격자 N='+s.grid_N+' (단일 격자 정책) · 회귀 골든 '+s.golden_checks+'건 (tests/, Python+JS 이중 러너)\n'
+    +'MNA: 미지수 '+c.mna.unknowns.length+'개 ['+c.mna.unknowns.join(', ')+'], ref='+c.mna.ref
+    +' · 행렬 크기 '+c.mna.size+', nnz '+c.mna.nnz+'\n'
+    +'해법: '+c.mna.solve_mode;
+  document.getElementById('dec').textContent = e.decisions.split(' · ').join('\n');
+  const badge={'구현':'impl','부분':'part','계획':'plan'};
+  document.getElementById('tbl').innerHTML =
+    '<tr><th>#</th><th>개체</th><th>상태</th><th>확인 위치</th><th>비고</th></tr>'
+    + e.entities.map(it=>{
+        const where = it.where.replace(/화면: ([a-z]+)( §\d)?/g, (mm,p,sec)=>'화면: <a href="'+p+'">'+p+'</a>'+(sec||''));
+        return '<tr><td>'+it.id+'</td><td>'+it.name+'</td><td><span class="b '+badge[it.status]+'">'+it.status
+          +'</span></td><td>'+where+'</td><td>'+it.note+'</td></tr>';
+      }).join('');
+}).catch(e=>{document.getElementById('svc').textContent='오류: '+e;});
+</script>
+</body>
+</html>
