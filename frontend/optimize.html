@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mna — Optimizer (v4-parity)</title>
+<style>
+  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
+  header{background:#20252b;color:#fff;padding:14px 22px}
+  header h1{margin:0;font-size:17px}
+  header a{color:#9ecbff;font-size:12px;text-decoration:none}
+  main{max-width:1280px;margin:auto;padding:16px}
+  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
+  h2{font-size:14px;margin:0 0 10px}
+  h3{font-size:12px;margin:10px 0 4px;color:#5b6673}
+  .in{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+  @media(max-width:1000px){.in{grid-template-columns:repeat(3,1fr)}}
+  .in label{font-size:11px;color:#5b6673;display:block}
+  .in input,.in select{width:100%;padding:5px;font-size:12px;box-sizing:border-box}
+  details{margin-top:8px}
+  summary{font-size:12px;color:#1f5f99;cursor:pointer}
+  button{padding:8px 18px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer;font-size:14px}
+  button:disabled{opacity:.5;cursor:wait}
+  .status{font-size:12px;color:#5b6673;margin-left:10px}
+  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  @media(max-width:1000px){.grid2,.grid3,.grid5{grid-template-columns:1fr}}
+  svg{width:100%;height:auto;display:block}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  .chip{padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700}
+  .ok{background:#e0f2e7;color:#0a7d38}.bad{background:#fbe3e1;color:#b3261e}.mid{background:#fff3d6;color:#8a6100}
+  .kv{font-size:12px;color:#5b6673;white-space:pre-line}
+  .scrub{display:flex;gap:10px;align-items:center;margin:8px 0}
+  .scrub input[type=range]{flex:1}
+  .scrub input[type=number]{width:90px;padding:5px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{border:1px solid #d9dee5;padding:4px 6px;text-align:right;white-space:nowrap}
+  th{background:#eef1f4;position:sticky;top:0}
+  td:first-child,th:first-child{text-align:left}
+  .tw{max-height:340px;overflow:auto}
+  .gauge{margin:4px 0}
+  .gauge .lbl{font-size:11px;color:#5b6673;display:flex;justify-content:space-between}
+  .bar{height:10px;background:#eef1f4;border-radius:5px;position:relative;overflow:hidden}
+  .bar i{position:absolute;top:0;bottom:0;left:0;border-radius:5px}
+  .rank .bar{height:8px}
+  .err{color:#b3261e;font-size:13px}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>PAD-to-VSS Optimizer — 측정기반 모델 + Adam sweep (v4 패리티)</h1>
+  <a href="./">← mna 홈</a>
+</header>
+<main>
+  <div class="card">
+    <h2>1. 입력</h2>
+    <h3>설계 초기조건 / 스트레스</h3>
+    <div class="in">
+      <div><label>초기 x1 (diode)</label><input id="x1init" type="number" step="any" value="2.56"></div>
+      <div><label>초기 x2 (clamp)</label><input id="x2init" type="number" step="any" value="1415.232"></div>
+      <div><label>초기 L (µm, Rvdd)</label><input id="linit" type="number" step="any" value="350"></div>
+      <div><label>Rio (Ω, 고정)</label><input id="rio" type="number" step="any" value="0.1"></div>
+      <div><label>sweep Imax (A)</label><input id="imax" type="number" step="any" value="2.0"></div>
+      <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
+    </div>
+    <h3>Victim / Rule (비대칭: min=가혹 FAIL, max=준-rule)</h3>
+    <div class="in">
+      <div><label>victim Vfail (V)</label><input id="vfail" type="number" step="any" value="4.0"></div>
+      <div><label>victim I 결합 bKI</label><input id="bKI" type="number" step="any" value="0.05"></div>
+      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.1"></div>
+      <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
+      <div><label>x1 max (cap 준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
+      <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
+      <div><label>x2 max (cap 준-rule)</label><input id="x2max" type="number" step="any" value="2628.288"></div>
+      <div><label>L min (µm, 공정)</label><input id="lmin" type="number" step="any" value="70"></div>
+      <div><label>L max (µm, EM/Joule)</label><input id="lmax" type="number" step="any" value="1400"></div>
+      <div><label>cost wA</label><input id="wA" type="number" step="any" value="1.0"></div>
+      <div><label>cost wC</label><input id="wC" type="number" step="any" value="1.0"></div>
+      <div><label>cost wL</label><input id="wL" type="number" step="any" value="0.0"></div>
+    </div>
+    <details><summary>수치 최적화 / metal SOA / cap·leak 계수</summary>
+      <div class="in" style="margin-top:8px">
+        <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
+        <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
+        <div><label>learning rate</label><input id="lr" type="number" step="any" value="0.03"></div>
+        <div><label>iterations</label><input id="iters" type="number" step="1" value="300"></div>
+        <div><label>log every</label><input id="logEvery" type="number" step="1" value="25"></div>
+        <div><label>sweep points</label><input id="npts" type="number" step="1" value="41"></div>
+        <div><label>metal Vdrop lim (V)</label><input id="rVLim" type="number" step="any" value="1.0"></div>
+        <div><label>metal EM lim (A)</label><input id="iEM" type="number" step="any" value="4.0"></div>
+        <div><label>metal Joule lim (W)</label><input id="pJoule" type="number" step="any" value="2.0"></div>
+        <div><label>resource lim</label><input id="resLim" type="number" step="any" value="4.0"></div>
+        <div><label>cap k1/lim1</label><input id="capK1" type="number" step="any" value="1.0"></div>
+        <div><label>cap lim1</label><input id="capLim1" type="number" step="any" value="8.0"></div>
+        <div><label>leak k1/lim1</label><input id="leakK1" type="number" step="any" value="0.1"></div>
+        <div><label>leak lim1</label><input id="leakLim1" type="number" step="any" value="1.0"></div>
+        <div><label>cap k2</label><input id="capK2" type="number" step="any" value="0.002"></div>
+        <div><label>cap lim2</label><input id="capLim2" type="number" step="any" value="8.0"></div>
+        <div><label>leak k2</label><input id="leakK2" type="number" step="any" value="0.0002"></div>
+        <div><label>leak lim2</label><input id="leakLim2" type="number" step="any" value="1.0"></div>
+      </div>
+    </details>
+    <div style="margin-top:10px">
+      <button id="startBtn">Start — 0→Imax sweep 최적화</button>
+      <span class="status" id="status">Ready.</span>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card" id="resultCard" hidden>
+    <h2>2. Current scrubber + Summary</h2>
+    <div class="scrub">
+      <span class="kv">I =</span>
+      <input id="islider" type="range" min="0" max="40" step="1" value="26">
+      <input id="ival" type="number" step="0.05" value="1.30"> A
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="kv" id="summary"></div>
+  </div>
+
+  <div class="card" id="radarCard" hidden>
+    <h2>3. Radar (바깥=위험, 100% 점선 경계, 200% 스케일 · ghost: 0/0.5/1/1.5/2A)</h2>
+    <div class="grid5">
+      <div id="radarInt"></div>
+      <div id="radarA"></div>
+      <div id="radarB"></div>
+      <div id="radarC"></div>
+      <div id="radarR"></div>
+    </div>
+  </div>
+
+  <div class="card" id="sweepCard" hidden>
+    <h2>4. 최종 설계값 vs current sweep</h2>
+    <div id="sweepChart"></div>
+  </div>
+
+  <div class="card" id="gaugeCard" hidden>
+    <h2>5. Constraint gauges</h2>
+    <div class="grid3" id="gauges"></div>
+  </div>
+
+  <div class="card" id="rankCard" hidden>
+    <h2>6. Constraint tightness ranking</h2>
+    <div class="rank" id="rank"></div>
+  </div>
+
+  <div class="card" id="mapCard" hidden>
+    <h2>7. V-I SOA maps (궤적 = sweep 최적해)</h2>
+    <div class="grid3">
+      <div id="mapV"></div>
+      <div id="mapD"></div>
+      <div id="mapC"></div>
+    </div>
+  </div>
+
+  <div class="card" id="iterCard" hidden>
+    <h2>8. Iteration plots (선택 전류점)</h2>
+    <div class="grid3">
+      <div id="itUsage"></div>
+      <div id="itVars"></div>
+      <div id="itLoss"></div>
+    </div>
+  </div>
+
+  <div class="card" id="tableCard" hidden>
+    <h2>9. Iteration table (최신이 위)</h2>
+    <div class="tw"><table id="itTable"></table></div>
+  </div>
+</main>
+<script>
+'use strict';
+const CB={blue:'#0072B2',orange:'#D55E00',green:'#009E73',purple:'#CC79A7',sky:'#56B4E9',gray:'#5b6673',red:'#b3261e',gold:'#E69F00'};
+let DATA=null;
+
+const P=['x1init','x2init','linit','rio','imax','warmStart','vfail','bKI','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
+function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?3:d);}
+function pct(v){return (100*v).toFixed(1)+'%';}
+
+// ---------- SVG helpers ----------
+function lineChart(el,o){
+  const W=o.w||420,H=o.h||260,mL=46,mR=10,mT=o.title?22:8,mB=30;
+  let xs=[],ys=[];
+  (o.series||[]).forEach(s=>{xs=xs.concat(s.x);ys=ys.concat(s.y);});
+  (o.hlines||[]).forEach(h=>ys.push(h.y));(o.points||[]).forEach(p=>{xs.push(p.x);ys.push(p.y);});
+  xs=xs.filter(isFinite);ys=ys.filter(isFinite);
+  let x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  if(!isFinite(x0)){el.innerHTML='';return;}
+  if(x0===x1){x0-=1;x1+=1}if(y0===y1){y0-=1;y1+=1}
+  const px=(x1-x0)*.03,py=(y1-y0)*.07;x0-=px;x1+=px;y0-=py;y1+=py;
+  const X=x=>mL+(x-x0)/(x1-x0)*(W-mL-mR),Y=y=>H-mB-(y-y0)/(y1-y0)*(H-mT-mB);
+  let s='<svg viewBox="0 0 '+W+' '+H+'">';
+  for(let i=0;i<=4;i++){const xv=x0+(x1-x0)*i/4,yv=y0+(y1-y0)*i/4;
+    s+='<line x1="'+X(xv)+'" y1="'+mT+'" x2="'+X(xv)+'" y2="'+(H-mB)+'" stroke="#eceff3"/>'
+      +'<line x1="'+mL+'" y1="'+Y(yv)+'" x2="'+(W-mR)+'" y2="'+Y(yv)+'" stroke="#eceff3"/>'
+      +'<text x="'+X(xv)+'" y="'+(H-mB+14)+'" text-anchor="middle" font-size="9" fill="#5b6673">'+fmtN(xv)+'</text>'
+      +'<text x="'+(mL-4)+'" y="'+(Y(yv)+3)+'" text-anchor="end" font-size="9" fill="#5b6673">'+fmtN(yv)+'</text>';}
+  s+='<rect x="'+mL+'" y="'+mT+'" width="'+(W-mL-mR)+'" height="'+(H-mT-mB)+'" fill="none" stroke="#c6ccd4"/>';
+  (o.hlines||[]).forEach(h=>{s+='<line x1="'+mL+'" y1="'+Y(h.y)+'" x2="'+(W-mR)+'" y2="'+Y(h.y)+'" stroke="'+(h.color||CB.red)+'" stroke-dasharray="5 4"/>';
+    if(h.label)s+='<text x="'+(W-mR-3)+'" y="'+(Y(h.y)-3)+'" text-anchor="end" font-size="9" fill="'+(h.color||CB.red)+'">'+h.label+'</text>';});
+  (o.vlines||[]).forEach(h=>{s+='<line x1="'+X(h.x)+'" y1="'+mT+'" x2="'+X(h.x)+'" y2="'+(H-mB)+'" stroke="'+(h.color||CB.gray)+'" stroke-dasharray="4 4"/>';});
+  (o.series||[]).forEach(sr=>{const pts=sr.x.map((x,i)=>X(x).toFixed(1)+','+Y(sr.y[i]).toFixed(1)).join(' ');
+    s+='<polyline points="'+pts+'" fill="none" stroke="'+sr.color+'" stroke-width="1.7"'+(sr.dash?' stroke-dasharray="5 4"':'')+'/>';});
+  (o.points||[]).forEach(p=>{s+='<circle cx="'+X(p.x)+'" cy="'+Y(p.y)+'" r="'+(p.r||3)+'" fill="'+(p.color||CB.gray)+'"/>';});
+  if(o.title)s+='<text x="'+(mL+2)+'" y="14" font-size="11" fill="#20242a">'+o.title+'</text>';
+  let lx=mL+6,ly=mT+12;
+  (o.series||[]).forEach(sr=>{if(!sr.label)return;
+    s+='<line x1="'+lx+'" y1="'+(ly-3)+'" x2="'+(lx+14)+'" y2="'+(ly-3)+'" stroke="'+sr.color+'" stroke-width="2"'+(sr.dash?' stroke-dasharray="4 3"':'')+'/>'
+      +'<text x="'+(lx+18)+'" y="'+ly+'" font-size="9" fill="#5b6673">'+sr.label+'</text>';ly+=12;});
+  el.innerHTML=s+'</svg>';
+}
+function fmtN(v){const a=Math.abs(v);if(a>=1000)return v.toFixed(0);if(a>=10)return v.toFixed(1);if(a>=.01||a===0)return(+v.toFixed(3)).toString();return v.toExponential(0);}
+
+function radar(el,title,labels,vals,ghosts){
+  const W=250,H=250,cx=W/2,cy=H/2+6,R=88,n=labels.length,MAX=2.0; // 200% scale
+  const pt=(k,v)=>{const a=-Math.PI/2+2*Math.PI*k/n,r=R*Math.min(v,MAX)/MAX;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];};
+  let s='<svg viewBox="0 0 '+W+' '+H+'">';
+  for(const g of [0.5,1.5,2.0]){const pts=labels.map((_,k)=>pt(k,g).map(v=>v.toFixed(1)).join(',')).join(' ');
+    s+='<polygon points="'+pts+'" fill="none" stroke="#eceff3"/>';}
+  {const pts=labels.map((_,k)=>pt(k,1).map(v=>v.toFixed(1)).join(',')).join(' ');
+    s+='<polygon points="'+pts+'" fill="none" stroke="'+CB.red+'" stroke-dasharray="4 3"/>';}
+  labels.forEach((lb,k)=>{const [x,y]=pt(k,MAX*1.02);const a=pt(k,MAX);
+    s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+a[0]+'" y2="'+a[1]+'" stroke="#eceff3"/>'
+      +'<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="8.5" fill="#5b6673">'+lb+'</text>';});
+  (ghosts||[]).forEach(g=>{const pts=g.vals.map((v,k)=>pt(k,v).map(q=>q.toFixed(1)).join(',')).join(' ');
+    s+='<polygon points="'+pts+'" fill="none" stroke="#b9c2cc" stroke-width="1" opacity="0.7"/>';});
+  {const pts=vals.map((v,k)=>pt(k,v).map(q=>q.toFixed(1)).join(',')).join(' ');
+    s+='<polygon points="'+pts+'" fill="'+CB.blue+'22" stroke="'+CB.blue+'" stroke-width="1.8"/>';}
+  s+='<text x="'+cx+'" y="12" text-anchor="middle" font-size="11" fill="#20242a">'+title+'</text>';
+  el.innerHTML=s+'</svg>';
+}
+function gauge(el,name,val,lim,kind){ // kind: 'upper' usage, 'window' position
+  const u=kind==='window'?val:val; const okv=kind==='window'?(val>=0&&val<=1):(val<=1);
+  const w=Math.max(0,Math.min(1,kind==='window'?val:val/2))*100; // upper: 200% scale
+  const col=okv?CB.green:CB.red;
+  el.insertAdjacentHTML('beforeend',
+    '<div class="gauge"><div class="lbl"><span>'+name+'</span><span style="color:'+(okv?'#0a7d38':'#b3261e')+'">'
+    +(kind==='window'?('pos '+pct(val)):pct(val))+' · '+(okv?'PASS':'FAIL')+'</span></div>'
+    +'<div class="bar"><i style="width:'+w+'%;background:'+col+'"></i>'
+    +(kind!=='window'?'<i style="left:50%;width:2px;background:#b3261e"></i>':'')
+    +'</div></div>');
+}
+
+// ---------- data plumbing ----------
+function collect(){const q={};P.forEach(k=>q[k]=document.getElementById(k).value);return q;}
+function start(){
+  const btn=document.getElementById('startBtn'),st=document.getElementById('status'),err=document.getElementById('err');
+  btn.disabled=true;st.textContent='서버에서 sweep 최적화 중… (테이블 기반, 수 초)';err.textContent='';
+  const q=new URLSearchParams(collect()).toString();
+  fetch('api/optimize?'+q).then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+  .then(d=>{DATA=d;
+    const n=d.sweep.length;const sl=document.getElementById('islider');
+    sl.max=n-1;sl.value=Math.min(n-1,Math.round((n-1)*1.33/d.settings.imax));
+    ['resultCard','radarCard','sweepCard','gaugeCard','rankCard','mapCard','iterCard','tableCard']
+      .forEach(id=>document.getElementById(id).hidden=false);
+    st.textContent='완료 — '+n+'개 전류점.';renderAll();
+  }).catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
+  .finally(()=>{btn.disabled=false;});
+}
+function cur(){const k=+document.getElementById('islider').value;return DATA.sweep[k];}
+
+function renderAll(){
+  const e=cur(),fin=e.final,p=DATA.settings;
+  document.getElementById('ival').value=e.I.toFixed(2);
+  // chips + summary
+  const chips=[['Overall',fin.passAll],['Victim',fin.passV],['Diode I',fin.passD],['Clamp I',fin.passC],['Metal',fin.passM],['Rule',fin.passRule]];
+  document.getElementById('chips').innerHTML=chips.map(c=>'<span class="chip '+(c[1]?'ok':'bad')+'">'+c[0]+' '+(c[1]?'PASS':'FAIL')+'</span>').join('')
+    +(fin.tier?'<span class="chip '+(fin.tier==='minimum'?'mid':'ok')+'">'+fin.tier+' (M='+f(fin.M,2)+')</span>':(fin.M!==null?'<span class="chip bad">M='+f(fin.M,2)+'</span>':''));
+  document.getElementById('summary').textContent=
+    '최적해: x1='+f(fin.x1)+', x2='+f(fin.x2,1)+', L='+f(fin.L,1)+'µm (Rvdd='+f(fin.R)+'Ω)'
+    +'\nV_IO='+f(fin.vio)+'V (worst '+f(fin.vio_w)+' / best '+f(fin.vio_b)+') = diode '+f(fin.vd)+' + clamp '+f(fin.vc)+' + R'
+    +'\nIpass='+f(fin.ipass)+'A (경로한계 '+f(fin.ifail)+'A) ≈ HBM '+f(fin.ipass/1.33,2)+'kV · cost='+f(fin.cost)+' · loss='+f(fin.loss);
+  renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);renderMaps(p);renderIter();renderTable();
+}
+function ghostSets(ax){ // ghosts at 0/0.5/1/1.5/2A
+  const gs=[];const p=DATA.settings;
+  for(const gi of [0,0.5,1.0,1.5,2.0]){
+    if(gi>p.imax)continue;
+    const k=Math.round(gi/p.imax*(DATA.sweep.length-1));
+    gs.push({vals:ax(DATA.sweep[k].final)});
+  }
+  return gs;
+}
+function renderRadars(fin){
+  const axInt=r=>[r.x1pos,r.x2pos,r.lpos,r.uV,r.uBI,r.uID,r.uIC,r.uPJ];
+  const axA=r=>[r.x1pos,r.uVD,r.uID,r.uCap1,r.uLeak1];
+  const axB=r=>[r.uV,r.uBI,r.uV];
+  const axC=r=>[r.x2pos,r.uVC,r.uIC,r.uCap2,r.uLeak2];
+  const axR=r=>[r.lpos,r.uRV,r.uEM,r.uPJ,r.uRes];
+  radar(document.getElementById('radarInt'),'Integrated',['x1','x2','L','Vic V','Vic I','D I','C I','Joule'],axInt(fin),ghostSets(axInt));
+  radar(document.getElementById('radarA'),'A: up diode',['pos','V SOA','I SOA','Cap','Leak'],axA(fin),ghostSets(axA));
+  radar(document.getElementById('radarB'),'B: victim',['V SOA','I SOA','PAD'],axB(fin),ghostSets(axB));
+  radar(document.getElementById('radarC'),'C: clamp',['pos','V SOA','I SOA','Cap','Leak'],axC(fin),ghostSets(axC));
+  radar(document.getElementById('radarR'),'R: metal(L)',['pos','Vdrop','EM','Joule','Res'],axR(fin),ghostSets(axR));
+}
+function renderSweep(){
+  const s=DATA.sweep,p=DATA.settings,e=cur();
+  lineChart(document.getElementById('sweepChart'),{w:1180,h:280,
+    series:[
+      {x:s.map(q=>q.I),y:s.map(q=>q.final.x1pos),color:CB.blue,label:'x1 pos'},
+      {x:s.map(q=>q.I),y:s.map(q=>q.final.x2pos),color:CB.orange,label:'x2 pos'},
+      {x:s.map(q=>q.I),y:s.map(q=>q.final.lpos),color:CB.green,label:'L pos'}],
+    hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4',label:'window'}],
+    points:s.map(q=>({x:q.I,y:q.final.x1pos,r:2.2,color:q.final.passAll?CB.green:CB.red}))
+      .concat([{x:e.I,y:e.final.x1pos,r:5,color:CB.blue}]),
+    vlines:[{x:e.I}]});
+}
+function renderGauges(fin,p){
+  const g=document.getElementById('gauges');g.innerHTML='<div></div><div></div><div></div>';
+  const cols=g.children;
+  gauge(cols[0],'x1 window (min=rule/max=준rule)',fin.x1pos,1,'window');
+  gauge(cols[0],'x2 window',fin.x2pos,1,'window');
+  gauge(cols[0],'L window (min=공정/max=EM)',fin.lpos,1,'window');
+  gauge(cols[1],'Victim V ('+f(fin.uV*p.vfail,2)+'/'+p.vfail+'V)',fin.uV,1);
+  gauge(cols[1],'Victim I',fin.uBI,1);
+  gauge(cols[1],'Diode I (It2='+f(fin.it2d,2)+'A)',fin.uID,1);
+  gauge(cols[1],'Clamp I (It2='+f(fin.it2c,2)+'A)',fin.uIC,1);
+  gauge(cols[2],'Metal Vdrop',fin.uRV,1);
+  gauge(cols[2],'Metal EM',fin.uEM,1);
+  gauge(cols[2],'Metal Joule',fin.uPJ,1);
+  gauge(cols[2],'Metal resource',fin.uRes,1);
+}
+function renderRank(fin){
+  const items=[['Victim V',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],['Clamp I',fin.uIC],['Clamp V',fin.uVC],
+    ['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],['Metal res',fin.uRes],
+    ['x1 pos',fin.x1pos],['x2 pos',fin.x2pos],['L pos',fin.lpos]].sort((a,b)=>b[1]-a[1]);
+  document.getElementById('rank').innerHTML=items.map(it=>{
+    const bad=it[1]>1||it[1]<0;
+    return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'+(bad?'#b3261e':'#0a7d38')+'">'+pct(it[1])+'</span></div>'
+      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'+(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:#b3261e"></i></div></div>';
+  }).join('');
+}
+function renderMaps(p){
+  const s=DATA.sweep,e=cur(),fin=e.final;
+  lineChart(document.getElementById('mapV'),{title:'Victim: V_IO vs I',w:380,h:250,
+    series:[{x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.blue,label:'sweep 궤적'}],
+    hlines:[],vlines:[{x:p.vfail,color:CB.red}],
+    points:[{x:fin.vio,y:e.I,r:5,color:fin.passV?CB.green:CB.red}]});
+  lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',w:380,h:250,
+    series:[{x:s.map(q=>q.final.vd),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
+    hlines:[{y:fin.it2d,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2d,color:CB.red}],
+    points:[{x:fin.vd,y:e.I,r:5,color:fin.passD?CB.green:CB.red},{x:fin.vt2d,y:fin.it2d,r:3.5,color:CB.gold}]});
+  lineChart(document.getElementById('mapC'),{title:'Clamp: V vs I (endpoint=Vt2,It2)',w:380,h:250,
+    series:[{x:s.map(q=>q.final.vc),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
+    hlines:[{y:fin.it2c,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2c,color:CB.red}],
+    points:[{x:fin.vc,y:e.I,r:5,color:fin.passC?CB.green:CB.red},{x:fin.vt2c,y:fin.it2c,r:3.5,color:CB.gold}]});
+}
+function renderIter(){
+  const h=cur().history;
+  lineChart(document.getElementById('itUsage'),{title:'SOA usage vs iteration',w:380,h:250,
+    series:[
+      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim V'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.orange,label:'Diode I'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:CB.green,label:'Clamp I'}],
+    hlines:[{y:1,label:'100%'}]});
+  lineChart(document.getElementById('itVars'),{title:'변수 궤적 (window 정규화)',w:380,h:250,
+    series:[
+      {x:h.map(r=>r.it),y:h.map(r=>r.x1pos),color:CB.blue,label:'x1'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.x2pos),color:CB.orange,label:'x2'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.lpos),color:CB.green,label:'L'}],
+    hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4'}]});
+  lineChart(document.getElementById('itLoss'),{title:'V_IO / cost / loss',w:380,h:250,
+    series:[
+      {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.blue,label:'V_IO'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.green,label:'cost'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.orange,label:'loss'}],
+    hlines:[{y:DATA.settings.vfail,label:'Vfail'}]});
+}
+function renderTable(){
+  const h=cur().history.slice().reverse();
+  const cols=['it','x1','x2','L','R','vio','uV','uID','uIC','uBI','cost','soaPen','rulePen','loss','passAll'];
+  document.getElementById('itTable').innerHTML=
+    '<tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>'
+    +h.map(r=>'<tr>'+cols.map(c=>{
+      const v=r[c];
+      if(typeof v==='boolean')return '<td style="color:'+(v?'#0a7d38':'#b3261e')+'">'+(v?'PASS':'FAIL')+'</td>';
+      if(c==='it')return '<td>'+v+'</td>';
+      return '<td>'+f(v,c==='x2'||c==='L'?1:3)+'</td>';
+    }).join('')+'</tr>').join('');
+}
+
+document.getElementById('startBtn').addEventListener('click',start);
+document.getElementById('islider').addEventListener('input',()=>{if(DATA)renderAll();});
+document.getElementById('ival').addEventListener('change',e=>{
+  if(!DATA)return;const p=DATA.settings,n=DATA.sweep.length;
+  const k=Math.max(0,Math.min(n-1,Math.round(+e.target.value/p.imax*(n-1))));
+  document.getElementById('islider').value=k;renderAll();
+});
+</script>
+</body>
+</html>

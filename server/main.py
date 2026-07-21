@@ -9,11 +9,12 @@ Phase 2 will grow this into the solver API. For now:
 
 Run: python -m uvicorn server.main:app --host 127.0.0.1 --port 8807  (cwd = repo root)
 """
+import json
 import os
 import subprocess
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 
 from server import model as M
@@ -37,8 +38,8 @@ def _refs():
 def meta():
     return {
         "app": "mna-esd-solver",
-        "version": "0.0.3",
-        "phase": "0 — regression baseline + display screens (models/circuit/spec/meta)",
+        "version": "0.1.0",
+        "phase": "1A(테이블)+2(직렬 optimizer) 부분 — v4-parity optimizer + display screens",
         "runtime": "python {} / fastapi".format(sys.version.split()[0]),
         "refs": _refs(),
     }
@@ -47,7 +48,7 @@ def meta():
 @app.get(PREFIX + "/api/regression")
 def regression():
     outputs, code = [], 0
-    for script in ("regression.py", "founding_benchmarks.py"):
+    for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py"):
         p = subprocess.run(
             [sys.executable, os.path.join(ROOT, "tests", script)],
             capture_output=True, text=True, cwd=ROOT, timeout=300,
@@ -329,7 +330,7 @@ def entities():
         (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
         (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
         (4, "VictimModel", PART, "화면: models §2, spec", "Vb=kV·V_IO (kV=1), Vfail=4V box"),
-        (5, "CalibrationPipeline", PLAN, "Phase 1A", "anchor 절차 코드화 + β/scale 사전계산 테이블"),
+        (5, "CalibrationPipeline", PART, "server/calibtable.py · assets/calib_table.json", "β/scale·V(I) 사전계산 테이블(48격자×2corner, rel<5e-3) 구현; anchor 절차 코드화 잔여"),
         (6, "Netlist/Topology", PART, "화면: circuit", "고정 직렬 토폴로지(노드 4+ref); 일반화는 Phase 5"),
         (7, "StressCase & ESDSpec", PART, "화면: spec", "HBM 양(+) 스트레스 1종, 1kV↔1.33A(사용자 확정)"),
         (8, "DesignVariableRegistry", PART, "api/models 422 가드", "x1/x2 + D5 ±50% 창; L 변수는 Phase 2. 창립 rule 비대칭: A/C min=가혹 FAIL(projection 금지), max=성능 준-rule, R min=공정한계/max=EM·Joule"),
@@ -339,16 +340,16 @@ def entities():
         (12, "NewtonSolver", PART, "server/model.py VofI", "직렬 fast path(1D 역산)만 구현; 일반 Newton은 Phase 4"),
         (13, "SensitivityEngine", PLAN, "Phase 3", "완전 미분 체인(β/scale/endpoint 포함) — 공식 검증 완료"),
         (14, "LossFunction", PLAN, "Phase 3", "usage 정규화 + cost 승계"),
-        (15, "Optimizer", PLAN, "Phase 3", "Adam log-공간 + continuation sweep"),
+        (15, "Optimizer", PART, "server/optimizer.py · 화면: optimize", "테이블 기반 Adam(log-공간, 수치 gradient) + warm-start sweep + I>It2 C¹ 연장 + corner 양쪽 loss. 완전 미분 체인·2단계 loss·multi-start는 Phase 3 잔여"),
         (16, "PassFailEvaluator", PART, "화면: spec, models §2", "victim/SOA 판정, corner 양쪽"),
         (17, "ResultStore", PART, "server 메모리 캐시", "직렬화·파라미터 동봉 저장은 추후"),
         (18, "TopologyEditor GUI", PLAN, "Phase 5", ""),
-        (19, "AnalysisReport GUI", PART, "화면: models, spec, circuit, meta", "화면 4종 증분 확장 중"),
+        (19, "AnalysisReport GUI", PART, "화면: optimize, models, spec, circuit, meta", "optimize 화면이 v4 패리티(radar 5종·gauge·tightness·V-I map·iteration plot/table·scrubber) 달성"),
         (20, "RegressionHarness", IMPL, "tests/ · api/regression · 홈 버튼", "골든 50건 + 창립 벤치마크(3-node MNA, 다중해 toy), Python+JS 이중 러너"),
         (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.0.4", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.1.0", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
@@ -358,9 +359,34 @@ def entities():
     }
 
 
+_opt_cache = {}
+
+
+@app.get(PREFIX + "/api/optimize")
+def optimize(request: Request):
+    """v4-parity sweep optimizer backed by the precomputed calibration table."""
+    try:
+        from server.optimizer import run_sweep
+        params = dict(request.query_params)
+        key = json.dumps(params, sort_keys=True)
+        if key not in _opt_cache:
+            if len(_opt_cache) > 16:
+                _opt_cache.clear()
+            _opt_cache[key] = run_sweep(params)
+        return _opt_cache[key]
+    except FileNotFoundError:
+        return PlainTextResponse(
+            "calibration table missing — run: python -m server.calibtable", status_code=503)
+
+
 @app.get(PREFIX + "/models")
 def models_page():
     return FileResponse(os.path.join(ROOT, "frontend", "models.html"))
+
+
+@app.get(PREFIX + "/optimize")
+def optimize_page():
+    return FileResponse(os.path.join(ROOT, "frontend", "optimize.html"))
 
 
 @app.get(PREFIX + "/circuit")
