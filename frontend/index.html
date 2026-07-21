@@ -6,12 +6,20 @@
 <title>mna — ESD design closure</title>
 <style>
   body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
-  header{background:#20252b;color:#fff;padding:18px 22px}
-  header h1{margin:0;font-size:18px}
-  header div{opacity:.75;font-size:12px;margin-top:4px}
-  main{max-width:900px;margin:auto;padding:16px}
+  header{background:#20252b;color:#fff;padding:20px 24px}
+  header h1{margin:0;font-size:19px}
+  header div{opacity:.75;font-size:12px;margin-top:5px}
+  main{max-width:1050px;margin:auto;padding:16px}
   .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
   h2{font-size:14px;margin:0 0 8px}
+  .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
+  @media(max-width:800px){.tiles{grid-template-columns:1fr}}
+  a.tile{display:block;background:#fff;border:1px solid #d9dee5;border-left:5px solid #1f5f99;
+    border-radius:8px;padding:14px 16px;text-decoration:none;color:#20242a;transition:box-shadow .15s}
+  a.tile:hover{box-shadow:0 3px 10px rgba(31,95,153,.18)}
+  a.tile .t{font-size:15px;font-weight:700;color:#1f5f99}
+  a.tile .n{font-size:11px;color:#8a94a0;float:right}
+  a.tile .d{font-size:12px;color:#5b6673;margin-top:4px;line-height:1.5}
   code,pre{background:#f3f5f7;border-radius:5px;padding:2px 5px;font-size:12px}
   pre{padding:10px;white-space:pre-wrap;margin:8px 0 0}
   ul{margin:6px 0;padding-left:20px}
@@ -26,26 +34,39 @@
 <body>
 <header data-app="mna-esd-solver">
   <h1>mna — ESD design closure (MNA / backprop)</h1>
-  <div>IO → Rio(0.1Ω) → up diode → Rvdd(0.5Ω) → clamp → VSS · Python solver + HTML frontend · Phase 0</div>
+  <div>VDD/IO/VSS 레일 · up/down diode · clamp · victim inverter(Resd 500Ω) · Python solver + HTML frontend</div>
 </header>
 <main>
+  <div class="tiles">
+    <a class="tile" href="optimize">
+      <span class="n">1</span><span class="t">Optimizer</span>
+      <div class="d">측정기반 모델 + Adam sweep(0→2A). Current scrubber, radar 5종, gauge·tightness, V-I SOA map, iteration table — v4 패리티 메인 화면</div>
+    </a>
+    <a class="tile" href="models">
+      <span class="n">2</span><span class="t">Device / Victim / SOA</span>
+      <div class="d">diode·clamp calibrated I–V(양 corner), 직렬 경로 V_IO(I)와 victim V(OUT) 곡선, SOA envelope 8종(worst/best + 측정 anchor)</div>
+    </a>
+    <a class="tile" href="circuit">
+      <span class="n">3</span><span class="t">Circuit / MNA</span>
+      <div class="d">텍스트 회로도(레일·다이오드·clamp·inverter), node/branch 표, 동작점 선형화 G 행렬(5×5)과 victim probe 수치</div>
+    </a>
+    <a class="tile" href="spec">
+      <span class="n">4</span><span class="t">ESD Spec 판정</span>
+      <div class="d">1kV↔1.33A 환산, 레벨별 PASS/FAIL(victim SOA U·I_v·소자 It2), 3단계 해(minimum/recommended/robust) 최대 통과 spec</div>
+    </a>
+    <a class="tile" href="meta">
+      <span class="n">5</span><span class="t">Meta / 개체 현황</span>
+      <div class="d">서비스·MNA 메타, 확정 결정(D1~D9+창립), 개체 21종 구현 상태와 확인 위치 — 작업물 추적의 정본</div>
+    </a>
+  </div>
+
   <div class="card">
     <h2>서비스 상태</h2>
     <div id="meta">불러오는 중…</div>
   </div>
   <div class="card">
-    <h2>화면</h2>
-    <ul>
-      <li><a href="optimize"><b>Optimizer (v4 패리티)</b></a> — 측정기반 모델 + Adam sweep, radar 5종·gauge·tightness·V-I map·iteration table</li>
-      <li><a href="models">Device / Victim / SOA 출력</a> — calibrated I–V, 직렬 경로 V_IO(I), SOA envelope 8종</li>
-      <li><a href="circuit">Circuit / MNA 행렬 메타</a> — 텍스트 회로도, node/branch, 동작점 선형화 G 행렬(4×4)</li>
-      <li><a href="spec">ESD spec 판정</a> — 1kV↔1.33A, 레벨별 PASS / FAIL victim / FAIL SOA, 최대 통과 spec</li>
-      <li><a href="meta">Meta / 개체 현황</a> — 서비스·MNA 메타, 결정 D1~D9, 개체 20종 구현 상태</li>
-    </ul>
-  </div>
-  <div class="card">
-    <h2>회귀 테스트 (tests/golden.json, 50건)</h2>
-    <button id="runBtn">python tests/regression.py 실행</button>
+    <h2>회귀 테스트 (골든 50 + 벤치마크, 러너 6종)</h2>
+    <button id="runBtn">tests/ 전체 실행</button>
     <pre id="regOut" hidden></pre>
   </div>
   <div class="card">
