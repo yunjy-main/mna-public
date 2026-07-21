@@ -33,8 +33,9 @@ def _sig(z):
 
 
 DEFAULTS = {
-    # stress / victim
-    "imax": 2.0, "npts": 41, "vfail": 4.0, "kV": 1.0, "bKI": 0.05, "bILim": 0.1,
+    # stress / victim (inverter drain via Resd; vfail = NMOS drain limit)
+    "imax": 2.0, "npts": 41, "vfail": 4.0, "resd": 500.0, "vVon": 0.7,
+    "vRonJ": 10.0, "bILim": 0.01,
     # rules (asymmetric: min = harsh, max = quasi(cap-driven))
     "x1min": 0.64, "x1max": 3.84, "x2min": 1415.232, "x2max": 2628.288,
     "lmin": 70.0, "lmax": 1400.0, "rio": 0.1,
@@ -66,15 +67,20 @@ def evaluate(tbl, p, I, x1, x2, L, it):
         vd_c[corner], vc_c[corner] = vd, vc
         vio_c[corner] = I * (p["rio"] + rvdd) + vd + vc
     vio = max(vio_c.values())  # per-metric pessimistic (D3; corner inversion)
+    # victim probe (inverter drain via Resd; PMOS tap = clamp-side VDD rail N3)
+    vnds, iv = 0.0, 0.0
+    for corner in ("worst", "best"):
+        vo, ivc = M.victim_probe(vio_c[corner], vc_c[corner], p["resd"], p["vVon"], p["vRonJ"])
+        vnds, iv = max(vnds, vo), max(iv, ivc)
     it2d = tbl.it2("diode", "worst", x1)
     it2c = tbl.it2("clamp", "worst", x2)
     vt2d = tbl.vt2("diode", "worst", x1)
     vt2c = tbl.vt2("clamp", "worst", x2)
-    uV = p["kV"] * vio / p["vfail"]
+    uV = vnds / p["vfail"] if I > 0 else 0.0
     uID, uIC = I / it2d if I > 0 else 0.0, I / it2c if I > 0 else 0.0
     uVD = vd_c["worst"] / vt2d if I > 0 else 0.0
     uVC = vc_c["worst"] / vt2c if I > 0 else 0.0
-    uBI = p["bKI"] * I / p["bILim"] if I > 0 else 0.0
+    uBI = iv / p["bILim"] if I > 0 else 0.0
     # rule usages (positions)
     x1pos = (x1 - p["x1min"]) / (p["x1max"] - p["x1min"]) if p["x1max"] > p["x1min"] else 0.0
     x2pos = (x2 - p["x2min"]) / (p["x2max"] - p["x2min"]) if p["x2max"] > p["x2min"] else 0.0
@@ -106,7 +112,7 @@ def evaluate(tbl, p, I, x1, x2, L, it):
     return {
         "it": it, "x1": x1, "x2": x2, "L": L, "R": rvdd,
         "vio": vio, "vio_w": vio_c["worst"], "vio_b": vio_c["best"],
-        "vd": vd_c["worst"], "vc": vc_c["worst"],
+        "vd": vd_c["worst"], "vc": vc_c["worst"], "vnds": vnds, "iv": iv,
         "it2d": it2d, "it2c": it2c, "vt2d": vt2d, "vt2c": vt2c,
         "uV": uV, "uID": uID, "uIC": uIC, "uBI": uBI, "uVD": uVD, "uVC": uVC,
         "uRV": uRV, "uEM": uEM, "uPJ": uPJ, "uRes": uRes,
@@ -173,19 +179,24 @@ def run_point(tbl, p, I, y0):
 
 
 def ipass_of(tbl, p, x1, x2, L):
-    """First-fail current for a fixed design (victim voltage or device It2)."""
+    """First-fail current for a fixed design (victim probe or device It2)."""
     ifail = min(tbl.it2("diode", "worst", x1), tbl.it2("clamp", "worst", x2))
     rvdd = rvdd_of(L)
 
-    def vio(i):
-        return max(i * (p["rio"] + rvdd) + tbl.vofi("diode", c, x1, i) + tbl.vofi("clamp", c, x2, i)
-                   for c in ("worst", "best"))
-    if p["kV"] * vio(ifail) <= p["vfail"]:
+    def victim_ok(i):
+        for c in ("worst", "best"):
+            vc = tbl.vofi("clamp", c, x2, i)
+            vio = i * (p["rio"] + rvdd) + tbl.vofi("diode", c, x1, i) + vc
+            vo, iv = M.victim_probe(vio, vc, p["resd"], p["vVon"], p["vRonJ"])
+            if vo > p["vfail"] or iv > p["bILim"]:
+                return False
+        return True
+    if victim_ok(ifail):
         return ifail, ifail
     lo, hi = 0.0, ifail
     for _ in range(50):
         mid = (lo + hi) / 2
-        if p["kV"] * vio(mid) <= p["vfail"]:
+        if victim_ok(mid):
             lo = mid
         else:
             hi = mid

@@ -64,11 +64,13 @@
       <div><label>sweep Imax (A)</label><input id="imax" type="number" step="any" value="2.0"></div>
       <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
     </div>
-    <h3>Victim / Rule (비대칭: min=가혹 FAIL, max=준-rule)</h3>
+    <h3>Victim: PMOS+NMOS inverter (IO ─Resd→ 공통 drain OUT) / Rule (비대칭: min=가혹 FAIL, max=준-rule)</h3>
     <div class="in">
-      <div><label>victim Vfail (V)</label><input id="vfail" type="number" step="any" value="4.0"></div>
-      <div><label>victim I 결합 bKI</label><input id="bKI" type="number" step="any" value="0.05"></div>
-      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.1"></div>
+      <div><label>NMOS drain Vfail (V)</label><input id="vfail" type="number" step="any" value="4.0"></div>
+      <div><label>Resd (Ω)</label><input id="resd" type="number" step="any" value="500"></div>
+      <div><label>접합 Von (V)</label><input id="vVon" type="number" step="any" value="0.7"></div>
+      <div><label>접합 Ron (Ω)</label><input id="vRonJ" type="number" step="any" value="10"></div>
+      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.01"></div>
       <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
       <div><label>x1 max (cap 준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
       <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
@@ -173,7 +175,7 @@
 const CB={blue:'#0072B2',orange:'#D55E00',green:'#009E73',purple:'#CC79A7',sky:'#56B4E9',gray:'#5b6673',red:'#b3261e',gold:'#E69F00'};
 let DATA=null;
 
-const P=['x1init','x2init','linit','rio','imax','warmStart','vfail','bKI','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
+const P=['x1init','x2init','linit','rio','imax','warmStart','vfail','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
 function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?3:d);}
 function pct(v){return (100*v).toFixed(1)+'%';}
 
@@ -269,6 +271,7 @@ function renderAll(){
   document.getElementById('summary').textContent=
     '최적해: x1='+f(fin.x1)+', x2='+f(fin.x2,1)+', L='+f(fin.L,1)+'µm (Rvdd='+f(fin.R)+'Ω)'
     +'\nV_IO='+f(fin.vio)+'V (worst '+f(fin.vio_w)+' / best '+f(fin.vio_b)+') = diode '+f(fin.vd)+' + clamp '+f(fin.vc)+' + R'
+    +'\nvictim: V(OUT)='+f(fin.vnds)+'V (NMOS drain, Resd 완화) · I_victim='+f(1000*fin.iv,2)+'mA'
     +'\nIpass='+f(fin.ipass)+'A (경로한계 '+f(fin.ifail)+'A) ≈ HBM '+f(fin.ipass/1.33,2)+'kV · cost='+f(fin.cost)+' · loss='+f(fin.loss);
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);renderMaps(p);renderIter();renderTable();
 }
@@ -284,7 +287,7 @@ function ghostSets(ax){ // ghosts at 0/0.5/1/1.5/2A
 function renderRadars(fin){
   const axInt=r=>[r.x1pos,r.x2pos,r.lpos,r.uV,r.uBI,r.uID,r.uIC,r.uPJ];
   const axA=r=>[r.x1pos,r.uVD,r.uID,r.uCap1,r.uLeak1];
-  const axB=r=>[r.uV,r.uBI,r.uV];
+  const axB=r=>[r.uV,r.uBI,r.vio/DATA.settings.vfail];
   const axC=r=>[r.x2pos,r.uVC,r.uIC,r.uCap2,r.uLeak2];
   const axR=r=>[r.lpos,r.uRV,r.uEM,r.uPJ,r.uRes];
   radar(document.getElementById('radarInt'),'Integrated',['x1','x2','L','Vic V','Vic I','D I','C I','Joule'],axInt(fin),ghostSets(axInt));
@@ -311,8 +314,8 @@ function renderGauges(fin,p){
   gauge(cols[0],'x1 window (min=rule/max=준rule)',fin.x1pos,1,'window');
   gauge(cols[0],'x2 window',fin.x2pos,1,'window');
   gauge(cols[0],'L window (min=공정/max=EM)',fin.lpos,1,'window');
-  gauge(cols[1],'Victim V ('+f(fin.uV*p.vfail,2)+'/'+p.vfail+'V)',fin.uV,1);
-  gauge(cols[1],'Victim I',fin.uBI,1);
+  gauge(cols[1],'Victim V(OUT) ('+f(fin.vnds,2)+'/'+p.vfail+'V)',fin.uV,1);
+  gauge(cols[1],'Victim I ('+f(1000*fin.iv,1)+'mA/'+f(1000*p.bILim,0)+'mA)',fin.uBI,1);
   gauge(cols[1],'Diode I (It2='+f(fin.it2d,2)+'A)',fin.uID,1);
   gauge(cols[1],'Clamp I (It2='+f(fin.it2c,2)+'A)',fin.uIC,1);
   gauge(cols[2],'Metal Vdrop',fin.uRV,1);
@@ -332,10 +335,11 @@ function renderRank(fin){
 }
 function renderMaps(p){
   const s=DATA.sweep,e=cur(),fin=e.final;
-  lineChart(document.getElementById('mapV'),{title:'Victim: V_IO vs I',w:380,h:250,
-    series:[{x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.blue,label:'sweep 궤적'}],
+  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) drain 스트레스 vs I',w:380,h:250,
+    series:[{x:s.map(q=>q.final.vnds),y:s.map(q=>q.I),color:CB.blue,label:'V(OUT) 궤적'},
+            {x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.gray,dash:true,label:'V_IO (참고)'}],
     hlines:[],vlines:[{x:p.vfail,color:CB.red}],
-    points:[{x:fin.vio,y:e.I,r:5,color:fin.passV?CB.green:CB.red}]});
+    points:[{x:fin.vnds,y:e.I,r:5,color:fin.passV?CB.green:CB.red}]});
   lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',w:380,h:250,
     series:[{x:s.map(q=>q.final.vd),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
     hlines:[{y:fin.it2d,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2d,color:CB.red}],
@@ -368,7 +372,7 @@ function renderIter(){
 }
 function renderTable(){
   const h=cur().history.slice().reverse();
-  const cols=['it','x1','x2','L','R','vio','uV','uID','uIC','uBI','cost','soaPen','rulePen','loss','passAll'];
+  const cols=['it','x1','x2','L','R','vio','vnds','uV','uID','uIC','uBI','cost','soaPen','rulePen','loss','passAll'];
   document.getElementById('itTable').innerHTML=
     '<tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>'
     +h.map(r=>'<tr>'+cols.map(c=>{

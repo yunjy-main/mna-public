@@ -74,12 +74,13 @@ function load(){
     let s='형식: '+m.mna.form+'\n미지수: ['+m.mna.unknowns.join(', ')+']   (ref: '+m.mna.ref+')\n'
          +'크기: '+m.mna.size+'   비영(nnz): '+m.mna.nnz+'\n해법: '+m.mna.solve_mode+'\n';
     if(m.op){
-      const g=m.op.matrix, lbl=['IO ','N1 ','N2 ','N3 '];
+      const g=m.op.matrix, lbl=m.mna.unknowns.map(u=>(u.replace(/^V\(|\)$/g,'')+'    ').slice(0,4));
       s+='\n동작점 I='+f(m.op.i,3)+'A ('+m.corner+'): V_diode='+f(m.op.v_diode,3)+'V, V_clamp='+f(m.op.v_clamp,3)
-        +'V, V_IO='+f(m.op.v_io,3)+'V\n소신호 컨덕턴스: gD='+f(m.op.gD,4)+' S, gC='+f(m.op.gC,4)
-        +' S, gRio='+f(m.op.gRio,1)+' S, gRvdd='+f(m.op.gRvdd,1)+' S\n\n'
-        +'G (4×4, S 단위)                                      b\n';
-      for(let r=0;r<4;r++){
+        +'V, V_IO='+f(m.op.v_io,3)+'V\nvictim: V(OUT)='+f(m.op.v_out,3)+'V (NMOS drain 스트레스), I_victim='+f(1000*m.op.i_victim,3)+'mA'
+        +'\n소신호 컨덕턴스: gD='+f(m.op.gD,4)+' S, gC='+f(m.op.gC,4)
+        +' S, gRio='+f(m.op.gRio,1)+' S, gRvdd='+f(m.op.gRvdd,1)+' S, gResd='+f(m.op.gResd,4)+' S, gJ='+f(m.op.gJ,3)+' S\n\n'
+        +'G ('+g.length+'×'+g.length+', S 단위)                                      b\n';
+      for(let r=0;r<g.length;r++){
         s+=lbl[r]+'[ '+g[r].map(v=>String(f(v,3)).padStart(9)).join(' ')+' ]   [ '+f(m.op.b[r],3)+' ]\n';
       }
       document.getElementById('mnaCap').textContent =

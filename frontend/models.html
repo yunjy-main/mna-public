@@ -51,7 +51,7 @@
   </div>
 
   <div class="card">
-    <h2>2. Victim — 직렬 경로 V_IO(I) vs SOA (IO→Rio 0.1Ω→diode→Rvdd 0.5Ω→clamp→VSS, Vb=kV·V_IO)</h2>
+    <h2>2. Victim — inverter drain 스트레스 V(OUT) vs SOA (victim: PMOS+NMOS inverter, IO ─Resd 500Ω→ 공통 drain OUT)</h2>
     <div id="victim"></div>
     <div class="cap" id="capVictim"></div>
   </div>
@@ -143,8 +143,10 @@ function render(m){
   svgChart(document.getElementById('victim'), {
     series:[
       {x:pw.I,y:pw.VIO,color:CB.blue,label:'worst V_IO'},
-      {x:pb.I,y:pb.VIO,color:CB.orange,dash:true,label:'best V_IO'}],
-    hlines:[{y:vf,label:'victim Vfail '+vf+'V'}],
+      {x:pb.I,y:pb.VIO,color:CB.orange,dash:true,label:'best V_IO'},
+      {x:pw.I,y:pw.VNDS,color:CB.green,label:'worst V(OUT) drain'},
+      {x:pb.I,y:pb.VNDS,color:CB.green,dash:true,label:'best V(OUT)'}],
+    hlines:[{y:vf,label:'NMOS drain Vfail '+vf+'V'}],
     points:[
       ...(pw.victim_cross_I?[{x:pw.victim_cross_I,y:vf,color:CB.blue}]:[]),
       ...(pb.victim_cross_I?[{x:pb.victim_cross_I,y:vf,color:CB.orange}]:[])],

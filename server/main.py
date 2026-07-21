@@ -48,7 +48,7 @@ def meta():
 @app.get(PREFIX + "/api/regression")
 def regression():
     outputs, code = [], 0
-    for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py"):
+    for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py", "test_victim_probe.py"):
         p = subprocess.run(
             [sys.executable, os.path.join(ROOT, "tests", script)],
             capture_output=True, text=True, cwd=ROOT, timeout=300,
@@ -59,7 +59,9 @@ def regression():
 
 
 A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
-VICTIM = {"kV": 1.0, "vfail": 4.0}
+# victim = PMOS+NMOS inverter, drain node via Resd from IO (user-fixed topology)
+VICTIM = {"vfail": 4.0, "ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0}
+NAMED_SPEC_KV = 1.0  # the named ESD spec level (1 kV <-> 1.33 A)
 
 _models_cache = {}
 _calib_cache = {}
@@ -100,15 +102,26 @@ def _GofI(br, i):
     return G[lo] + f * (G[hi] - G[lo])
 
 
+def _victim_probe_at(c1, c2, i):
+    """Inverter victim probe on the solved series path: (v_nds, i_v)."""
+    vc = M.VofI(c2["pos"], i)
+    vio = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
+    return M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+
+
 def _victim_cross(c1, c2, vfail):
-    """Bisect the smallest I where V_IO(I) = vfail (None if never reached)."""
+    """Bisect the smallest I where the victim probe fails (None if never)."""
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
-    if M.series_vio(c1, c2, ifail) < vfail:
+
+    def ok(i):
+        v, iv = _victim_probe_at(c1, c2, i)
+        return v <= vfail and iv <= VICTIM["ifail"]
+    if ok(ifail):
         return None, ifail
     lo, hi = 0.0, ifail
     for _ in range(60):
         mid = (lo + hi) / 2
-        if M.series_vio(c1, c2, mid) < vfail:
+        if ok(mid):
             lo = mid
         else:
             hi = mid
@@ -181,16 +194,24 @@ def models(x1: float = 2.56, x2: float = 1415.232):
         ifail = min(c1["e"]["ip"], c2["e"]["ip"])
         limiter = "diode" if c1["e"]["ip"] < c2["e"]["ip"] else "clamp"
         Is = [ifail * 0.999 * i / 59.0 for i in range(60)]
-        vios = [M.series_vio(c1, c2, i) for i in Is]
+        vios, vnds_l, iv_l = [], [], []
+        for i in Is:
+            vc = M.VofI(c2["pos"], i)
+            vio_i = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
+            vo, iv = M.victim_probe(vio_i, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+            vios.append(vio_i)
+            vnds_l.append(vo)
+            iv_l.append(iv)
         vfail = out["victim"]["vfail"]
         icross = None
         for a, b in zip(range(59), range(1, 60)):
-            if (vios[a] - vfail) * (vios[b] - vfail) <= 0 and vios[a] != vios[b]:
-                icross = Is[a] + (vfail - vios[a]) * (Is[b] - Is[a]) / (vios[b] - vios[a])
+            if (vnds_l[a] - vfail) * (vnds_l[b] - vfail) <= 0 and vnds_l[a] != vnds_l[b]:
+                icross = Is[a] + (vfail - vnds_l[a]) * (Is[b] - Is[a]) / (vnds_l[b] - vnds_l[a])
                 break
         out["path"][corner] = {
-            "I": Is, "VIO": vios, "Ifail": ifail, "limiter": limiter,
-            "hbm_kv": ifail * 1.5, "victim_cross_I": icross,
+            "I": Is, "VIO": vios, "VNDS": vnds_l, "IV": iv_l,
+            "Ifail": ifail, "limiter": limiter,
+            "hbm_kv": ifail / A_PER_KV, "victim_cross_I": icross,
         }
 
     _models_cache[key] = out
@@ -210,55 +231,72 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
     op = None
     if 0 <= i <= ifail:
         v1, v2 = M.VofI(c1["pos"], i), M.VofI(c2["pos"], i)
+        vio_v = i * (M.RIO + M.RVDD) + v1 + v2
+        vout, iv = M.victim_probe(vio_v, v2, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
         gD, gC = _GofI(c1["pos"], i), _GofI(c2["pos"], i)
         gRio, gRvdd = 1 / M.RIO, 1 / M.RVDD
+        gRe = 1.0 / VICTIM["resd"]
+        gJ = (1.0 / VICTIM["ronj"]) if iv > 0 else 0.0  # PMOS drain junction (on/off)
         matrix = [
-            [gRio, -gRio, 0, 0],
-            [-gRio, gRio + gD, -gD, 0],
-            [0, -gD, gD + gRvdd, -gRvdd],
-            [0, 0, -gRvdd, gRvdd + gC],
+            [gRio + gRe, -gRio, 0, 0, -gRe],
+            [-gRio, gRio + gD, -gD, 0, 0],
+            [0, -gD, gD + gRvdd, -gRvdd, 0],
+            [0, 0, -gRvdd, gRvdd + gC + gJ, -gJ],
+            [-gRe, 0, 0, -gJ, gRe + gJ],
         ]
-        op = {"i": i, "v_diode": v1, "v_clamp": v2,
-              "v_io": i * (M.RIO + M.RVDD) + v1 + v2,
+        op = {"i": i, "v_diode": v1, "v_clamp": v2, "v_io": vio_v,
+              "v_out": vout, "i_victim": iv,
               "gD": gD, "gC": gC, "gRio": gRio, "gRvdd": gRvdd,
-              "matrix": matrix, "b": [i, 0, 0, 0]}
+              "gResd": gRe, "gJ": gJ,
+              "matrix": matrix, "b": [i, 0, 0, 0, 0]}
     ascii_lines = [
-        "        Rio 0.1Ω(≈70µm)     D_up: diode(x1)     Rvdd 0.5Ω(≈350µm)",
-        " IO ○──────/\\/\\/\\──────○ N1 ─────────▶|───────── ○ N2 ──────/\\/\\/\\────── ○ N3",
-        "  │                                                                        │",
-        " (I_ESD ↑ spec 주입)                                                  Clamp(x2)",
-        "  │                                                                        │",
-        " VSS ○─────────────────────────────────────────────────────────────────────○",
-        "  ┆",
-        "  └╌╌╌▶|╌╌╌ D_down = model1 미러 (IO←VSS, 음(−) 스트레스 담당 — D2 결정, Phase 2에서 경로 계산 반영)",
+        " VDD ○────────○ N2 ────────/\\/\\/\\ Rvdd 0.5Ω(≈350µm) ──────── ○ N3 ─────────○ VDD",
+        "              ▲                                               │        ┌────┴─┐",
+        "           D_up(x1)                                       Clamp(x2)    │ PMOS │ (source→VDD)",
+        "              │                                               │        └──┬───┘ drain",
+        "  IO ○──/\\/\\ Rio 0.1Ω ──○ N1                                  │           │",
+        "   │          │                                               │   OUT ○───┤ ← Resd 500Ω ─── IO",
+        "  (I_ESD ↑)   ▼                                               │        ┌──┴───┐ drain",
+        "           D_down(x1 미러, D2)                                 │        │ NMOS │ (source→VSS)",
+        "              │                                               │        └──┬───┘",
+        " VSS ○────────○─────────────────────────────────────────────○─────────────○ VSS (ref)",
         "",
+        " victim = PMOS+NMOS inverter: IO ─Resd(500Ω)→ OUT(공통 drain). NMOS drain 스트레스 = V(OUT).",
+        " 양(+) 스트레스: IO→D_up→VDD rail→Clamp→VSS 가 주 경로, OUT은 PMOS drain 접합 순방향으로 완화.",
+        " 음(−) 스트레스: IO→D_down 경로 (모델은 model1 미러 — D2).",
         " 금속 규칙: 0.5Ω / 350µm (L만 설계변수, W 고정 — D7)",
     ]
     return {
         "ascii": ascii_lines,
         "x1": x1, "x2": x2, "corner": corner,
         "nodes": [
-            {"name": "IO", "role": "stress 주입 node (current source)"},
-            {"name": "N1", "role": "Rio–D_up 사이"},
-            {"name": "N2", "role": "D_up–Rvdd 사이 (VDD rail 시작)"},
-            {"name": "N3", "role": "Rvdd–Clamp 사이 (VDD rail 끝)"},
+            {"name": "IO", "role": "PAD — stress 주입 node (current source)"},
+            {"name": "N1", "role": "Rio 뒤 diode tap (D_up anode / D_down cathode)"},
+            {"name": "N2", "role": "VDD rail — D_up cathode tap"},
+            {"name": "N3", "role": "VDD rail — Clamp tap (victim PMOS source 인접)"},
+            {"name": "OUT", "role": "victim inverter 공통 drain (IO에서 Resd 경유)"},
             {"name": "VSS", "role": "기준(ref) node — MNA 미지수에서 제외"},
         ],
         "branches": [
             {"name": "I_ESD", "type": "current source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
             {"name": "Rio", "type": "resistor", "nodes": "IO–N1", "param": "0.1Ω (≈70µm)"},
-            {"name": "D_up", "type": "nonlinear (model1 diode)", "nodes": "N1–N2", "param": "x1={}".format(x1)},
-            {"name": "Rvdd", "type": "resistor", "nodes": "N2–N3", "param": "0.5Ω (≈350µm)"},
+            {"name": "D_up", "type": "nonlinear (model1 diode)", "nodes": "N1→N2", "param": "x1={}".format(x1)},
+            {"name": "D_down", "type": "nonlinear (model1 미러, D2)", "nodes": "VSS→N1", "param": "x1 미러 — 음(−) 스트레스 경로"},
+            {"name": "Rvdd", "type": "resistor", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), L 변수(D7)"},
             {"name": "Clamp", "type": "nonlinear (model2 clamp)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
-            {"name": "D_down", "type": "nonlinear (model1 미러)", "nodes": "VSS→IO", "param": "Phase 2 반영 예정"},
+            {"name": "Resd", "type": "resistor", "nodes": "IO–OUT", "param": "500Ω (victim 보호 직렬 저항)"},
+            {"name": "PMOS drain 접합", "type": "junction (Von 0.7 + Ron 10Ω)", "nodes": "OUT→N3", "param": "양(+) 스트레스 시 순방향 — victim 전류 경로"},
+            {"name": "NMOS drain 접합", "type": "junction (off < Vfail)", "nodes": "OUT→VSS", "param": "스트레스 지표: V(OUT) ≤ {}V".format(VICTIM["vfail"])},
         ],
         "mna": {
-            "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)"],
-            "ref": "VSS", "size": "4×4", "nnz": "10 / 16 (tridiagonal)",
+            "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(OUT)"],
+            "ref": "VSS", "size": "5×5", "nnz": "17 / 25",
             "form": "G(v)·Δv = −F(v)  (Newton 일반형, Phase 4)",
-            "solve_mode": "현재: 전류구동 직렬 경로 → V(I) 1D 역산 합성 (Newton 불필요, 검증된 fast path)",
+            "solve_mode": "현재: 주 경로는 전류구동 1D 역산, victim은 지배경로 근사 post-process probe "
+                          "(Resd 500Ω ≫ 경로 저항이라 victim 전류 mA급 — 주 경로 교란 없음)",
         },
         "op": op, "ifail": ifail,
+        "victim": dict(VICTIM),
     }
 
 
@@ -300,7 +338,7 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
     }
     for kv in (0.5, 1.0, 1.5, 2.0, 3.0, 4.0):
         i = A_PER_KV * kv
-        row = {"kv": kv, "i": i, "named_spec": kv == VICTIM["kV"], "corners": {}}
+        row = {"kv": kv, "i": i, "named_spec": kv == NAMED_SPEC_KV, "corners": {}}
         for corner in ("worst", "best"):
             c1, c2 = cs[corner]
             ifail = min(c1["e"]["ip"], c2["e"]["ip"])
@@ -312,10 +350,12 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
                                           "note": "I > It2 (경로 파괴, Ifail={:.3f}A)".format(ifail)}
             else:
                 v = M.series_vio(c1, c2, i)
-                ok = v <= VICTIM["vfail"]
+                vnds, iv = _victim_probe_at(c1, c2, i)
+                ok = vnds <= VICTIM["vfail"] and iv <= VICTIM["ifail"]
                 row["corners"][corner] = {"status": "PASS" if ok else "FAIL_VICTIM", "vio": v,
+                                          "vnds": vnds, "iv": iv,
                                           "m": mm, "tier": tier,
-                                          "margin": VICTIM["vfail"] - v,
+                                          "margin": VICTIM["vfail"] - vnds,
                                           "usage_diode": i / c1["e"]["ip"], "usage_clamp": i / c2["e"]["ip"]}
         out["levels"].append(row)
     return out

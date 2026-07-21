@@ -175,3 +175,20 @@ RIO, RVDD = 0.1, 0.5
 
 def series_vio(c1, c2, I, rio=RIO, rvdd=RVDD):
     return I * (rio + rvdd) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
+
+
+# --- victim probe: PMOS+NMOS inverter, drain node OUT reached from IO via Resd.
+# Positive stress, dominant-path post-process (Resd=500 >> path R, victim current
+# is mA-scale so it does not disturb the main path solve).
+#   IO --Resd--> OUT ; PMOS drain-bulk junction OUT -> VDD_local (forward when
+#   V_OUT > VDD_local + Von) ; NMOS drain junction OUT -> VSS (off below BV).
+# NMOS drain stress = V_OUT - VSS_local(=0) ; victim current = (V_IO - V_OUT)/Resd.
+VICTIM_RESD, VICTIM_VON, VICTIM_RONJ = 500.0, 0.7, 10.0
+
+
+def victim_probe(vio, vdd_local, resd=VICTIM_RESD, von=VICTIM_VON, ronj=VICTIM_RONJ):
+    """Return (v_out, i_v). Junction off -> v_out = vio, i_v = 0."""
+    if vio - vdd_local - von <= 0:
+        return vio, 0.0
+    v_out = (ronj * vio + resd * (vdd_local + von)) / (ronj + resd)
+    return v_out, (vio - v_out) / resd
