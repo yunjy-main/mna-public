@@ -9,10 +9,16 @@ JS 러너는 언어 간 등가성 증인으로 유지 — 두 러너가 같은 g
 ## 실행
 
 ```
-python tests/regression.py          # 주 러너: golden.json 대비 검사 (PASS/FAIL, exit code)
-node tests/regression.js            # 교차검증 러너 (동일 golden.json)
-python tests/regression.py --emit   # golden.json 재생성 (모델 의도 변경 시에만)
+python tests/regression.py            # 주 러너: golden.json 대비 검사 (PASS/FAIL, exit code)
+node tests/regression.js              # 교차검증 러너 (동일 golden.json)
+python tests/founding_benchmarks.py   # 창립 해석 벤치마크 (3-node MNA + 다중해 toy, 20건)
+python tests/regression.py --emit     # golden.json 재생성 (모델 의도 변경 시에만)
 ```
+
+`tests/regression.py`는 `server/model.py`를 import하므로 골든이 서빙 모델 그 자체를 검증한다.
+`founding_benchmarks.py`는 창립 대화의 손검증 값(3-node V_P=3.9V, ∂V_P/∂g=−0.25/−0.04/−1.0;
+A+C+W=10 toy의 global 정수해 3개·rounding trap·local trap·KKT 연속해)을 고정한다 —
+Phase 3(gradient)·Phase 4(MNA) 구현의 검증 앵커.
 
 ## 커버리지 (50개 골든 항목)
 

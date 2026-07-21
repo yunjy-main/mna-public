@@ -46,11 +46,15 @@ def meta():
 
 @app.get(PREFIX + "/api/regression")
 def regression():
-    p = subprocess.run(
-        [sys.executable, os.path.join(ROOT, "tests", "regression.py")],
-        capture_output=True, text=True, cwd=ROOT, timeout=300,
-    )
-    return {"exit": p.returncode, "output": (p.stdout + p.stderr).strip()}
+    outputs, code = [], 0
+    for script in ("regression.py", "founding_benchmarks.py"):
+        p = subprocess.run(
+            [sys.executable, os.path.join(ROOT, "tests", script)],
+            capture_output=True, text=True, cwd=ROOT, timeout=300,
+        )
+        outputs.append("[{}] {}".format(script, (p.stdout + p.stderr).strip()))
+        code = code or p.returncode
+    return {"exit": code, "output": "\n".join(outputs)}
 
 
 A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
@@ -264,32 +268,52 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
     if err:
         return err
     out = {"a_per_kv": A_PER_KV, "victim": dict(VICTIM), "x1": x1, "x2": x2,
-           "rio": M.RIO, "rvdd": M.RVDD, "levels": [], "summary": {}}
-    cs = {}
+           "rio": M.RIO, "rvdd": M.RVDD,
+           "tiers": {"minimum": 1.0, "recommended": 1.2, "robust": 1.5},
+           "levels": [], "summary": {}}
+    cs, ipass = {}, {}
     for corner in ("worst", "best"):
         c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
         cross, ifail = _victim_cross(c1, c2, VICTIM["vfail"])
         cs[corner] = (c1, c2)
+        ip = cross if cross is not None else ifail  # first-fail current (victim or device SOA)
+        ipass[corner] = ip
         out["summary"][corner] = {
             "ifail": ifail,
             "limiter": "diode" if c1["e"]["ip"] < c2["e"]["ip"] else "clamp",
             "victim_cross_I": cross,
-            "max_kv_victim": (cross if cross is not None else ifail) / A_PER_KV,
+            "ipass": ip,
+            "max_kv_victim": ip / A_PER_KV,
             "max_kv_soa": ifail / A_PER_KV,
+            # 3-tier solution system (founding spec): M = Ipass / I_target
+            "kv_minimum": ip / (1.0 * A_PER_KV),
+            "kv_recommended": ip / (1.2 * A_PER_KV),
         }
+    # robust tier: worst corner with M >= 1.5 (founding spec: worst-condition pass)
+    ip_overall = min(ipass["worst"], ipass["best"])
+    out["summary"]["overall"] = {
+        "ipass": ip_overall,
+        "kv_minimum": ip_overall / (1.0 * A_PER_KV),
+        "kv_recommended": ip_overall / (1.2 * A_PER_KV),
+        "kv_robust": ip_overall / (1.5 * A_PER_KV),
+    }
     for kv in (0.5, 1.0, 1.5, 2.0, 3.0, 4.0):
         i = A_PER_KV * kv
         row = {"kv": kv, "i": i, "named_spec": kv == VICTIM["kV"], "corners": {}}
         for corner in ("worst", "best"):
             c1, c2 = cs[corner]
             ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+            mm = ipass[corner] / i  # margin ratio M for this level
+            tier = ("robust" if mm >= 1.5 else "recommended" if mm >= 1.2
+                    else "minimum" if mm >= 1.0 else None)
             if i > ifail:
-                row["corners"][corner] = {"status": "FAIL_SOA", "vio": None,
+                row["corners"][corner] = {"status": "FAIL_SOA", "vio": None, "m": mm, "tier": tier,
                                           "note": "I > It2 (경로 파괴, Ifail={:.3f}A)".format(ifail)}
             else:
                 v = M.series_vio(c1, c2, i)
                 ok = v <= VICTIM["vfail"]
                 row["corners"][corner] = {"status": "PASS" if ok else "FAIL_VICTIM", "vio": v,
+                                          "m": mm, "tier": tier,
                                           "margin": VICTIM["vfail"] - v,
                                           "usage_diode": i / c1["e"]["ip"], "usage_clamp": i / c2["e"]["ip"]}
         out["levels"].append(row)
@@ -302,13 +326,13 @@ def entities():
     IMPL, PART, PLAN = "구현", "부분", "계획"
     items = [
         (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증"),
-        (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3", "envelope 8종+양 corner 평가(D3)+±50% 창(D5); curve-endpoint 규약 문서화 예정"),
+        (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
         (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
         (4, "VictimModel", PART, "화면: models §2, spec", "Vb=kV·V_IO (kV=1), Vfail=4V box"),
         (5, "CalibrationPipeline", PLAN, "Phase 1A", "anchor 절차 코드화 + β/scale 사전계산 테이블"),
         (6, "Netlist/Topology", PART, "화면: circuit", "고정 직렬 토폴로지(노드 4+ref); 일반화는 Phase 5"),
         (7, "StressCase & ESDSpec", PART, "화면: spec", "HBM 양(+) 스트레스 1종, 1kV↔1.33A(사용자 확정)"),
-        (8, "DesignVariableRegistry", PART, "api/models 422 가드", "x1/x2 + D5 ±50% 창; L 변수는 Phase 2"),
+        (8, "DesignVariableRegistry", PART, "api/models 422 가드", "x1/x2 + D5 ±50% 창; L 변수는 Phase 2. 창립 rule 비대칭: A/C min=가혹 FAIL(projection 금지), max=성능 준-rule, R min=공정한계/max=EM·Joule"),
         (9, "ProblemSchema (JSON/YAML)", PLAN, "Phase 1A~", "GUI↔solver 경계 계약"),
         (10, "TopologyCompiler", PLAN, "Phase 5", "flatten + hierarchy + Top Cell SOA 집계"),
         (11, "MNAAssembler", PART, "화면: circuit (심볼릭+수치 G 미리보기)", "실제 조립/solve는 Phase 4"),
@@ -320,13 +344,15 @@ def entities():
         (17, "ResultStore", PART, "server 메모리 캐시", "직렬화·파라미터 동봉 저장은 추후"),
         (18, "TopologyEditor GUI", PLAN, "Phase 5", ""),
         (19, "AnalysisReport GUI", PART, "화면: models, spec, circuit, meta", "화면 4종 증분 확장 중"),
-        (20, "RegressionHarness", IMPL, "tests/ · api/regression · 홈 버튼", "골든 50건, Python+JS 이중 러너"),
+        (20, "RegressionHarness", IMPL, "tests/ · api/regression · 홈 버튼", "골든 50건 + 창립 벤치마크(3-node MNA, 다중해 toy), Python+JS 이중 러너"),
+        (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.0.3", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.0.4", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
-                     "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A",
+                     "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
+                     "창립: rule 비대칭 · 3단계 해(M 1.0/1.2/1.5) · Top Cell port SOA · 2단계 loss · ground 명시",
         "entities": [{"id": i, "name": n, "status": s, "where": w, "note": t}
                      for i, n, s, w, t in items],
     }

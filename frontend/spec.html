@@ -57,12 +57,19 @@
 <script>
 'use strict';
 function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?3:d);}
+function tierBadge(c){
+  const m='M='+f(c.m,2);
+  if(c.tier==='robust') return '<span class="pass">'+m+' robust</span>';
+  if(c.tier==='recommended') return '<span class="pass">'+m+' recommended</span>';
+  if(c.tier==='minimum') return '<span style="color:#8a6100;font-weight:700">'+m+' minimum</span>';
+  return '<span class="failv">'+m+'</span>';
+}
 function cell(c){
-  if(c.status==='FAIL_SOA') return '<td class="fails">FAIL SOA</td><td>—</td><td>'+c.note+'</td>';
+  if(c.status==='FAIL_SOA') return '<td class="fails">FAIL SOA</td><td>—</td><td>'+tierBadge(c)+' · '+c.note+'</td>';
   const cls=c.status==='PASS'?'pass':'failv';
   const lbl=c.status==='PASS'?'PASS':'FAIL victim';
-  return '<td class="'+cls+'">'+lbl+'</td><td>'+f(c.vio)+' V</td><td>margin '+f(c.margin)
-        +' V · usage diode '+ (c.usage_diode*100).toFixed(1)+'% / clamp '+(c.usage_clamp*100).toFixed(1)+'%</td>';
+  return '<td class="'+cls+'">'+lbl+'</td><td>'+f(c.vio)+' V</td><td>'+tierBadge(c)
+        +' · margin '+f(c.margin)+' V · usage diode '+ (c.usage_diode*100).toFixed(1)+'% / clamp '+(c.usage_clamp*100).toFixed(1)+'%</td>';
 }
 function load(){
   const err=document.getElementById('err'); err.textContent='';
@@ -78,12 +85,17 @@ function load(){
     const s=m.summary, lines=[];
     for(const c of ['worst','best']){
       const u=s[c];
-      lines.push(c+': victim 기준 최대 '+f(u.max_kv_victim,3)+' kV ('+f(u.max_kv_victim*m.a_per_kv,3)+' A)'
-        +' · 소자 파괴 기준 최대 '+f(u.max_kv_soa,3)+' kV (Ifail='+f(u.ifail,3)+' A, '+u.limiter+' 병목)');
+      lines.push(c+': first-fail Ipass='+f(u.ipass,3)+' A · victim 기준 최대 '+f(u.max_kv_victim,3)+' kV'
+        +' · 소자 파괴 기준 최대 '+f(u.max_kv_soa,3)+' kV (Ifail='+f(u.ifail,3)+' A, '+u.limiter+' 한계)');
     }
-    const worstOf=Math.min(s.worst.max_kv_victim, s.best.max_kv_victim);
-    lines.push('\n종합(양 corner 비관값): 이 설계는 최대 '+f(worstOf,3)+' kV까지 victim-PASS — 1kV spec은 '
-      +(worstOf>=1?'만족 ✓':'불만족 ✗'));
+    const o=s.overall;
+    lines.push('\n3단계 해 체계(창립 스펙, 양 corner 비관값 Ipass='+f(o.ipass,3)+' A):');
+    lines.push('  minimum (M≥1.0)     : 최대 '+f(o.kv_minimum,3)+' kV — 간신히 pass');
+    lines.push('  recommended (M≥1.2): 최대 '+f(o.kv_recommended,3)+' kV — PDK rule 채택점');
+    lines.push('  robust (M≥1.5)      : 최대 '+f(o.kv_robust,3)+' kV — 최악 조건 여유');
+    lines.push('\n1 kV spec 판정: minimum '+(o.kv_minimum>=1?'만족 ✓':'불만족 ✗')
+      +' · recommended '+(o.kv_recommended>=1?'만족 ✓':'불만족 ✗')
+      +' · robust '+(o.kv_robust>=1?'만족 ✓':'불만족 ✗'));
     document.getElementById('summary').textContent=lines.join('\n');
   }).catch(e=>{err.textContent=String(e.message||e);});
 }
