@@ -13,6 +13,7 @@ metal length, D7: W fixed, R = 0.5 * L / 350um). Loss follows v4's structure
 import math
 
 from server import model as M
+from server import victim_soa as VS
 from server.calibtable import get_table
 
 SP_BETA = 30.0
@@ -33,9 +34,10 @@ def _sig(z):
 
 
 DEFAULTS = {
-    # stress / victim (inverter drain via Resd; vfail = NMOS drain limit)
-    "imax": 2.0, "npts": 41, "vfail": 4.0, "resd": 500.0, "vVon": 0.7,
-    "vRonJ": 10.0, "bILim": 0.01,
+    # stress / victim (inverter drain via Resd; SOA from docs/victim_soa_model.html
+    # — user-selected SG NFET + SG PFET, 1stk_1rx)
+    "imax": 2.0, "npts": 41, "resd": 500.0, "vVon": 0.7,
+    "vRonJ": 10.0, "bILim": 0.01, "vTopo": "1stk_1rx", "vgIn": 0.0,
     # rules (asymmetric: min = harsh, max = quasi(cap-driven))
     "x1min": 0.64, "x1max": 3.84, "x2min": 1415.232, "x2max": 2628.288,
     "lmin": 70.0, "lmax": 1400.0, "rio": 0.1,
@@ -67,16 +69,19 @@ def evaluate(tbl, p, I, x1, x2, L, it):
         vd_c[corner], vc_c[corner] = vd, vc
         vio_c[corner] = I * (p["rio"] + rvdd) + vd + vc
     vio = max(vio_c.values())  # per-metric pessimistic (D3; corner inversion)
-    # victim probe (inverter drain via Resd; PMOS tap = clamp-side VDD rail N3)
-    vnds, iv = 0.0, 0.0
+    # victim probe + SOA (inverter drain via Resd; SG NFET/PFET, user-set topology)
+    vnds, iv, soa = 0.0, 0.0, None
     for corner in ("worst", "best"):
         vo, ivc = M.victim_probe(vio_c[corner], vc_c[corner], p["resd"], p["vVon"], p["vRonJ"])
+        s = VS.inverter_victim(vo, vc_c[corner], p["vgIn"], topology=p["vTopo"])
+        if soa is None or s["u"] > soa["u"]:
+            soa = s
         vnds, iv = max(vnds, vo), max(iv, ivc)
     it2d = tbl.it2("diode", "worst", x1)
     it2c = tbl.it2("clamp", "worst", x2)
     vt2d = tbl.vt2("diode", "worst", x1)
     vt2c = tbl.vt2("clamp", "worst", x2)
-    uV = vnds / p["vfail"] if I > 0 else 0.0
+    uV = soa["u"] if I > 0 else 0.0
     uID, uIC = I / it2d if I > 0 else 0.0, I / it2c if I > 0 else 0.0
     uVD = vd_c["worst"] / vt2d if I > 0 else 0.0
     uVC = vc_c["worst"] / vt2c if I > 0 else 0.0
@@ -113,6 +118,10 @@ def evaluate(tbl, p, I, x1, x2, L, it):
         "it": it, "x1": x1, "x2": x2, "L": L, "R": rvdd,
         "vio": vio, "vio_w": vio_c["worst"], "vio_b": vio_c["best"],
         "vd": vd_c["worst"], "vc": vc_c["worst"], "vnds": vnds, "iv": iv,
+        "vWorst": soa["worst"] if I > 0 else "-",
+        "uVNt": soa["uN_term"] if I > 0 else 0.0, "uVNo": soa["uN_ox"] if I > 0 else 0.0,
+        "uVPt": soa["uP_term"] if I > 0 else 0.0, "uVPo": soa["uP_ox"] if I > 0 else 0.0,
+        "limNterm": soa["limN_term"], "limPterm": soa["limP_term"],
         "it2d": it2d, "it2c": it2c, "vt2d": vt2d, "vt2c": vt2c,
         "uV": uV, "uID": uID, "uIC": uIC, "uBI": uBI, "uVD": uVD, "uVC": uVC,
         "uRV": uRV, "uEM": uEM, "uPJ": uPJ, "uRes": uRes,
@@ -179,7 +188,7 @@ def run_point(tbl, p, I, y0):
 
 
 def ipass_of(tbl, p, x1, x2, L):
-    """First-fail current for a fixed design (victim probe or device It2)."""
+    """First-fail current for a fixed design (victim SOA/current or device It2)."""
     ifail = min(tbl.it2("diode", "worst", x1), tbl.it2("clamp", "worst", x2))
     rvdd = rvdd_of(L)
 
@@ -188,7 +197,8 @@ def ipass_of(tbl, p, x1, x2, L):
             vc = tbl.vofi("clamp", c, x2, i)
             vio = i * (p["rio"] + rvdd) + tbl.vofi("diode", c, x1, i) + vc
             vo, iv = M.victim_probe(vio, vc, p["resd"], p["vVon"], p["vRonJ"])
-            if vo > p["vfail"] or iv > p["bILim"]:
+            s = VS.inverter_victim(vo, vc, p["vgIn"], topology=p["vTopo"])
+            if s["u"] >= 1.0 or iv > p["bILim"]:
                 return False
         return True
     if victim_ok(ifail):
@@ -208,6 +218,8 @@ def run_sweep(params):
     for k, val in (params or {}).items():
         if k in p:
             p[k] = type(p[k])(val)
+    if p["vTopo"] not in VS.TOPOLOGIES:
+        p["vTopo"] = "1stk_1rx"
     tbl = get_table()
     n = int(p["npts"])
     y = [math.log(p["x1init"]), math.log(p["x2init"]), math.log(p["linit"])]

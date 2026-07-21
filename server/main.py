@@ -18,6 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 
 from server import model as M
+from server import victim_soa as VS
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREFIX = "/apps/mna"
@@ -38,7 +39,7 @@ def _refs():
 def meta():
     return {
         "app": "mna-esd-solver",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "phase": "1A(테이블)+2(직렬 optimizer) 부분 — v4-parity optimizer + display screens",
         "runtime": "python {} / fastapi".format(sys.version.split()[0]),
         "refs": _refs(),
@@ -48,7 +49,8 @@ def meta():
 @app.get(PREFIX + "/api/regression")
 def regression():
     outputs, code = [], 0
-    for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py", "test_victim_probe.py"):
+    for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py",
+                   "test_victim_probe.py", "test_victim_soa.py"):
         p = subprocess.run(
             [sys.executable, os.path.join(ROOT, "tests", script)],
             capture_output=True, text=True, cwd=ROOT, timeout=300,
@@ -59,9 +61,16 @@ def regression():
 
 
 A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
-# victim = PMOS+NMOS inverter, drain node via Resd from IO (user-fixed topology)
-VICTIM = {"vfail": 4.0, "ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0}
+# victim = PMOS+NMOS inverter, drain node via Resd from IO (user-fixed topology).
+# SOA from docs/victim_soa_model.html — user-selected SG NFET + SG PFET, 1stk_1rx.
+VICTIM = {"ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0,
+          "nmos": "SG_NFET", "pmos": "SG_PFET", "topology": "1stk_1rx", "vg": 0.0}
 NAMED_SPEC_KV = 1.0  # the named ESD spec level (1 kV <-> 1.33 A)
+
+
+def _victim_soa(v_out, vdd_local):
+    return VS.inverter_victim(v_out, vdd_local, VICTIM["vg"],
+                              VICTIM["nmos"], VICTIM["pmos"], VICTIM["topology"])
 
 _models_cache = {}
 _calib_cache = {}
@@ -103,19 +112,20 @@ def _GofI(br, i):
 
 
 def _victim_probe_at(c1, c2, i):
-    """Inverter victim probe on the solved series path: (v_nds, i_v)."""
+    """Inverter victim probe on the solved series path: (v_out, i_v, vdd_local)."""
     vc = M.VofI(c2["pos"], i)
     vio = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
-    return M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+    vo, iv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+    return vo, iv, vc
 
 
-def _victim_cross(c1, c2, vfail):
-    """Bisect the smallest I where the victim probe fails (None if never)."""
+def _victim_cross(c1, c2, _unused=None):
+    """Bisect the smallest I where the victim SOA/current fails (None if never)."""
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
 
     def ok(i):
-        v, iv = _victim_probe_at(c1, c2, i)
-        return v <= vfail and iv <= VICTIM["ifail"]
+        vo, iv, vc = _victim_probe_at(c1, c2, i)
+        return _victim_soa(vo, vc)["u"] < 1.0 and iv <= VICTIM["ifail"]
     if ok(ifail):
         return None, ifail
     lo, hi = 0.0, ifail
@@ -157,6 +167,8 @@ def models(x1: float = 2.56, x2: float = 1415.232):
 
     out = {"x1": x1, "x2": x2, "victim": dict(VICTIM),
            "rio": M.RIO, "rvdd": M.RVDD, "devices": {}, "soa": {}, "path": {}}
+    out["victim"]["limN_term"] = VS.TERMINAL_VFAIL[VICTIM["nmos"]][VICTIM["topology"]]
+    out["victim"]["limP_term"] = VS.TERMINAL_VFAIL[VICTIM["pmos"]][VICTIM["topology"]]
     cals = {}
     for dev, x in ((M.D1, x1), (M.D2, x2)):
         entry = {"x": x, "measured_range": dev["range"], "window": M.xwindow(dev)}
@@ -194,7 +206,7 @@ def models(x1: float = 2.56, x2: float = 1415.232):
         ifail = min(c1["e"]["ip"], c2["e"]["ip"])
         limiter = "diode" if c1["e"]["ip"] < c2["e"]["ip"] else "clamp"
         Is = [ifail * 0.999 * i / 59.0 for i in range(60)]
-        vios, vnds_l, iv_l = [], [], []
+        vios, vnds_l, iv_l, u_l = [], [], [], []
         for i in Is:
             vc = M.VofI(c2["pos"], i)
             vio_i = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
@@ -202,14 +214,14 @@ def models(x1: float = 2.56, x2: float = 1415.232):
             vios.append(vio_i)
             vnds_l.append(vo)
             iv_l.append(iv)
-        vfail = out["victim"]["vfail"]
+            u_l.append(_victim_soa(vo, vc)["u"])
         icross = None
         for a, b in zip(range(59), range(1, 60)):
-            if (vnds_l[a] - vfail) * (vnds_l[b] - vfail) <= 0 and vnds_l[a] != vnds_l[b]:
-                icross = Is[a] + (vfail - vnds_l[a]) * (Is[b] - Is[a]) / (vnds_l[b] - vnds_l[a])
+            if (u_l[a] - 1.0) * (u_l[b] - 1.0) <= 0 and u_l[a] != u_l[b]:
+                icross = Is[a] + (1.0 - u_l[a]) * (Is[b] - Is[a]) / (u_l[b] - u_l[a])
                 break
         out["path"][corner] = {
-            "I": Is, "VIO": vios, "VNDS": vnds_l, "IV": iv_l,
+            "I": Is, "VIO": vios, "VNDS": vnds_l, "IV": iv_l, "U": u_l,
             "Ifail": ifail, "limiter": limiter,
             "hbm_kv": ifail / A_PER_KV, "victim_cross_I": icross,
         }
@@ -286,7 +298,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "Clamp", "type": "nonlinear (model2 clamp)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
             {"name": "Resd", "type": "resistor", "nodes": "IO–OUT", "param": "500Ω (victim 보호 직렬 저항)"},
             {"name": "PMOS drain 접합", "type": "junction (Von 0.7 + Ron 10Ω)", "nodes": "OUT→N3", "param": "양(+) 스트레스 시 순방향 — victim 전류 경로"},
-            {"name": "NMOS drain 접합", "type": "junction (off < Vfail)", "nodes": "OUT→VSS", "param": "스트레스 지표: V(OUT) ≤ {}V".format(VICTIM["vfail"])},
+            {"name": "NMOS drain 접합", "type": "SG NFET 1stk_1rx (SOA)", "nodes": "OUT→VSS", "param": "terminal 3.1V · oxide inv/acc 2.9/3.3V (docs/victim_soa_model.html)"},
         ],
         "mna": {
             "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(OUT)"],
@@ -313,7 +325,7 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
     cs, ipass = {}, {}
     for corner in ("worst", "best"):
         c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
-        cross, ifail = _victim_cross(c1, c2, VICTIM["vfail"])
+        cross, ifail = _victim_cross(c1, c2)
         cs[corner] = (c1, c2)
         ip = cross if cross is not None else ifail  # first-fail current (victim or device SOA)
         ipass[corner] = ip
@@ -350,12 +362,13 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
                                           "note": "I > It2 (경로 파괴, Ifail={:.3f}A)".format(ifail)}
             else:
                 v = M.series_vio(c1, c2, i)
-                vnds, iv = _victim_probe_at(c1, c2, i)
-                ok = vnds <= VICTIM["vfail"] and iv <= VICTIM["ifail"]
+                vnds, iv, vc_loc = _victim_probe_at(c1, c2, i)
+                soa = _victim_soa(vnds, vc_loc)
+                ok = soa["u"] < 1.0 and iv <= VICTIM["ifail"]
                 row["corners"][corner] = {"status": "PASS" if ok else "FAIL_VICTIM", "vio": v,
                                           "vnds": vnds, "iv": iv,
+                                          "u_soa": soa["u"], "worst_check": soa["worst"],
                                           "m": mm, "tier": tier,
-                                          "margin": VICTIM["vfail"] - vnds,
                                           "usage_diode": i / c1["e"]["ip"], "usage_clamp": i / c2["e"]["ip"]}
         out["levels"].append(row)
     return out
@@ -369,7 +382,7 @@ def entities():
         (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증"),
         (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
         (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
-        (4, "VictimModel", PART, "server/model.py victim_probe · 화면: circuit, models §2, spec, optimize", "PMOS+NMOS inverter, IO─Resd(500Ω)→공통 drain OUT. NMOS drain ≤4V & I_v ≤10mA, PMOS 접합 완화 반영. NMOS/PMOS 개별 SOA(Vgs/Vgd)와 음(−) 스트레스 대칭은 잔여"),
+        (4, "VictimModel", IMPL, "server/victim_soa.py · docs/victim_soa_model.html · 화면: circuit, models §2, spec, optimize", "inverter(IO─Resd 500Ω→OUT) + 측정 SOA: SG NFET/PFET 1stk_1rx(터미널 3.1/3.3V, oxide inv/acc 2.9/3.3·3.3/3.8V), 부호 있는 VGS/VGD/VGB 검사, Uoverall=max. 음(−) 스트레스 대칭은 잔여"),
         (5, "CalibrationPipeline", PART, "server/calibtable.py · assets/calib_table.json", "β/scale·V(I) 사전계산 테이블(48격자×2corner, rel<5e-3) 구현; anchor 절차 코드화 잔여"),
         (6, "Netlist/Topology", PART, "화면: circuit", "강화 토폴로지: VDD/IO/VSS 레일 + up/down diode + clamp + victim inverter(노드 5+ref, MNA 5×5); 일반화는 Phase 5"),
         (7, "StressCase & ESDSpec", PART, "화면: spec", "HBM 양(+) 스트레스 1종, 1kV↔1.33A(사용자 확정)"),
@@ -389,7 +402,7 @@ def entities():
         (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.1.1", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.2.0", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "

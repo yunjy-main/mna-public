@@ -139,21 +139,21 @@ function render(m){
       +'\nmin(dI/dV): worst '+w.minG.toExponential(2)+', best '+b.minG.toExponential(2)
       +' · SOA endpoint: worst ('+w.ep.vp.toFixed(3)+'V, '+w.ep.ip.toFixed(3)+'A) / ('+w.ep.vn.toFixed(3)+'V, '+w.ep.inn.toFixed(4)+'A)';
   }
-  const pw=m.path.worst, pb=m.path.best, vf=m.victim.vfail;
+  const pw=m.path.worst, pb=m.path.best, vf=m.victim.limN_term;
   svgChart(document.getElementById('victim'), {
     series:[
       {x:pw.I,y:pw.VIO,color:CB.blue,label:'worst V_IO'},
       {x:pb.I,y:pb.VIO,color:CB.orange,dash:true,label:'best V_IO'},
       {x:pw.I,y:pw.VNDS,color:CB.green,label:'worst V(OUT) drain'},
       {x:pb.I,y:pb.VNDS,color:CB.green,dash:true,label:'best V(OUT)'}],
-    hlines:[{y:vf,label:'NMOS drain Vfail '+vf+'V'}],
+    hlines:[{y:m.victim.limN_term,label:'SG NFET 1stk_1rx terminal '+m.victim.limN_term+'V'}],
     points:[
       ...(pw.victim_cross_I?[{x:pw.victim_cross_I,y:vf,color:CB.blue}]:[]),
       ...(pb.victim_cross_I?[{x:pb.victim_cross_I,y:vf,color:CB.orange}]:[])],
     xlabel:'I (A)', w:1120, h:330});
   document.getElementById('capVictim').textContent =
     'Ifail: worst '+pw.Ifail.toFixed(3)+'A ('+pw.limiter+', ≈HBM '+pw.hbm_kv.toFixed(2)+'kV) · best '+pb.Ifail.toFixed(3)+'A ('+pb.limiter+')'
-    +'\nvictim '+vf+'V 도달 전류: worst '+(pw.victim_cross_I?pw.victim_cross_I.toFixed(3)+'A':'미도달(전 구간 PASS)')
+    +'\nvictim SOA(U=100%) 도달 전류: worst '+(pw.victim_cross_I?pw.victim_cross_I.toFixed(3)+'A':'미도달(전 구간 PASS)')
     +' · best '+(pb.victim_cross_I?pb.victim_cross_I.toFixed(3)+'A':'미도달')
     +'\n주의: corner 역전 — best envelope가 victim 전압에는 더 비관적일 수 있음 (D3: 양쪽 평가)';
   for(const [id, holder] of [['diode','soaDiode'],['clamp','soaClamp']]){
