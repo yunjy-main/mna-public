@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Victim SOA Model</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --line: #d8dde4;
+      --text: #20242a;
+      --muted: #5f6874;
+      --pass: #137333;
+      --fail: #b3261e;
+      --warn: #9a6700;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+    }
+    header {
+      padding: 22px 24px 16px;
+      background: #20252b;
+      color: white;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 25px;
+    }
+    header p {
+      margin: 0;
+      color: #d8dde3;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    main {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    h2 {
+      margin-top: 28px;
+      padding-left: 10px;
+      border-left: 5px solid #1f5f99;
+    }
+    h3 { margin: 0 0 10px; }
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .card {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--card);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .formula {
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: #f1f3f5;
+      font: 12px/1.55 Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .warning {
+      padding: 10px 12px;
+      border-left: 4px solid var(--warn);
+      background: #fff8e1;
+      color: #5f4300;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #eef1f4; }
+    .plot {
+      width: 100%;
+      height: 480px;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(140px, 1fr));
+      gap: 10px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    input, select {
+      width: 100%;
+      padding: 8px 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 13px;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .status.pass {
+      color: var(--pass);
+      background: #e6f4ea;
+      border: 1px solid #b7dfc1;
+    }
+    .status.fail {
+      color: var(--fail);
+      background: #fce8e6;
+      border: 1px solid #efb8b3;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 9px;
+      margin-top: 12px;
+    }
+    .metric {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #f8fafb;
+    }
+    .metric .name {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .metric .value {
+      margin-top: 4px;
+      font: 700 16px Consolas, monospace;
+    }
+    .violations {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: #f8fafb;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .pass-text { color: var(--pass); }
+    .fail-text { color: var(--fail); }
+    @media (max-width: 1000px) {
+      .grid.two,
+      .controls,
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Victim SOA Model</h1>
+    <p>
+      Silicided FET terminal Vfail과 gate-oxide breakdown을 분리한 victim SOA.
+      Stack 전체 terminal stress와 각 개별 FET의 VGS/VGD/VGB oxide stress를 독립적으로 검사한다.
+    </p>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. SOA 구조</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>A. Stack terminal SOA</h3>
+          <div class="formula">Uterm = |VDS_stack| / Vfail(device_class, topology)
+
+PASS : Uterm &lt; 1
+FAIL : Uterm &gt;= 1</div>
+          <p class="note">
+            `1stk_1rx`, `2stk_2rx`, `2stk_1rx`는 연속 변수가 아니라
+            물리적 topology이므로 lookup table로 사용한다.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>B. Gate oxide SOA</h3>
+          <div class="formula">VGS = VG - VS
+VGD = VG - VD
+VGB = VG - VB
+
+NFET inversion:
+  Uinv = max(VGS,VGD,VGB,0) / Vinv
+
+NFET accumulation:
+  Uacc = max(-VGS,-VGD,-VGB,0) / Vacc
+
+PFET inversion:
+  Uinv = max(-VGS,-VGD,-VGB,0) / Vinv
+
+PFET accumulation:
+  Uacc = max(VGS,VGD,VGB,0) / Vacc
+
+Uoverall = max(Uterm, Uinv, Uacc)</div>
+        </div>
+      </div>
+
+      <div class="warning">
+        EGU NFET inversion의 원문 `EGU &gt; -6.8 V`는 polarity상 모순이 있어
+        이 모델에서는 <b>+6.8 V</b>로 해석했습니다.
+        PFET SG inversion의 `SG ≤ 3.3 V`도 <b>−3.3 V</b>로 해석했습니다.
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Silicided FET terminal Vfail</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Device class</th>
+              <th>Lg</th>
+              <th>1stk 1rx</th>
+              <th>2stk 2rx</th>
+              <th>2stk 1rx</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>SG NFET</td><td>0.004 μm</td><td>3.1 V</td><td>5.7 V</td><td>5.8 V</td></tr>
+            <tr><td>SG PFET</td><td>0.004 μm</td><td>3.3 V</td><td>5.2 V</td><td>5.4 V</td></tr>
+            <tr><td>EGU NFET</td><td>0.07 μm</td><td>5.3 V</td><td>6.2 V</td><td>5.9 V</td></tr>
+            <tr><td>EGU PFET</td><td>0.07 μm</td><td>5.1 V</td><td>7.0 V</td><td>7.1 V</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div id="terminalPlot" class="plot"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Gate oxide signed limits</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Device class</th>
+              <th>Inversion failure</th>
+              <th>Accumulation failure</th>
+              <th>Magnitude pair</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SG NFET</td>
+              <td>max(VGS,VGD,VGB) ≥ +2.9 V</td>
+              <td>min(VGS,VGD,VGB) ≤ −3.3 V</td>
+              <td>2.9 / 3.3 V</td>
+            </tr>
+            <tr>
+              <td>EGU NFET</td>
+              <td>max(VGS,VGD,VGB) ≥ +6.8 V</td>
+              <td>min(VGS,VGD,VGB) ≤ −8.2 V</td>
+              <td>6.8 / 8.2 V</td>
+            </tr>
+            <tr>
+              <td>SG PFET</td>
+              <td>min(VGS,VGD,VGB) ≤ −3.3 V</td>
+              <td>max(VGS,VGD,VGB) ≥ +3.8 V</td>
+              <td>3.3 / 3.8 V</td>
+            </tr>
+            <tr>
+              <td>EGU PFET</td>
+              <td>min(VGS,VGD,VGB) ≤ −9.1 V</td>
+              <td>max(VGS,VGD,VGB) ≥ +8.4 V</td>
+              <td>9.1 / 8.4 V</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div id="oxidePlot" class="plot"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Interactive victim evaluator</h2>
+      <div class="card">
+        <div class="controls">
+          <div>
+            <label>Device class</label>
+            <select id="deviceClass">
+              <option value="SG_NFET">SG NFET</option>
+              <option value="SG_PFET">SG PFET</option>
+              <option value="EGU_NFET">EGU NFET</option>
+              <option value="EGU_PFET">EGU PFET</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Topology</label>
+            <select id="topology">
+              <option value="1stk_1rx">1stk 1rx</option>
+              <option value="2stk_2rx">2stk 2rx</option>
+              <option value="2stk_1rx">2stk 1rx</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Stack |VDS| stress [V]</label>
+            <input id="vdsStack" type="number" value="2.5" step="0.1" />
+          </div>
+
+          <div>
+            <label>VG [V]</label>
+            <input id="vg" type="number" value="1.0" step="0.1" />
+          </div>
+
+          <div>
+            <label>VS [V]</label>
+            <input id="vs" type="number" value="0.0" step="0.1" />
+          </div>
+
+          <div>
+            <label>VD [V]</label>
+            <input id="vd" type="number" value="0.0" step="0.1" />
+          </div>
+
+          <div>
+            <label>VB [V]</label>
+            <input id="vb" type="number" value="0.0" step="0.1" />
+          </div>
+        </div>
+
+        <div id="status" class="status pass">PASS</div>
+        <div id="metrics" class="metric-grid"></div>
+        <div id="violations" class="violations"></div>
+      </div>
+
+      <div class="card">
+        <div class="formula">2-stack 적용 원칙
+
+1) Vfail lookup:
+   전체 stack의 external VDS에 적용
+
+2) Gate oxide:
+   stack 내부의 각 FET에 별도 적용
+   - upper FET: VG_upper, VS_upper, VD_upper, VB_upper
+   - lower FET: VG_lower, VS_lower, VD_lower, VB_lower
+
+3) center node가 floating이면 transient MNA node voltage로
+   각 FET의 VGS/VGD/VGB를 계산해야 함
+
+4) stack terminal PASS라도 개별 oxide rule이 먼저 FAIL할 수 있음</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. Solver용 canonical data</h2>
+      <div class="card">
+        <div class="formula">{
+  "terminal_vfail": {
+    "SG_NFET":  {"1stk_1rx":3.1, "2stk_2rx":5.7, "2stk_1rx":5.8},
+    "SG_PFET":  {"1stk_1rx":3.3, "2stk_2rx":5.2, "2stk_1rx":5.4},
+    "EGU_NFET": {"1stk_1rx":5.3, "2stk_2rx":6.2, "2stk_1rx":5.9},
+    "EGU_PFET": {"1stk_1rx":5.1, "2stk_2rx":7.0, "2stk_1rx":7.1}
+  },
+  "oxide_limit": {
+    "SG_NFET":  {"type":"nfet", "inversion":2.9, "accumulation":3.3},
+    "SG_PFET":  {"type":"pfet", "inversion":3.3, "accumulation":3.8},
+    "EGU_NFET": {"type":"nfet", "inversion":6.8, "accumulation":8.2},
+    "EGU_PFET": {"type":"pfet", "inversion":9.1, "accumulation":8.4}
+  }
+}</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const victimSOA = {
+      SG_NFET: {
+        label: "SG NFET",
+        type: "nfet",
+        lg: 0.004,
+        terminal: {
+          "1stk_1rx": 3.1,
+          "2stk_2rx": 5.7,
+          "2stk_1rx": 5.8
+        },
+        oxide: {
+          inversion: 2.9,
+          accumulation: 3.3
+        }
+      },
+      SG_PFET: {
+        label: "SG PFET",
+        type: "pfet",
+        lg: 0.004,
+        terminal: {
+          "1stk_1rx": 3.3,
+          "2stk_2rx": 5.2,
+          "2stk_1rx": 5.4
+        },
+        oxide: {
+          inversion: 3.3,
+          accumulation: 3.8
+        }
+      },
+      EGU_NFET: {
+        label: "EGU NFET",
+        type: "nfet",
+        lg: 0.07,
+        terminal: {
+          "1stk_1rx": 5.3,
+          "2stk_2rx": 6.2,
+          "2stk_1rx": 5.9
+        },
+        oxide: {
+          inversion: 6.8,
+          accumulation: 8.2
+        }
+      },
+      EGU_PFET: {
+        label: "EGU PFET",
+        type: "pfet",
+        lg: 0.07,
+        terminal: {
+          "1stk_1rx": 5.1,
+          "2stk_2rx": 7.0,
+          "2stk_1rx": 7.1
+        },
+        oxide: {
+          inversion: 9.1,
+          accumulation: 8.4
+        }
+      }
+    };
+
+    const deviceOrder = [
+      "SG_NFET",
+      "SG_PFET",
+      "EGU_NFET",
+      "EGU_PFET"
+    ];
+
+    const topologyOrder = [
+      "1stk_1rx",
+      "2stk_2rx",
+      "2stk_1rx"
+    ];
+
+    Plotly.newPlot(
+      "terminalPlot",
+      topologyOrder.map(topology => ({
+        x: deviceOrder.map(key => victimSOA[key].label),
+        y: deviceOrder.map(key => victimSOA[key].terminal[topology]),
+        type: "bar",
+        name: topology.replaceAll("_", " "),
+        hovertemplate:
+          "%{x}<br>" +
+          topology.replaceAll("_", " ") +
+          ": %{y:.2f} V<extra></extra>"
+      })),
+      {
+        title: "Silicided FET terminal Vfail by topology",
+        barmode: "group",
+        xaxis: { title: "Device class" },
+        yaxis: { title: "Vfail [V]", rangemode: "tozero" },
+        legend: { orientation: "h", y: 1.12 },
+        margin: { l: 65, r: 20, t: 80, b: 65 }
+      },
+      {
+        responsive: true,
+        displaylogo: false
+      }
+    );
+
+    Plotly.newPlot(
+      "oxidePlot",
+      [
+        {
+          x: deviceOrder.map(key => victimSOA[key].label),
+          y: deviceOrder.map(key => {
+            const d = victimSOA[key];
+            return d.type === "nfet"
+              ? d.oxide.inversion
+              : -d.oxide.inversion;
+          }),
+          mode: "markers",
+          marker: { size: 12 },
+          name: "Inversion boundary",
+          hovertemplate:
+            "%{x}<br>Inversion boundary=%{y:.2f} V<extra></extra>"
+        },
+        {
+          x: deviceOrder.map(key => victimSOA[key].label),
+          y: deviceOrder.map(key => {
+            const d = victimSOA[key];
+            return d.type === "nfet"
+              ? -d.oxide.accumulation
+              : d.oxide.accumulation;
+          }),
+          mode: "markers",
+          marker: { size: 12, symbol: "diamond" },
+          name: "Accumulation boundary",
+          hovertemplate:
+            "%{x}<br>Accumulation boundary=%{y:.2f} V<extra></extra>"
+        }
+      ],
+      {
+        title: "Signed gate-oxide boundaries",
+        xaxis: { title: "Device class" },
+        yaxis: {
+          title: "VGX boundary [V]",
+          zeroline: true,
+          zerolinewidth: 2
+        },
+        legend: { orientation: "h", y: 1.12 },
+        margin: { l: 70, r: 20, t: 80, b: 65 }
+      },
+      {
+        responsive: true,
+        displaylogo: false
+      }
+    );
+
+    function numberValue(id) {
+      return Number(document.getElementById(id).value);
+    }
+
+    function evaluateVictim() {
+      const key = document.getElementById("deviceClass").value;
+      const topology = document.getElementById("topology").value;
+      const device = victimSOA[key];
+
+      const vdsStack = Math.abs(numberValue("vdsStack"));
+      const vg = numberValue("vg");
+      const vs = numberValue("vs");
+      const vd = numberValue("vd");
+      const vb = numberValue("vb");
+
+      const vgs = vg - vs;
+      const vgd = vg - vd;
+      const vgb = vg - vb;
+      const pairs = [
+        { name: "VGS", value: vgs },
+        { name: "VGD", value: vgd },
+        { name: "VGB", value: vgb }
+      ];
+
+      const terminalLimit = device.terminal[topology];
+      const uTerm = vdsStack / terminalLimit;
+
+      let inversionStress;
+      let accumulationStress;
+      let inversionPair;
+      let accumulationPair;
+
+      if (device.type === "nfet") {
+        inversionPair = pairs.reduce(
+          (best, item) => item.value > best.value ? item : best,
+          { name: "none", value: 0 }
+        );
+
+        accumulationPair = pairs.reduce(
+          (best, item) => -item.value > best.value
+            ? { name: item.name, value: -item.value }
+            : best,
+          { name: "none", value: 0 }
+        );
+
+        inversionStress = Math.max(inversionPair.value, 0);
+        accumulationStress = Math.max(accumulationPair.value, 0);
+      } else {
+        inversionPair = pairs.reduce(
+          (best, item) => -item.value > best.value
+            ? { name: item.name, value: -item.value }
+            : best,
+          { name: "none", value: 0 }
+        );
+
+        accumulationPair = pairs.reduce(
+          (best, item) => item.value > best.value ? item : best,
+          { name: "none", value: 0 }
+        );
+
+        inversionStress = Math.max(inversionPair.value, 0);
+        accumulationStress = Math.max(accumulationPair.value, 0);
+      }
+
+      const uInv =
+        inversionStress / device.oxide.inversion;
+
+      const uAcc =
+        accumulationStress / device.oxide.accumulation;
+
+      const uOverall = Math.max(uTerm, uInv, uAcc);
+      const pass = uOverall < 1;
+
+      const status = document.getElementById("status");
+      status.className = `status ${pass ? "pass" : "fail"}`;
+      status.textContent =
+        pass
+          ? `PASS — maximum utilization ${(100*uOverall).toFixed(1)}%`
+          : `FAIL — maximum utilization ${(100*uOverall).toFixed(1)}%`;
+
+      const metrics = [
+        ["VGS", vgs.toFixed(4) + " V"],
+        ["VGD", vgd.toFixed(4) + " V"],
+        ["VGB", vgb.toFixed(4) + " V"],
+        ["Terminal limit", terminalLimit.toFixed(4) + " V"],
+        ["Uterm", uTerm.toFixed(4)],
+        ["Uinv", uInv.toFixed(4)],
+        ["Uacc", uAcc.toFixed(4)],
+        ["Uoverall", uOverall.toFixed(4)]
+      ];
+
+      document.getElementById("metrics").innerHTML =
+        metrics.map(item => `
+          <div class="metric">
+            <div class="name">${item[0]}</div>
+            <div class="value">${item[1]}</div>
+          </div>
+        `).join("");
+
+      const checks = [
+        {
+          name: "Stack terminal",
+          pass: uTerm < 1,
+          text:
+            `|VDS_stack|=${vdsStack.toFixed(4)} V / ` +
+            `limit=${terminalLimit.toFixed(4)} V`
+        },
+        {
+          name: `Oxide inversion (${inversionPair.name})`,
+          pass: uInv < 1,
+          text:
+            `stress=${inversionStress.toFixed(4)} V / ` +
+            `limit=${device.oxide.inversion.toFixed(4)} V`
+        },
+        {
+          name: `Oxide accumulation (${accumulationPair.name})`,
+          pass: uAcc < 1,
+          text:
+            `stress=${accumulationStress.toFixed(4)} V / ` +
+            `limit=${device.oxide.accumulation.toFixed(4)} V`
+        }
+      ];
+
+      document.getElementById("violations").innerHTML =
+        checks.map(check => `
+          <div class="${check.pass ? "pass-text" : "fail-text"}">
+            ${check.pass ? "PASS" : "FAIL"} —
+            <b>${check.name}</b>: ${check.text}
+          </div>
+        `).join("");
+    }
+
+    [
+      "deviceClass",
+      "topology",
+      "vdsStack",
+      "vg",
+      "vs",
+      "vd",
+      "vb"
+    ].forEach(id => {
+      document.getElementById(id).addEventListener(
+        "input",
+        evaluateVictim
+      );
+
+      document.getElementById(id).addEventListener(
+        "change",
+        evaluateVictim
+      );
+    });
+
+    evaluateVictim();
+  </script>
+</body>
+</html>
