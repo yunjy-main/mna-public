@@ -328,7 +328,7 @@ function renderGauges(fin,p){
   gauge(cols[2],'Metal resource',fin.uRes,1);
 }
 function renderRank(fin){
-  const items=[['Victim V',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],['Clamp I',fin.uIC],['Clamp V',fin.uVC],
+  const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],['Clamp I',fin.uIC],['Clamp V',fin.uVC],
     ['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],['Metal res',fin.uRes],
     ['x1 pos',fin.x1pos],['x2 pos',fin.x2pos],['L pos',fin.lpos]].sort((a,b)=>b[1]-a[1]);
   document.getElementById('rank').innerHTML=items.map(it=>{
@@ -357,7 +357,7 @@ function renderIter(){
   const h=cur().history;
   lineChart(document.getElementById('itUsage'),{title:'SOA usage vs iteration',w:380,h:250,
     series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim V'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim SOA U'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.orange,label:'Diode I'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:CB.green,label:'Clamp I'}],
     hlines:[{y:1,label:'100%'}]});

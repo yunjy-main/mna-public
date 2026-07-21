@@ -72,6 +72,12 @@ def _victim_soa(v_out, vdd_local):
     return VS.inverter_victim(v_out, vdd_local, VICTIM["vg"],
                               VICTIM["nmos"], VICTIM["pmos"], VICTIM["topology"])
 
+def _page(name):
+    """Serve a frontend page with no-store so UI updates are never cache-stale."""
+    return FileResponse(os.path.join(ROOT, "frontend", name),
+                        headers={"Cache-Control": "no-store"})
+
+
 _models_cache = {}
 _calib_cache = {}
 
@@ -434,27 +440,27 @@ def optimize(request: Request):
 
 @app.get(PREFIX + "/models")
 def models_page():
-    return FileResponse(os.path.join(ROOT, "frontend", "models.html"))
+    return _page("models.html")
 
 
 @app.get(PREFIX + "/optimize")
 def optimize_page():
-    return FileResponse(os.path.join(ROOT, "frontend", "optimize.html"))
+    return _page("optimize.html")
 
 
 @app.get(PREFIX + "/circuit")
 def circuit_page():
-    return FileResponse(os.path.join(ROOT, "frontend", "circuit.html"))
+    return _page("circuit.html")
 
 
 @app.get(PREFIX + "/spec")
 def spec_page():
-    return FileResponse(os.path.join(ROOT, "frontend", "spec.html"))
+    return _page("spec.html")
 
 
 @app.get(PREFIX + "/meta")
 def meta_page():
-    return FileResponse(os.path.join(ROOT, "frontend", "entities.html"))
+    return _page("entities.html")
 
 
 @app.get(PREFIX + "/ref/{path:path}")
@@ -469,7 +475,7 @@ def ref(path: str):
 @app.get(PREFIX + "/")
 @app.get(PREFIX)
 def index():
-    return FileResponse(os.path.join(ROOT, "frontend", "index.html"))
+    return _page("index.html")
 
 
 @app.get("/")
