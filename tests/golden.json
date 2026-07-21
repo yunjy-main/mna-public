@@ -1,0 +1,306 @@
+{
+ "grid_N": 4000,
+ "generated_with": "tests/regression.js --emit",
+ "values": [
+  {
+   "key": "endpoint/diode/x=0.64/pos",
+   "value": -3.552713678800501e-15,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=0.64/neg",
+   "value": 0,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=1.344/pos",
+   "value": 3.1086244689504383e-15,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=1.344/neg",
+   "value": 1.7763568394002505e-15,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=2.56/pos",
+   "value": 8.881784197001252e-16,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=2.56/neg",
+   "value": 6.661338147750939e-16,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=3.84/pos",
+   "value": 0,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/diode/x=3.84/neg",
+   "value": -3.3306690738754696e-16,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=1415.232/pos",
+   "value": -3.219646771412954e-15,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=1415.232/neg",
+   "value": 3.1308289294429414e-14,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=2021.76/pos",
+   "value": -3.275157922644212e-14,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=2021.76/neg",
+   "value": -1.432187701766452e-14,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=2628.288/pos",
+   "value": -4.218847493575595e-15,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "endpoint/clamp/x=2628.288/neg",
+   "value": 2.531308496145357e-14,
+   "tol": 1e-9,
+   "kind": "raw"
+  },
+  {
+   "key": "env/diode/It2+w/x=0.64",
+   "value": 0.5961391943571568,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/diode/It2+w/x=1.344",
+   "value": 1.1497911134463372,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/diode/It2+w/x=2.56",
+   "value": 2.034094199306894,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/diode/It2+w/x=3.84",
+   "value": 2.91253,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/clamp/It2+w/x=1415.232",
+   "value": 4.458677323038832,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/clamp/It2+w/x=2021.76",
+   "value": 6.10259,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "env/clamp/It2+w/x=2628.288",
+   "value": 7.687413501016849,
+   "tol": 1e-12,
+   "kind": "rel"
+  },
+  {
+   "key": "beta+/diode/x=0.64/worst",
+   "value": 0.4906197417202941,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta-/diode/x=0.64/worst",
+   "value": 0.18347111755539036,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/diode/x=0.64/worst",
+   "value": 1.538044060718018e-15,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta+/diode/x=1.344/worst",
+   "value": 0.4508511929680754,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta-/diode/x=1.344/worst",
+   "value": -0.43049269214282604,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/diode/x=1.344/worst",
+   "value": 3.0941600251911e-15,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta+/diode/x=2.56/worst",
+   "value": 0.4140860042356487,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta-/diode/x=2.56/worst",
+   "value": -1.5042314665245815,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/diode/x=2.56/worst",
+   "value": 5.583311081928637e-15,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta+/diode/x=3.84/worst",
+   "value": 0.3899171382613452,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "beta-/diode/x=3.84/worst",
+   "value": -2.462923125828244,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/diode/x=3.84/worst",
+   "value": 8.032100692766403e-15,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "scale+/clamp/x=1415.232/worst",
+   "value": 0.996134535279717,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/clamp/x=1415.232/worst",
+   "value": 0.000002503557233754623,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "scale+/clamp/x=2021.76/worst",
+   "value": 0.7242092235976386,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/clamp/x=2021.76/worst",
+   "value": 0.000004584305587093738,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "scale+/clamp/x=2628.288/worst",
+   "value": 0.5784661152395901,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "minG/clamp/x=2628.288/worst",
+   "value": 0.0000072727050110794165,
+   "tol": 0.000001,
+   "kind": "rel"
+  },
+  {
+   "key": "ref/Ifail/worst",
+   "value": 2.034094199306894,
+   "tol": 1e-9,
+   "kind": "rel"
+  },
+  {
+   "key": "ref/VIO/worst/I=0.5",
+   "value": 2.405973884817598,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "ref/VIO/worst/I=1",
+   "value": 3.271828003177694,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "ref/VIO/worst/I=1.33",
+   "value": 3.851023458737263,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "ref/VIO/best/I=1.33",
+   "value": 4.112071591135817,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "series/VIO/x1=2.56/x2=2021.76/worst/I=2.0",
+   "value": 5.430534728654537,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "x1min/2A/worst",
+   "value": 2.511586227251801,
+   "tol": 1e-9,
+   "kind": "rel"
+  },
+  {
+   "key": "neg/It2-/diode/x=2.56/worst",
+   "value": -0.0514632,
+   "tol": 1e-9,
+   "kind": "rel"
+  },
+  {
+   "key": "neg/VIO/ref/0.999It2-",
+   "value": -8.318263411750905,
+   "tol": 0.000001,
+   "kind": "abs"
+  },
+  {
+   "key": "invariant/allG_positive",
+   "value": 1,
+   "tol": 0,
+   "kind": "exact"
+  },
+  {
+   "key": "invariant/I0_at_0_selfref",
+   "value": 0,
+   "tol": 0,
+   "kind": "exact"
+  }
+ ]
+}

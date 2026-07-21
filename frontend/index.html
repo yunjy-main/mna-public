@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mna — ESD design closure</title>
+<style>
+  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
+  header{background:#20252b;color:#fff;padding:18px 22px}
+  header h1{margin:0;font-size:18px}
+  header div{opacity:.75;font-size:12px;margin-top:4px}
+  main{max-width:900px;margin:auto;padding:16px}
+  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
+  h2{font-size:14px;margin:0 0 8px}
+  code,pre{background:#f3f5f7;border-radius:5px;padding:2px 5px;font-size:12px}
+  pre{padding:10px;white-space:pre-wrap;margin:8px 0 0}
+  ul{margin:6px 0;padding-left:20px}
+  a{color:#1f5f99;text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
+  button:disabled{opacity:.5;cursor:wait}
+  .ok{color:#0a7d38}.bad{color:#b3261e}
+  #meta{font-size:12px;color:#5b6673}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>mna — ESD design closure (MNA / backprop)</h1>
+  <div>IO → Rio(0.1Ω) → up diode → Rvdd(0.5Ω) → clamp → VSS · Python solver + HTML frontend · Phase 0</div>
+</header>
+<main>
+  <div class="card">
+    <h2>서비스 상태</h2>
+    <div id="meta">불러오는 중…</div>
+  </div>
+  <div class="card">
+    <h2>회귀 테스트 (tests/golden.json, 50건)</h2>
+    <button id="runBtn">python tests/regression.py 실행</button>
+    <pre id="regOut" hidden></pre>
+  </div>
+  <div class="card">
+    <h2>참고 아티팩트 (읽기 전용)</h2>
+    <ul id="refs"><li>불러오는 중…</li></ul>
+  </div>
+</main>
+<script>
+fetch('api/meta').then(r=>r.json()).then(m=>{
+  document.getElementById('meta').textContent = m.app+' v'+m.version+' · '+m.phase+' · '+m.runtime;
+  document.getElementById('refs').innerHTML = m.refs.map(f=>'<li><a href="ref/'+f+'">'+f+'</a></li>').join('');
+});
+document.getElementById('runBtn').addEventListener('click', ()=>{
+  const b=document.getElementById('runBtn'), o=document.getElementById('regOut');
+  b.disabled=true; o.hidden=false; o.textContent='실행 중…';
+  fetch('api/regression').then(r=>r.json()).then(res=>{
+    o.textContent=res.output;
+    o.className=res.exit===0?'ok':'bad';
+    b.disabled=false;
+  }).catch(e=>{o.textContent=String(e); b.disabled=false;});
+});
+</script>
+</body>
+</html>
