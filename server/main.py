@@ -369,9 +369,9 @@ def entities():
         (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증"),
         (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
         (3, "MetalModel", PART, "화면: circuit", "Rio/Rvdd 상수 + 0.5Ω/350µm 규칙; L 변수화(D7)는 Phase 2"),
-        (4, "VictimModel", PART, "화면: models §2, spec", "Vb=kV·V_IO (kV=1), Vfail=4V box"),
+        (4, "VictimModel", PART, "server/model.py victim_probe · 화면: circuit, models §2, spec, optimize", "PMOS+NMOS inverter, IO─Resd(500Ω)→공통 drain OUT. NMOS drain ≤4V & I_v ≤10mA, PMOS 접합 완화 반영. NMOS/PMOS 개별 SOA(Vgs/Vgd)와 음(−) 스트레스 대칭은 잔여"),
         (5, "CalibrationPipeline", PART, "server/calibtable.py · assets/calib_table.json", "β/scale·V(I) 사전계산 테이블(48격자×2corner, rel<5e-3) 구현; anchor 절차 코드화 잔여"),
-        (6, "Netlist/Topology", PART, "화면: circuit", "고정 직렬 토폴로지(노드 4+ref); 일반화는 Phase 5"),
+        (6, "Netlist/Topology", PART, "화면: circuit", "강화 토폴로지: VDD/IO/VSS 레일 + up/down diode + clamp + victim inverter(노드 5+ref, MNA 5×5); 일반화는 Phase 5"),
         (7, "StressCase & ESDSpec", PART, "화면: spec", "HBM 양(+) 스트레스 1종, 1kV↔1.33A(사용자 확정)"),
         (8, "DesignVariableRegistry", PART, "api/models 422 가드", "x1/x2 + D5 ±50% 창; L 변수는 Phase 2. 창립 rule 비대칭: A/C min=가혹 FAIL(projection 금지), max=성능 준-rule, R min=공정한계/max=EM·Joule"),
         (9, "ProblemSchema (JSON/YAML)", PLAN, "Phase 1A~", "GUI↔solver 경계 계약"),
@@ -389,7 +389,7 @@ def entities():
         (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.1.0", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.1.1", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
