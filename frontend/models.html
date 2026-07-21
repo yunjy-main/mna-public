@@ -4,27 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mna — device / victim / SOA</title>
-<style>
-  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
-  header{background:#20252b;color:#fff;padding:14px 22px}
-  header h1{margin:0;font-size:17px}
-  header a{color:#9ecbff;font-size:12px;text-decoration:none}
-  main{max-width:1200px;margin:auto;padding:16px}
-  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
-  h2{font-size:14px;margin:0 0 10px}
-  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  .grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-  @media(max-width:900px){.grid2,.grid4{grid-template-columns:1fr}}
-  .ctl{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
-  .ctl label{font-size:12px;color:#5b6673;display:block}
-  .ctl input{width:130px;padding:6px}
-  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
-  button:disabled{opacity:.5;cursor:wait}
-  .cap{font-size:12px;color:#5b6673;margin-top:6px;white-space:pre-line}
-  .hint{font-size:11px;color:#8a94a0}
-  svg{width:100%;height:auto;display:block}
-  .err{color:#b3261e;font-size:13px}
-</style>
+<link rel="stylesheet" href="static/style.css">
+<script src="static/charts.js"></script>
 </head>
 <body>
 <header data-app="mna-esd-solver">
@@ -36,145 +17,98 @@
     <div class="ctl">
       <div><label>diode x1 <span class="hint" id="w1"></span></label><input id="x1" type="number" step="any" value="2.56"></div>
       <div><label>clamp x2 <span class="hint" id="w2"></span></label><input id="x2" type="number" step="any" value="1415.232"></div>
-      <button id="loadBtn">계산</button>
-      <span class="hint">SOA corner: worst(실선) / best(점선) 모두 평가 (D3) · x 창: 측정 split ±50% (D5)</span>
+      <div><button id="loadBtn">계산</button></div>
+      <span class="hint">색상 규칙: <b style="color:var(--c-worst)">worst=붉은계열</b> / <b style="color:var(--c-best)">best=푸른계열</b> · corner 양쪽 평가(D3) · x 창 ±50%(D5)</span>
     </div>
     <div class="err" id="err"></div>
   </div>
 
   <div class="card">
     <h2>1. Device I–V (calibrated, SOA endpoint 통과)</h2>
-    <div class="grid2">
+    <div class="grid-2">
       <div><div id="ivDiode"></div><div class="cap" id="capDiode"></div></div>
       <div><div id="ivClamp"></div><div class="cap" id="capClamp"></div></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>2. Victim — inverter drain 스트레스 V(OUT) vs SOA (victim: PMOS+NMOS inverter, IO ─Resd 500Ω→ 공통 drain OUT)</h2>
-    <div id="victim"></div>
-    <div class="cap" id="capVictim"></div>
+    <h2>2. Victim — inverter drain 스트레스 (IO ─Resd 500Ω→ OUT)</h2>
+    <div class="grid-2">
+      <div id="victim"></div>
+      <div class="cap" id="capVictim"></div>
+    </div>
   </div>
 
   <div class="card">
     <h2>3. SOA envelope — M(x)=s·C·(x/x0)^p, worst/best + 측정 anchor</h2>
-    <div style="font-size:12px;color:#5b6673;margin-bottom:6px">diode</div>
-    <div class="grid4" id="soaDiode"></div>
-    <div style="font-size:12px;color:#5b6673;margin:10px 0 6px">clamp</div>
-    <div class="grid4" id="soaClamp"></div>
-    <div class="cap">음영 = 측정 split 범위, 흰 여백 = ±50% extrapolation 창(D5). 점 = 측정 anchor.</div>
+    <h3>diode</h3>
+    <div class="grid-4" id="soaDiode"></div>
+    <h3>clamp</h3>
+    <div class="grid-4" id="soaClamp"></div>
+    <div class="cap">음영 = 측정 split 범위, 여백 = ±50% extrapolation 창(D5). 점 = 측정 anchor.</div>
   </div>
 </main>
 <script>
 'use strict';
-const CB = {blue:'#0072B2', orange:'#D55E00', green:'#009E73', gray:'#5b6673', red:'#b3261e'};
-
-function svgChart(el, o){
-  const W = o.w||560, H = o.h||300, mL=52, mR=12, mT=o.title?24:10, mB=36;
-  let xs=[], ys=[];
-  (o.series||[]).forEach(s=>{xs=xs.concat(s.x); ys=ys.concat(s.y);});
-  (o.points||[]).forEach(p=>{xs.push(p.x); ys.push(p.y);});
-  (o.hlines||[]).forEach(h=>ys.push(h.y));
-  xs=xs.filter(isFinite); ys=ys.filter(isFinite);
-  let x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
-  if(x0===x1){x0-=1;x1+=1} if(y0===y1){y0-=1;y1+=1}
-  const px=(x1-x0)*.03, py=(y1-y0)*.06; x0-=px;x1+=px;y0-=py;y1+=py;
-  const X=x=>mL+(x-x0)/(x1-x0)*(W-mL-mR), Y=y=>H-mB-(y-y0)/(y1-y0)*(H-mT-mB);
-  let s='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg">';
-  if(o.shade){const a=X(Math.max(x0,o.shade[0])), b=X(Math.min(x1,o.shade[1]));
-    s+='<rect x="'+a+'" y="'+mT+'" width="'+(b-a)+'" height="'+(H-mT-mB)+'" fill="#eef3f8"/>';}
-  for(let i=0;i<=4;i++){
-    const xv=x0+(x1-x0)*i/4, yv=y0+(y1-y0)*i/4;
-    s+='<line x1="'+X(xv)+'" y1="'+mT+'" x2="'+X(xv)+'" y2="'+(H-mB)+'" stroke="#eceff3"/>';
-    s+='<line x1="'+mL+'" y1="'+Y(yv)+'" x2="'+(W-mR)+'" y2="'+Y(yv)+'" stroke="#eceff3"/>';
-    s+='<text x="'+X(xv)+'" y="'+(H-mB+16)+'" text-anchor="middle" font-size="10" fill="#5b6673">'+fmt(xv)+'</text>';
-    s+='<text x="'+(mL-6)+'" y="'+(Y(yv)+3)+'" text-anchor="end" font-size="10" fill="#5b6673">'+fmt(yv)+'</text>';
-  }
-  s+='<rect x="'+mL+'" y="'+mT+'" width="'+(W-mL-mR)+'" height="'+(H-mT-mB)+'" fill="none" stroke="#c6ccd4"/>';
-  (o.hlines||[]).forEach(h=>{
-    s+='<line x1="'+mL+'" y1="'+Y(h.y)+'" x2="'+(W-mR)+'" y2="'+Y(h.y)+'" stroke="'+(h.color||CB.red)+'" stroke-dasharray="6 4"/>';
-    if(h.label) s+='<text x="'+(W-mR-4)+'" y="'+(Y(h.y)-4)+'" text-anchor="end" font-size="10" fill="'+(h.color||CB.red)+'">'+h.label+'</text>';
-  });
-  (o.series||[]).forEach(sr=>{
-    const pts=sr.x.map((x,i)=>X(x).toFixed(1)+','+Y(sr.y[i]).toFixed(1)).join(' ');
-    s+='<polyline points="'+pts+'" fill="none" stroke="'+sr.color+'" stroke-width="1.8"'+(sr.dash?' stroke-dasharray="5 4"':'')+'/>';
-  });
-  (o.points||[]).forEach(p=>{
-    s+='<circle cx="'+X(p.x)+'" cy="'+Y(p.y)+'" r="3.4" fill="'+(p.color||CB.gray)+'"/>';
-  });
-  if(o.title) s+='<text x="'+(mL+4)+'" y="16" font-size="12" fill="#20242a">'+o.title+'</text>';
-  if(o.xlabel) s+='<text x="'+((mL+W-mR)/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="10" fill="#5b6673">'+o.xlabel+'</text>';
-  let lx=mL+8, ly=mT+14;
-  (o.series||[]).forEach(sr=>{ if(!sr.label) return;
-    s+='<line x1="'+lx+'" y1="'+(ly-4)+'" x2="'+(lx+18)+'" y2="'+(ly-4)+'" stroke="'+sr.color+'" stroke-width="2"'+(sr.dash?' stroke-dasharray="5 4"':'')+'/>';
-    s+='<text x="'+(lx+22)+'" y="'+ly+'" font-size="10" fill="#5b6673">'+sr.label+'</text>'; ly+=14;
-  });
-  el.innerHTML=s+'</svg>';
-}
-function fmt(v){
-  const a=Math.abs(v);
-  if(a>=1000) return v.toFixed(0);
-  if(a>=10) return v.toFixed(1);
-  if(a>=0.01||a===0) return (+v.toFixed(3)).toString();
-  return v.toExponential(1);
-}
+const C=MNA.C, f=MNA.f;
 
 function render(m){
   for(const [id, el, cap] of [['diode','ivDiode','capDiode'],['clamp','ivClamp','capClamp']]){
     const d=m.devices[id], w=d.worst, b=d.best;
-    svgChart(document.getElementById(el), {
-      title: id+' x='+d.x,
+    MNA.lineChart(document.getElementById(el), {
+      title: id+' x='+d.x, w:430, h:230,
       series:[
-        {x:w.curve.V, y:w.curve.I, color:CB.blue, label:'worst'},
-        {x:b.curve.V, y:b.curve.I, color:CB.orange, dash:true, label:'best'}],
+        {x:w.curve.V, y:w.curve.I, color:C.worst, label:'worst'},
+        {x:b.curve.V, y:b.curve.I, color:C.best, label:'best'}],
       points:[
-        {x:w.ep.vp,y:w.ep.ip,color:CB.blue},{x:w.ep.vn,y:w.ep.inn,color:CB.blue},
-        {x:b.ep.vp,y:b.ep.ip,color:CB.orange},{x:b.ep.vn,y:b.ep.inn,color:CB.orange}],
-      xlabel:'V', w:560, h:320});
+        {x:w.ep.vp,y:w.ep.ip,color:C.worst},{x:w.ep.vn,y:w.ep.inn,color:C.worst},
+        {x:b.ep.vp,y:b.ep.ip,color:C.best},{x:b.ep.vn,y:b.ep.inn,color:C.best}],
+      xlabel:'V'});
     const ci=w.cal, cb=b.cal;
     document.getElementById(cap).textContent =
       (ci.beta_p!==undefined
         ? 'worst β+='+ci.beta_p.toFixed(4)+', β−='+ci.beta_n.toFixed(4)+' · best β+='+cb.beta_p.toFixed(4)+', β−='+cb.beta_n.toFixed(4)
         : 'worst scale+='+ci.scale_p.toFixed(4)+', scale−='+ci.scale_n.toFixed(4)+' · best scale+='+cb.scale_p.toFixed(4)+', scale−='+cb.scale_n.toFixed(4))
       +'\nmin(dI/dV): worst '+w.minG.toExponential(2)+', best '+b.minG.toExponential(2)
-      +' · SOA endpoint: worst ('+w.ep.vp.toFixed(3)+'V, '+w.ep.ip.toFixed(3)+'A) / ('+w.ep.vn.toFixed(3)+'V, '+w.ep.inn.toFixed(4)+'A)';
+      +' · SOA endpoint(worst): ('+f(w.ep.vp)+'V, '+f(w.ep.ip)+'A) / ('+f(w.ep.vn)+'V, '+f(w.ep.inn,4)+'A)';
   }
   const pw=m.path.worst, pb=m.path.best, vf=m.victim.limN_term;
-  svgChart(document.getElementById('victim'), {
+  MNA.lineChart(document.getElementById('victim'), {
+    w:520, h:250,
     series:[
-      {x:pw.I,y:pw.VIO,color:CB.blue,label:'worst V_IO'},
-      {x:pb.I,y:pb.VIO,color:CB.orange,dash:true,label:'best V_IO'},
-      {x:pw.I,y:pw.VNDS,color:CB.green,label:'worst V(OUT) drain'},
-      {x:pb.I,y:pb.VNDS,color:CB.green,dash:true,label:'best V(OUT)'}],
-    hlines:[{y:m.victim.limN_term,label:'SG NFET 1stk_1rx terminal '+m.victim.limN_term+'V'}],
+      {x:pw.I,y:pw.VIO,color:C.worst,label:'V_IO worst'},
+      {x:pb.I,y:pb.VIO,color:C.best,label:'V_IO best'},
+      {x:pw.I,y:pw.VNDS,color:C.worst2,label:'V(OUT) worst'},
+      {x:pb.I,y:pb.VNDS,color:C.best2,label:'V(OUT) best'}],
+    hlines:[{y:vf,label:'SG NFET 1stk terminal '+vf+'V'}],
     points:[
-      ...(pw.victim_cross_I?[{x:pw.victim_cross_I,y:vf,color:CB.blue}]:[]),
-      ...(pb.victim_cross_I?[{x:pb.victim_cross_I,y:vf,color:CB.orange}]:[])],
-    xlabel:'I (A)', w:1120, h:330});
+      ...(pw.victim_cross_I?[{x:pw.victim_cross_I,y:vf,color:C.worst}]:[]),
+      ...(pb.victim_cross_I?[{x:pb.victim_cross_I,y:vf,color:C.best}]:[])],
+    xlabel:'I (A)'});
   document.getElementById('capVictim').textContent =
-    'Ifail: worst '+pw.Ifail.toFixed(3)+'A ('+pw.limiter+', ≈HBM '+pw.hbm_kv.toFixed(2)+'kV) · best '+pb.Ifail.toFixed(3)+'A ('+pb.limiter+')'
-    +'\nvictim SOA(U=100%) 도달 전류: worst '+(pw.victim_cross_I?pw.victim_cross_I.toFixed(3)+'A':'미도달(전 구간 PASS)')
-    +' · best '+(pb.victim_cross_I?pb.victim_cross_I.toFixed(3)+'A':'미도달')
-    +'\n주의: corner 역전 — best envelope가 victim 전압에는 더 비관적일 수 있음 (D3: 양쪽 평가)';
+    'Ifail: worst '+f(pw.Ifail)+'A ('+pw.limiter+', ≈HBM '+f(pw.hbm_kv,2)+'kV) · best '+f(pb.Ifail)+'A ('+pb.limiter+')'
+    +'\nvictim SOA(U=100%) 도달 전류: worst '+(pw.victim_cross_I?f(pw.victim_cross_I)+'A':'미도달(전 구간 PASS)')
+    +' · best '+(pb.victim_cross_I?f(pb.victim_cross_I)+'A':'미도달')
+    +'\n\n주의: corner 역전 — best envelope가 victim 전압에는 더 비관적일 수 있음 (D3: 양쪽 평가)'
+    +'\nvictim SOA: SG NFET/PFET 1stk_1rx (터미널 3.1/3.3V, oxide 2.9/3.3·3.3/3.8V)';
   for(const [id, holder] of [['diode','soaDiode'],['clamp','soaClamp']]){
     const box=document.getElementById(holder); box.innerHTML='';
     for(const qk of ['vp','vn','ip','inn']){
       const e=m.soa[id][qk], div=document.createElement('div'); box.appendChild(div);
-      svgChart(div, {
-        title:e.label, w:280, h:210,
+      MNA.lineChart(div, {
+        title:e.label, w:280, h:175,
         shade:e.measured_range,
         series:[
-          {x:e.xs,y:e.worst,color:CB.blue,label:'worst'},
-          {x:e.xs,y:e.best,color:CB.orange,dash:true,label:'best'}],
-        points:e.anchors.map(a=>({x:a.x,y:a.y,color:CB.green})),
+          {x:e.xs,y:e.worst,color:C.worst,label:'worst'},
+          {x:e.xs,y:e.best,color:C.best,label:'best'}],
+        points:e.anchors.map(a=>({x:a.x,y:a.y,color:C.s[1]})),
         xlabel:'x'});
     }
   }
 }
 
 function load(){
-  const btn=document.getElementById('loadBtn'), err=document.getElementById('err');
-  btn.disabled=true; err.textContent='';
+  const err=document.getElementById('err'); err.textContent='';
   const q='api/models?x1='+encodeURIComponent(document.getElementById('x1').value)
         +'&x2='+encodeURIComponent(document.getElementById('x2').value);
   fetch(q).then(async r=>{
@@ -184,8 +118,7 @@ function load(){
     document.getElementById('w1').textContent='['+m.devices.diode.window.map(v=>+v.toFixed(3)).join(' ~ ')+']';
     document.getElementById('w2').textContent='['+m.devices.clamp.window.map(v=>+v.toFixed(1)).join(' ~ ')+']';
     render(m);
-  }).catch(e=>{err.textContent=String(e.message||e);})
-    .finally(()=>{btn.disabled=false;});
+  }).catch(e=>{err.textContent=String(e.message||e);});
 }
 document.getElementById('loadBtn').addEventListener('click', load);
 load();

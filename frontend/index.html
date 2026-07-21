@@ -4,37 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mna — ESD design closure</title>
+<link rel="stylesheet" href="static/style.css">
 <style>
-  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
-  header{background:#20252b;color:#fff;padding:20px 24px}
-  header h1{margin:0;font-size:19px}
-  header div{opacity:.75;font-size:12px;margin-top:5px}
-  main{max-width:1050px;margin:auto;padding:16px}
-  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
-  h2{font-size:14px;margin:0 0 8px}
+  /* home 전용 */
   .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}
   @media(max-width:800px){.tiles{grid-template-columns:1fr}}
-  a.tile{display:block;background:#fff;border:1px solid #d9dee5;border-left:5px solid #1f5f99;
-    border-radius:8px;padding:14px 16px;text-decoration:none;color:#20242a;transition:box-shadow .15s}
-  a.tile:hover{box-shadow:0 3px 10px rgba(31,95,153,.18)}
-  a.tile .t{font-size:15px;font-weight:700;color:#1f5f99}
-  a.tile .n{font-size:11px;color:#8a94a0;float:right}
-  a.tile .d{font-size:12px;color:#5b6673;margin-top:4px;line-height:1.5}
-  code,pre{background:#f3f5f7;border-radius:5px;padding:2px 5px;font-size:12px}
-  pre{padding:10px;white-space:pre-wrap;margin:8px 0 0}
-  ul{margin:6px 0;padding-left:20px}
-  a{color:#1f5f99;text-decoration:none}
-  a:hover{text-decoration:underline}
-  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
-  button:disabled{opacity:.5;cursor:wait}
-  .ok{color:#0a7d38}.bad{color:#b3261e}
-  #meta{font-size:12px;color:#5b6673}
+  #meta{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
 <header data-app="mna-esd-solver">
   <h1>mna — ESD design closure (MNA / backprop)</h1>
-  <div>VDD/IO/VSS 레일 · up/down diode · clamp · victim inverter(Resd 500Ω) · Python solver + HTML frontend</div>
+  <div class="sub">VDD/IO/VSS 레일 · up/down diode · clamp · victim inverter(Resd 500Ω) · Python solver + HTML frontend</div>
 </header>
 <main>
   <div class="tiles">

@@ -4,47 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mna — Optimizer (v4-parity)</title>
+<link rel="stylesheet" href="static/style.css">
+<script src="static/charts.js"></script>
 <style>
-  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
-  header{background:#20252b;color:#fff;padding:14px 22px}
-  header h1{margin:0;font-size:17px}
-  header a{color:#9ecbff;font-size:12px;text-decoration:none}
-  main{max-width:1280px;margin:auto;padding:16px}
-  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
-  h2{font-size:14px;margin:0 0 10px}
-  h3{font-size:12px;margin:10px 0 4px;color:#5b6673}
-  .in{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
-  @media(max-width:1000px){.in{grid-template-columns:repeat(3,1fr)}}
-  .in label{font-size:11px;color:#5b6673;display:block}
-  .in input,.in select{width:100%;padding:5px;font-size:12px;box-sizing:border-box}
-  details{margin-top:8px}
-  summary{font-size:12px;color:#1f5f99;cursor:pointer}
-  button{padding:8px 18px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer;font-size:14px}
-  button:disabled{opacity:.5;cursor:wait}
-  .status{font-size:12px;color:#5b6673;margin-left:10px}
-  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-  .grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-  @media(max-width:1000px){.grid2,.grid3,.grid5{grid-template-columns:1fr}}
-  svg{width:100%;height:auto;display:block}
-  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
-  .chip{padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700}
-  .ok{background:#e0f2e7;color:#0a7d38}.bad{background:#fbe3e1;color:#b3261e}.mid{background:#fff3d6;color:#8a6100}
-  .kv{font-size:12px;color:#5b6673;white-space:pre-line}
+  /* optimize 전용 */
+  .kv{font-size:12px;color:var(--muted);white-space:pre-line}
   .scrub{display:flex;gap:10px;align-items:center;margin:8px 0}
   .scrub input[type=range]{flex:1}
-  .scrub input[type=number]{width:90px;padding:5px}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{border:1px solid #d9dee5;padding:4px 6px;text-align:right;white-space:nowrap}
-  th{background:#eef1f4;position:sticky;top:0}
+  .scrub input[type=number]{width:90px}
+  table th,table td{text-align:right;white-space:nowrap}
   td:first-child,th:first-child{text-align:left}
-  .tw{max-height:340px;overflow:auto}
-  .gauge{margin:4px 0}
-  .gauge .lbl{font-size:11px;color:#5b6673;display:flex;justify-content:space-between}
-  .bar{height:10px;background:#eef1f4;border-radius:5px;position:relative;overflow:hidden}
-  .bar i{position:absolute;top:0;bottom:0;left:0;border-radius:5px}
   .rank .bar{height:8px}
-  .err{color:#b3261e;font-size:13px}
+  .status{font-size:12px;color:var(--muted);margin-left:10px}
 </style>
 </head>
 <body>
@@ -124,7 +95,7 @@
 
   <div class="card" id="radarCard" hidden>
     <h2>3. Radar (바깥=위험, 100% 점선 경계, 200% 스케일 · ghost: 0/0.5/1/1.5/2A)</h2>
-    <div class="grid5">
+    <div class="grid-5">
       <div id="radarInt"></div>
       <div id="radarA"></div>
       <div id="radarB"></div>
@@ -140,7 +111,7 @@
 
   <div class="card" id="gaugeCard" hidden>
     <h2>5. Constraint gauges</h2>
-    <div class="grid3" id="gauges"></div>
+    <div class="grid-3" id="gauges"></div>
   </div>
 
   <div class="card" id="rankCard" hidden>
@@ -150,7 +121,7 @@
 
   <div class="card" id="mapCard" hidden>
     <h2>7. V-I SOA maps (궤적 = sweep 최적해)</h2>
-    <div class="grid3">
+    <div class="grid-3">
       <div id="mapV"></div>
       <div id="mapD"></div>
       <div id="mapC"></div>
@@ -159,7 +130,7 @@
 
   <div class="card" id="iterCard" hidden>
     <h2>8. Iteration plots (선택 전류점)</h2>
-    <div class="grid3">
+    <div class="grid-3">
       <div id="itUsage"></div>
       <div id="itVars"></div>
       <div id="itLoss"></div>
@@ -173,76 +144,12 @@
 </main>
 <script>
 'use strict';
-const CB={blue:'#0072B2',orange:'#D55E00',green:'#009E73',purple:'#CC79A7',sky:'#56B4E9',gray:'#5b6673',red:'#b3261e',gold:'#E69F00'};
+const CB={blue:MNA.C.s[0],orange:MNA.C.worst2,green:MNA.C.s[1],purple:MNA.C.s[2],sky:MNA.C.best2,gray:MNA.C.gray,red:MNA.C.fail,gold:MNA.C.gold};
 let DATA=null;
 
 const P=['x1init','x2init','linit','rio','imax','warmStart','vTopo','vgIn','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
-function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?3:d);}
-function pct(v){return (100*v).toFixed(1)+'%';}
-
-// ---------- SVG helpers ----------
-function lineChart(el,o){
-  const W=o.w||420,H=o.h||260,mL=46,mR=10,mT=o.title?22:8,mB=30;
-  let xs=[],ys=[];
-  (o.series||[]).forEach(s=>{xs=xs.concat(s.x);ys=ys.concat(s.y);});
-  (o.hlines||[]).forEach(h=>ys.push(h.y));(o.points||[]).forEach(p=>{xs.push(p.x);ys.push(p.y);});
-  xs=xs.filter(isFinite);ys=ys.filter(isFinite);
-  let x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
-  if(!isFinite(x0)){el.innerHTML='';return;}
-  if(x0===x1){x0-=1;x1+=1}if(y0===y1){y0-=1;y1+=1}
-  const px=(x1-x0)*.03,py=(y1-y0)*.07;x0-=px;x1+=px;y0-=py;y1+=py;
-  const X=x=>mL+(x-x0)/(x1-x0)*(W-mL-mR),Y=y=>H-mB-(y-y0)/(y1-y0)*(H-mT-mB);
-  let s='<svg viewBox="0 0 '+W+' '+H+'">';
-  for(let i=0;i<=4;i++){const xv=x0+(x1-x0)*i/4,yv=y0+(y1-y0)*i/4;
-    s+='<line x1="'+X(xv)+'" y1="'+mT+'" x2="'+X(xv)+'" y2="'+(H-mB)+'" stroke="#eceff3"/>'
-      +'<line x1="'+mL+'" y1="'+Y(yv)+'" x2="'+(W-mR)+'" y2="'+Y(yv)+'" stroke="#eceff3"/>'
-      +'<text x="'+X(xv)+'" y="'+(H-mB+14)+'" text-anchor="middle" font-size="9" fill="#5b6673">'+fmtN(xv)+'</text>'
-      +'<text x="'+(mL-4)+'" y="'+(Y(yv)+3)+'" text-anchor="end" font-size="9" fill="#5b6673">'+fmtN(yv)+'</text>';}
-  s+='<rect x="'+mL+'" y="'+mT+'" width="'+(W-mL-mR)+'" height="'+(H-mT-mB)+'" fill="none" stroke="#c6ccd4"/>';
-  (o.hlines||[]).forEach(h=>{s+='<line x1="'+mL+'" y1="'+Y(h.y)+'" x2="'+(W-mR)+'" y2="'+Y(h.y)+'" stroke="'+(h.color||CB.red)+'" stroke-dasharray="5 4"/>';
-    if(h.label)s+='<text x="'+(W-mR-3)+'" y="'+(Y(h.y)-3)+'" text-anchor="end" font-size="9" fill="'+(h.color||CB.red)+'">'+h.label+'</text>';});
-  (o.vlines||[]).forEach(h=>{s+='<line x1="'+X(h.x)+'" y1="'+mT+'" x2="'+X(h.x)+'" y2="'+(H-mB)+'" stroke="'+(h.color||CB.gray)+'" stroke-dasharray="4 4"/>';});
-  (o.series||[]).forEach(sr=>{const pts=sr.x.map((x,i)=>X(x).toFixed(1)+','+Y(sr.y[i]).toFixed(1)).join(' ');
-    s+='<polyline points="'+pts+'" fill="none" stroke="'+sr.color+'" stroke-width="1.7"'+(sr.dash?' stroke-dasharray="5 4"':'')+'/>';});
-  (o.points||[]).forEach(p=>{s+='<circle cx="'+X(p.x)+'" cy="'+Y(p.y)+'" r="'+(p.r||3)+'" fill="'+(p.color||CB.gray)+'"/>';});
-  if(o.title)s+='<text x="'+(mL+2)+'" y="14" font-size="11" fill="#20242a">'+o.title+'</text>';
-  let lx=mL+6,ly=mT+12;
-  (o.series||[]).forEach(sr=>{if(!sr.label)return;
-    s+='<line x1="'+lx+'" y1="'+(ly-3)+'" x2="'+(lx+14)+'" y2="'+(ly-3)+'" stroke="'+sr.color+'" stroke-width="2"'+(sr.dash?' stroke-dasharray="4 3"':'')+'/>'
-      +'<text x="'+(lx+18)+'" y="'+ly+'" font-size="9" fill="#5b6673">'+sr.label+'</text>';ly+=12;});
-  el.innerHTML=s+'</svg>';
-}
-function fmtN(v){const a=Math.abs(v);if(a>=1000)return v.toFixed(0);if(a>=10)return v.toFixed(1);if(a>=.01||a===0)return(+v.toFixed(3)).toString();return v.toExponential(0);}
-
-function radar(el,title,labels,vals,ghosts){
-  const W=250,H=250,cx=W/2,cy=H/2+6,R=88,n=labels.length,MAX=2.0; // 200% scale
-  const pt=(k,v)=>{const a=-Math.PI/2+2*Math.PI*k/n,r=R*Math.min(v,MAX)/MAX;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];};
-  let s='<svg viewBox="0 0 '+W+' '+H+'">';
-  for(const g of [0.5,1.5,2.0]){const pts=labels.map((_,k)=>pt(k,g).map(v=>v.toFixed(1)).join(',')).join(' ');
-    s+='<polygon points="'+pts+'" fill="none" stroke="#eceff3"/>';}
-  {const pts=labels.map((_,k)=>pt(k,1).map(v=>v.toFixed(1)).join(',')).join(' ');
-    s+='<polygon points="'+pts+'" fill="none" stroke="'+CB.red+'" stroke-dasharray="4 3"/>';}
-  labels.forEach((lb,k)=>{const [x,y]=pt(k,MAX*1.02);const a=pt(k,MAX);
-    s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+a[0]+'" y2="'+a[1]+'" stroke="#eceff3"/>'
-      +'<text x="'+x+'" y="'+y+'" text-anchor="middle" font-size="8.5" fill="#5b6673">'+lb+'</text>';});
-  (ghosts||[]).forEach(g=>{const pts=g.vals.map((v,k)=>pt(k,v).map(q=>q.toFixed(1)).join(',')).join(' ');
-    s+='<polygon points="'+pts+'" fill="none" stroke="#b9c2cc" stroke-width="1" opacity="0.7"/>';});
-  {const pts=vals.map((v,k)=>pt(k,v).map(q=>q.toFixed(1)).join(',')).join(' ');
-    s+='<polygon points="'+pts+'" fill="'+CB.blue+'22" stroke="'+CB.blue+'" stroke-width="1.8"/>';}
-  s+='<text x="'+cx+'" y="12" text-anchor="middle" font-size="11" fill="#20242a">'+title+'</text>';
-  el.innerHTML=s+'</svg>';
-}
-function gauge(el,name,val,lim,kind){ // kind: 'upper' usage, 'window' position
-  const u=kind==='window'?val:val; const okv=kind==='window'?(val>=0&&val<=1):(val<=1);
-  const w=Math.max(0,Math.min(1,kind==='window'?val:val/2))*100; // upper: 200% scale
-  const col=okv?CB.green:CB.red;
-  el.insertAdjacentHTML('beforeend',
-    '<div class="gauge"><div class="lbl"><span>'+name+'</span><span style="color:'+(okv?'#0a7d38':'#b3261e')+'">'
-    +(kind==='window'?('pos '+pct(val)):pct(val))+' · '+(okv?'PASS':'FAIL')+'</span></div>'
-    +'<div class="bar"><i style="width:'+w+'%;background:'+col+'"></i>'
-    +(kind!=='window'?'<i style="left:50%;width:2px;background:#b3261e"></i>':'')
-    +'</div></div>');
-}
+const f=MNA.f, pct=MNA.pct;
+const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
 // ---------- data plumbing ----------
 function collect(){const q={};P.forEach(k=>q[k]=document.getElementById(k).value);return q;}
@@ -299,7 +206,7 @@ function renderRadars(fin){
 }
 function renderSweep(){
   const s=DATA.sweep,p=DATA.settings,e=cur();
-  lineChart(document.getElementById('sweepChart'),{w:1180,h:280,
+  lineChart(document.getElementById('sweepChart'),{w:1180,h:210,
     series:[
       {x:s.map(q=>q.I),y:s.map(q=>q.final.x1pos),color:CB.blue,label:'x1 pos'},
       {x:s.map(q=>q.I),y:s.map(q=>q.final.x2pos),color:CB.orange,label:'x2 pos'},
@@ -339,35 +246,35 @@ function renderRank(fin){
 }
 function renderMaps(p){
   const s=DATA.sweep,e=cur(),fin=e.final;
-  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) drain 스트레스 vs I',w:380,h:250,
+  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) drain 스트레스 vs I',
     series:[{x:s.map(q=>q.final.vnds),y:s.map(q=>q.I),color:CB.blue,label:'V(OUT) 궤적'},
-            {x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.gray,dash:true,label:'V_IO (참고)'}],
+            {x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.gray,label:'V_IO (참고)'}],
     hlines:[],vlines:[{x:fin.limNterm,color:CB.red}],
     points:[{x:fin.vnds,y:e.I,r:5,color:fin.passV?CB.green:CB.red}]});
-  lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',w:380,h:250,
+  lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',
     series:[{x:s.map(q=>q.final.vd),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
     hlines:[{y:fin.it2d,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2d,color:CB.red}],
     points:[{x:fin.vd,y:e.I,r:5,color:fin.passD?CB.green:CB.red},{x:fin.vt2d,y:fin.it2d,r:3.5,color:CB.gold}]});
-  lineChart(document.getElementById('mapC'),{title:'Clamp: V vs I (endpoint=Vt2,It2)',w:380,h:250,
+  lineChart(document.getElementById('mapC'),{title:'Clamp: V vs I (endpoint=Vt2,It2)',
     series:[{x:s.map(q=>q.final.vc),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
     hlines:[{y:fin.it2c,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2c,color:CB.red}],
     points:[{x:fin.vc,y:e.I,r:5,color:fin.passC?CB.green:CB.red},{x:fin.vt2c,y:fin.it2c,r:3.5,color:CB.gold}]});
 }
 function renderIter(){
   const h=cur().history;
-  lineChart(document.getElementById('itUsage'),{title:'SOA usage vs iteration',w:380,h:250,
+  lineChart(document.getElementById('itUsage'),{title:'SOA usage vs iteration',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim SOA U'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.orange,label:'Diode I'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:CB.green,label:'Clamp I'}],
     hlines:[{y:1,label:'100%'}]});
-  lineChart(document.getElementById('itVars'),{title:'변수 궤적 (window 정규화)',w:380,h:250,
+  lineChart(document.getElementById('itVars'),{title:'변수 궤적 (window 정규화)',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.x1pos),color:CB.blue,label:'x1'},
       {x:h.map(r=>r.it),y:h.map(r=>r.x2pos),color:CB.orange,label:'x2'},
       {x:h.map(r=>r.it),y:h.map(r=>r.lpos),color:CB.green,label:'L'}],
     hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4'}]});
-  lineChart(document.getElementById('itLoss'),{title:'V_IO / cost / loss',w:380,h:250,
+  lineChart(document.getElementById('itLoss'),{title:'V_IO / cost / loss',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.blue,label:'V_IO'},
       {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.green,label:'cost'},

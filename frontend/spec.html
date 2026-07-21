@@ -4,27 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>mna — ESD spec</title>
+<link rel="stylesheet" href="static/style.css">
 <style>
-  body{margin:0;font:14px/1.6 -apple-system,'Segoe UI',Arial,sans-serif;background:#f4f6f8;color:#20242a}
-  header{background:#20252b;color:#fff;padding:14px 22px}
-  header h1{margin:0;font-size:17px}
-  header a{color:#9ecbff;font-size:12px;text-decoration:none}
-  main{max-width:1100px;margin:auto;padding:16px}
-  .card{background:#fff;border:1px solid #d9dee5;border-radius:8px;padding:14px 16px;margin:12px 0}
-  h2{font-size:14px;margin:0 0 10px}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{border:1px solid #d9dee5;padding:6px 8px;text-align:left}
-  th{background:#eef1f4}
-  .ctl{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
-  .ctl label{font-size:12px;color:#5b6673;display:block}
-  .ctl input{width:130px;padding:6px}
-  button{padding:7px 14px;border:1px solid #1f5f99;background:#1f5f99;color:#fff;border-radius:6px;cursor:pointer}
-  .pass{color:#0a7d38;font-weight:700}
-  .failv{color:#b3261e;font-weight:700}
-  .fails{color:#7a1fa2;font-weight:700}
+  /* spec 전용 */
+  .pass{color:var(--c-pass);font-weight:700}
+  .failv{color:var(--c-fail);font-weight:700}
+  .fails{color:#6a4fa3;font-weight:700}
   .named{background:#fff8e6}
-  .cap{font-size:12px;color:#5b6673;margin-top:8px;white-space:pre-line}
-  .err{color:#b3261e;font-size:13px}
+  .ctl input{width:130px}
 </style>
 </head>
 <body>

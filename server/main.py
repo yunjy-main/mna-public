@@ -39,7 +39,7 @@ def _refs():
 def meta():
     return {
         "app": "mna-esd-solver",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "phase": "1A(테이블)+2(직렬 optimizer) 부분 — v4-parity optimizer + display screens",
         "runtime": "python {} / fastapi".format(sys.version.split()[0]),
         "refs": _refs(),
@@ -76,6 +76,17 @@ def _page(name):
     """Serve a frontend page with no-store so UI updates are never cache-stale."""
     return FileResponse(os.path.join(ROOT, "frontend", name),
                         headers={"Cache-Control": "no-store"})
+
+
+@app.get(PREFIX + "/static/{path:path}")
+def static_file(path: str):
+    """Shared design-system assets (style.css / charts.js), no-store like pages."""
+    cand = os.path.normpath(os.path.join(ROOT, "frontend", "static", path))
+    ok = (os.path.dirname(cand) == os.path.join(ROOT, "frontend", "static")
+          and cand.endswith((".css", ".js")) and os.path.isfile(cand))
+    if not ok:
+        return PlainTextResponse("not found", status_code=404)
+    return FileResponse(cand, headers={"Cache-Control": "no-store"})
 
 
 _models_cache = {}
@@ -408,7 +419,7 @@ def entities():
         (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.2.0", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.3.0", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
