@@ -171,9 +171,10 @@ function loadMatrix(){
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
     .then(d=>{
       const s=d.solution;
-      st.textContent='net '+d.n_nets+'개 (배선 '+d.n_wires+'), 미지수 '+s.size
+      st.innerHTML='net '+d.n_nets+'개 (배선 '+d.n_wires+'), 미지수 '+s.size
         +' · nnz '+s.nnz+' · Newton '+s.newton_iters+'회 · residual '+s.residual.toExponential(2)
-        +' · ref: '+s.ref_nets.join(', ');
+        +' · ref: '+s.ref_nets.join(', ')+' · '
+        +(s.converged?'<b style="color:#0b7a3b">수렴</b>':'<b style="color:#b3261e">비수렴 — 해 신뢰 불가</b>');
       let t='netlist (회로도에서 추출):\n';
       d.devices.forEach(v=>{t+='  '+String(v.instance).padEnd(26)+(v.cell||'—').padEnd(8)
         +String(v.model||'—').padEnd(22)+v.pins+(v.open?'  (open — 미조립)':'')+'\n';});

@@ -282,7 +282,8 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
         return [M[i][n] / M[i][i] for i in range(n)]
 
     v = [0.0] * N
-    it, res = 0, float("inf")
+    it, res, prev_res = 0, float("inf"), float("inf")
+    cap = 1.0  # 적응형 step 제한: 걸린 채 residual이 안 줄면 확대 (부동 net 고전압 해 수렴)
     for it in range(1, max_iter + 1):
         G, F = build(v)
         res = max(abs(x) for x in F) if F else 0.0
@@ -290,16 +291,22 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
             break
         dv = solve_lin(G, [-x for x in F])
         mx = max(abs(x) for x in dv) if dv else 0.0
-        damp = 1.0 if mx <= 1.0 else 1.0 / mx  # step 제한 1V
+        capped = mx > cap
+        if capped and res >= 0.9 * prev_res:
+            cap *= 4.0
+        damp = 1.0 if mx <= cap else cap / mx
         v = [vi + damp * di for vi, di in zip(v, dv)]
+        prev_res = res
 
     G, F = build(v)
+    res = max(abs(x) for x in F) if F else 0.0
     return {
         "inject": inject, "ground": ground, "I": I, "L": L,
         "unknowns": [names[n] for n in unknowns],
         "ref_nets": sorted(names[n] for n in ref if n in names),
         "v": {names[n]: v[idx[n]] for n in unknowns},
-        "G": G, "residual": max(abs(x) for x in F) if F else 0.0,
+        "G": G, "residual": res,
+        "converged": res < 1e-6,
         "newton_iters": it,
         "size": "{0}×{0}".format(N),
         "nnz": sum(1 for row in G for x in row if abs(x) > 1e-12),

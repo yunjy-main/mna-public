@@ -565,9 +565,9 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
     기하 연결성에서 net 추출, instance(cell/model/params)와 결합해 조립.
     model equation은 임의 placeholder(softplus 계열) — 구조 변환이 목적.
     inject/ground = net 이름(IO/VDD/VSS/MVSS/VSS2...), open 소자는 미조립."""
-    from server.schematic import DEFAULT_LAYOUT
+    from server.schematic import load_layout
     from server.netlist import extract_netlist, assemble_and_solve
-    nl = extract_netlist(DEFAULT_LAYOUT)
+    nl = extract_netlist(load_layout()[0])  # R15: 표시 중인 회로도(custom 포함)가 원천
     try:
         sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L)
     except ValueError as ex:

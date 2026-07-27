@@ -77,8 +77,17 @@ chk("Jacobian 대칭(2단자 소자만)", sym < 1e-9, str(sym))
 
 # 3) 다른 시나리오도 수렴하는가 (VSS2 주입 / MVSS 접지 — b2b_m2 경유)
 r2 = assemble_and_solve(nl, inject="VSS2", ground="MVSS", I=0.5)
-chk("VSS2→MVSS 수렴", r2["residual"] < 1e-8, str(r2["residual"]))
+chk("VSS2→MVSS 수렴", r2["converged"] and r2["residual"] < 1e-8, str(r2["residual"]))
 chk("b2b 순방향 강하 ~0.75V", 0.6 < r2["v"]["VSS2"] < 1.0, str(r2["v"]["VSS2"]))
+
+# 4) 검증 워크플로우 발견 회귀: 부동 net 주입도 수렴(적응형 damping) + converged 플래그
+r3 = assemble_and_solve(nl, inject="IO2", ground="VSS", I=1.33)
+chk("부동 net(IO2) 수렴", r3["converged"], "res={}".format(r3["residual"]))
+chk("부동 net 진해 I/GMIN", abs(r3["v"]["IO2"] - 1.33e9) / 1.33e9 < 1e-3, str(r3["v"]["IO2"]))
+chk("converged 키 존재", "converged" in r, "")
+allc = all(assemble_and_solve(nl, inject=a, ground=b, I=1.33)["converged"]
+           for a, b in (("VDD", "VSS"), ("MVSS", "VDD"), ("N3B", "VSS"), ("IO", "MVSS")))
+chk("추가 시나리오 4종 수렴", allc, "")
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
