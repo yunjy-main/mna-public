@@ -114,7 +114,7 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": "N3B"},
         {"type": "line", "from": "IO", "to": [0.2, 3.0]},
         {"type": "resistor", "from": [0.2, 3.0], "to": [2.2, 3.0]},
-        {"type": "rect", "corner1": [0.55, 2.55], "corner2": [1.85, 3.45], "instance": "XResd", "cell": "r", "model": "series_res", "equation": "500Ω", "params": {"R": 500}},
+        {"type": "rect", "corner1": [0.55, 2.55], "corner2": [1.85, 3.45], "instance": "XResd", "cell": "r", "model": "rmres", "equation": "500Ω", "params": {"R": 500}},
         {"type": "port", "at": [0.55, 3.0], "text": ""},
         {"type": "port", "at": [1.85, 3.0], "text": ""},
         {"type": "line", "from": [2.2, 3.0], "to": [2.6, 3.0]},

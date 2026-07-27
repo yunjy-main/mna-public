@@ -169,7 +169,7 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
-| **model** | 내부 심볼의 **process 모델명** — cell의 model list에서 선택 (esdvpnp, esdndsx, nfet_clamp, metal, SG_PFET/SG_NFET 1stk_1rx; Resd=series_res(가안)). solver 내부명(model1/model2)은 화면에 쓰지 않는다 | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
+| **model** | 내부 심볼의 **process 모델명** — cell의 model list에서 선택 (esdvpnp, esdndsx, nfet_clamp, metal, rmres(Resd), SG_PFET/SG_NFET 1stk_1rx). solver 내부명(model1/model2)은 화면에 쓰지 않는다 | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | **fs−3(6pt)**, MUT |
 
 **회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
@@ -204,7 +204,7 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 - **회전/미러 변형 허용**: 같은 cell을 가로/세로로 눕혀 쓸 수 있고 `"variant"` 키로 표기
   (예: d_b2b — XD_b2b_m/m2=vertical, XD_b2b=horizontal).
 - **파라미터 바인딩** `"params"`: instance가 쓰는 solver/UI 변수 또는 상수
-  (XD_up {size:x1}, XClamp {size:x2}, XRDD {R:rdd(L), L:L}, RDL {R:0.1}, XResd {R:500},
+  (XD_up {size:x1}, XClamp {size:x2}, XRDD {R:rdd(L), L:L}, RDL {R:0.1}, XResd(rmres) {R:500},
   I_ESD {I:I_sweep}, XVictim {topology:vTopo}; 2차 보호는 미바인딩 {}).
 - 검증: `GET /api/schematic/mapping` — cell 존재·model 소속·바인딩 표를 반환하고
   위반을 issues로 보고한다. 레이아웃 수정 후 이 API로 확인.
