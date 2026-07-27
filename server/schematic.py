@@ -176,6 +176,59 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [7.1, -2.175]},
         {"type": "line", "from": [7.1, -2.175], "to": [7.1, -3.0]},
         {"type": "dot", "at": [7.1, -3.0]},
+        {"type": "line", "from": [-4.5, -6.4], "to": [15.2, -6.4], "ls": "--", "color": "#b0b6bf"},
+        {"type": "label", "at": [-1.5, -6.85], "text": "Subcircuit Set"},
+        {"type": "line", "from": [-3.8, -7.55], "to": [-3.8, -8.05]},
+        {"type": "sourcei", "from": [-3.8, -9.05], "to": [-3.8, -8.05]},
+        {"type": "ground", "at": [-3.8, -9.05]},
+        {"type": "rect", "corner1": [-4.3, -9.55], "corner2": [-3.3, -8.0], "title": "I_ESD"},
+        {"type": "port", "at": [-3.8, -8.0], "text": ""},
+        {"type": "resistor", "from": [-2.5, -8.5], "to": [-0.5, -8.5]},
+        {"type": "rect", "corner1": [-2.15, -8.95], "corner2": [-0.85, -8.05], "title": "R_rdl 0.1Ω"},
+        {"type": "port", "at": [-2.15, -8.5], "text": ""},
+        {"type": "port", "at": [-0.85, -8.5], "text": ""},
+        {"type": "resistor", "from": [0.3, -8.5], "to": [2.3, -8.5]},
+        {"type": "rect", "corner1": [0.65, -8.95], "corner2": [1.95, -8.05], "title": "Resd 500Ω"},
+        {"type": "port", "at": [0.65, -8.5], "text": ""},
+        {"type": "port", "at": [1.95, -8.5], "text": ""},
+        {"type": "resistor", "from": [3.1, -8.5], "to": [5.1, -8.5]},
+        {"type": "rect", "corner1": [3.45, -8.95], "corner2": [4.75, -8.05], "title": "RDD 0.5Ω/350µm"},
+        {"type": "port", "at": [3.45, -8.5], "text": ""},
+        {"type": "port", "at": [4.75, -8.5], "text": ""},
+        {"type": "diode", "from": [5.9, -9.5], "to": [5.9, -7.5]},
+        {"type": "rect", "corner1": [5.4, -9.1], "corner2": [6.4, -7.9], "title": "D_up (x1)"},
+        {"type": "port", "at": [5.9, -7.9], "text": ""},
+        {"type": "port", "at": [5.9, -9.1], "text": ""},
+        {"type": "diode", "from": [7.7, -9.5], "to": [7.7, -7.5], "fill": "black"},
+        {"type": "rect", "corner1": [7.2, -9.1], "corner2": [8.2, -7.9], "title": "D_down"},
+        {"type": "port", "at": [7.7, -7.9], "text": ""},
+        {"type": "port", "at": [7.7, -9.1], "text": ""},
+        {"type": "zener", "from": [9.5, -9.5], "to": [9.5, -7.5]},
+        {"type": "rect", "corner1": [9.0, -9.1], "corner2": [10.0, -7.9], "title": "Clamp (x2)"},
+        {"type": "port", "at": [9.5, -7.9], "text": ""},
+        {"type": "port", "at": [9.5, -9.1], "text": ""},
+        {"type": "line", "from": [10.65, -8.5], "to": [11.0, -8.5]},
+        {"type": "dot", "at": [11.0, -8.5]},
+        {"type": "line", "from": [11.0, -8.5], "to": [11.0, -8.2]},
+        {"type": "line", "from": [11.0, -8.5], "to": [11.0, -8.8]},
+        {"type": "diode", "from": [11.0, -8.2], "to": [11.9, -8.2]},
+        {"type": "diode", "from": [11.9, -8.8], "to": [11.0, -8.8]},
+        {"type": "line", "from": [11.9, -8.2], "to": [11.9, -8.5]},
+        {"type": "line", "from": [11.9, -8.8], "to": [11.9, -8.5]},
+        {"type": "dot", "at": [11.9, -8.5]},
+        {"type": "line", "from": [11.9, -8.5], "to": [12.25, -8.5]},
+        {"type": "rect", "corner1": [10.8, -9.15], "corner2": [12.1, -7.85], "title": "D_b2b"},
+        {"type": "port", "at": [10.8, -8.5], "text": ""},
+        {"type": "port", "at": [12.1, -8.5], "text": ""},
+        {"type": "line", "from": [12.9, -8.5], "to": [14.6, -8.5]},
+        {"type": "rect", "corner1": [12.9, -10.6], "corner2": [14.95, -6.4], "title": "Victim"},
+        {"type": "pfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -6.4},
+        {"type": "nfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -10.6},
+        {"type": "gates", "text": ""},
+        {"type": "dot", "at": [14.6, -8.5]},
+        {"type": "port", "at": [12.9, -8.5], "text": ""},
+        {"type": "port", "at": [14.6, -6.4], "text": ""},
+        {"type": "port", "at": [14.6, -10.6], "text": ""},
     ],
     "current_labels": {"i": [0.8, 2.4], "iv": [2.2, 1.95]},
 }
@@ -228,7 +281,12 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
     for e in layout.get("elements", []):
         t = e.get("type")
         if t == "line":
-            d.add(elm.Line().at(pt(e["from"])).to(pt(e["to"])))
+            el = elm.Line().at(pt(e["from"])).to(pt(e["to"]))
+            if e.get("ls"):
+                el = el.linestyle(e["ls"])
+            if e.get("color"):
+                el = el.color(e["color"])
+            d.add(el)
         elif t == "dot":
             d.add(elm.Dot().at(pt(e["at"])))
         elif t == "ground":
