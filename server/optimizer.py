@@ -37,7 +37,7 @@ DEFAULTS = {
     # stress / victim (inverter drain via Resd; SOA from docs/victim_soa_model.html
     # — user-selected SG NFET + SG PFET, 1stk_1rx)
     "imax": 2.0, "npts": 41, "resd": 500.0, "vVon": 0.7,
-    "vRonJ": 10.0, "bILim": 0.01, "vTopo": "1stk_1rx", "vgIn": 0.0,
+    "vRonJ": 10.0, "bILim": 0.01, "vTopo": "1stk_1rx",
     # rules (asymmetric: min = harsh, max = quasi(cap-driven))
     "x1min": 0.64, "x1max": 3.84, "x2min": 1415.232, "x2max": 2628.288,
     "lmin": 70.0, "lmax": 1400.0, "rio": 0.1,
@@ -73,7 +73,8 @@ def evaluate(tbl, p, I, x1, x2, L, it):
     vnds, iv, soa = 0.0, 0.0, None
     for corner in ("worst", "best"):
         vo, ivc = M.victim_probe(vio_c[corner], vc_c[corner], p["resd"], p["vVon"], p["vRonJ"])
-        s = VS.inverter_victim(vo, vc_c[corner], p["vgIn"], topology=p["vTopo"])
+        # gate = OUT (diode-connected — 사용자 지시: Resd 우측 node를 gate에도 연결)
+        s = VS.inverter_victim(vo, vc_c[corner], vo, topology=p["vTopo"])
         if soa is None or s["u"] > soa["u"]:
             soa = s
         vnds, iv = max(vnds, vo), max(iv, ivc)
@@ -197,7 +198,7 @@ def ipass_of(tbl, p, x1, x2, L):
             vc = tbl.vofi("clamp", c, x2, i)
             vio = i * (p["rio"] + rvdd) + tbl.vofi("diode", c, x1, i) + vc
             vo, iv = M.victim_probe(vio, vc, p["resd"], p["vVon"], p["vRonJ"])
-            s = VS.inverter_victim(vo, vc, p["vgIn"], topology=p["vTopo"])
+            s = VS.inverter_victim(vo, vc, vo, topology=p["vTopo"])
             if s["u"] >= 1.0 or iv > p["bILim"]:
                 return False
         return True

@@ -54,6 +54,16 @@ if s["worst"] != "NMOS terminal":
 s2 = inverter_victim(2.02, 1.29, 0.0, topology="2stk_2rx")
 chk("inv/2stk_uN_term", s2["uN_term"], 2.02 / 5.7)
 
+# diode-connected gate (사용자 지시: gate = OUT): VG = V_OUT
+sd = inverter_victim(2.02, 1.29, 2.02)
+# NFET: VGS=2.02, VGD=0, VGB=2.02 -> inversion 2.02/2.9 (터미널 2.02/3.1보다 큼 -> 지배)
+chk("dc/uN_ox", sd["uN_ox"], 2.02 / 2.9)
+chk("dc/u", sd["u"], 2.02 / 2.9)
+if sd["worst"] != "NMOS ox inv":
+    fails.append("dc/worst: got {}".format(sd["worst"]))
+# PFET(G=2.02, S=B=1.29, D=2.02): acc = max(0.73, 0, 0.73)/3.8
+chk("dc/uP_ox", sd["uP_ox"], 0.73 / 3.8)
+
 if fails:
     for m in fails:
         print("FAIL " + m)

@@ -64,12 +64,13 @@ A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
 # victim = PMOS+NMOS inverter, drain node via Resd from IO (user-fixed topology).
 # SOA from docs/victim_soa_model.html — user-selected SG NFET + SG PFET, 1stk_1rx.
 VICTIM = {"ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0,
-          "nmos": "SG_NFET", "pmos": "SG_PFET", "topology": "1stk_1rx", "vg": 0.0}
+          "nmos": "SG_NFET", "pmos": "SG_PFET", "topology": "1stk_1rx"}
+# gate = OUT (diode-connected — Resd 우측 node가 inverter gate에도 연결, 사용자 지시)
 NAMED_SPEC_KV = 1.0  # the named ESD spec level (1 kV <-> 1.33 A)
 
 
 def _victim_soa(v_out, vdd_local):
-    return VS.inverter_victim(v_out, vdd_local, VICTIM["vg"],
+    return VS.inverter_victim(v_out, vdd_local, v_out,  # gate = OUT (diode-connected)
                               VICTIM["nmos"], VICTIM["pmos"], VICTIM["topology"])
 
 def _page(name):
@@ -316,6 +317,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "Resd", "type": "device — R (ESD 직렬)", "nodes": "IO–OUT", "param": "500Ω (victim 보호)"},
             {"name": "PMOS drain 접합", "type": "device — FET 접합 (victim)", "nodes": "OUT→N3", "param": "Von 0.7 + Ron 10Ω, 양(+) 스트레스 시 순방향"},
             {"name": "NMOS drain 접합", "type": "device — FET (victim, SG 1stk_1rx SOA)", "nodes": "OUT→VSS", "param": "terminal 3.1V · oxide inv/acc 2.9/3.3V"},
+            {"name": "Gate tie", "type": "wire", "nodes": "OUT–G(PMOS·NMOS)", "param": "diode-connected — V_G = V(OUT), oxide 검사 기준"},
         ],
         "mna": {
             "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(OUT)"],

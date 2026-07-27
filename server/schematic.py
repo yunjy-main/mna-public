@@ -51,7 +51,7 @@ DEFAULT_LAYOUT = {
         {"type": "resistor", "from": "N2", "to": [6.0, 6.0], "label": "Rvdd {rvdd}Ω L={L}µm", "loc": "top"},
         {"type": "line", "from": [6.0, 6.0], "to": "N3"},
         {"type": "dot", "at": "N3"},
-        {"type": "zener", "from": "N3", "to": [9.0, 0], "label": "Clamp x2={x2}", "loc": "bottom"},
+        {"type": "zener", "from": [9.0, 0], "to": "N3", "label": "Clamp x2={x2}", "loc": "bottom"},
         {"type": "diode", "from": [3.4, 0], "to": "IO", "label": "D_down", "loc": "top"},
         {"type": "dot", "at": [3.4, 0]},
         {"type": "resistor", "from": "IO", "to": [5.0, 3.0], "label": "Resd 500Ω", "loc": "bottom"},
@@ -61,7 +61,7 @@ DEFAULT_LAYOUT = {
         {"type": "nfet", "drain": "OUT", "label": "NMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0},
         {"type": "dot", "at": [6.4, 6.0]},
         {"type": "dot", "at": [6.4, 0.0]},
-        {"type": "gates", "text": "V_IN=0"},
+        {"type": "gates", "tie": "OUT"},
     ],
     "current_labels": {"i": [1.7, 2.45], "iv": [5.65, 3.4]},
 }
@@ -151,11 +151,17 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                 g1 = fets["pfet"].absanchors['gate']
                 g2 = fets["nfet"].absanchors['gate']
                 d.add(elm.Line().at((g1.x, g1.y)).to((g2.x, g2.y)))
-                # 입력 스텁: NMOS gate 높이에서 왼쪽으로 (Resd 배선과 겹침 방지)
-                sy = g2.y
-                d.add(elm.Line().at((g2.x, sy)).to((g2.x - 0.6, sy)))
-                d.add(elm.Label().at((g2.x - 1.15, sy)).label(e.get("text", "V_IN"),
-                                                              fontsize=fs - 1, color=MUT))
+                tie = e.get("tie")
+                if tie and tie in nodes:
+                    # gate tie를 tie 노드 배선과 접점(dot)으로 연결 (diode-connected)
+                    ty = nodes[tie]["xy"][1]
+                    d.add(elm.Dot().at((g1.x, ty)))
+                else:
+                    # 외부 입력 스텁
+                    sy = g2.y
+                    d.add(elm.Line().at((g2.x, sy)).to((g2.x - 0.6, sy)))
+                    d.add(elm.Label().at((g2.x - 1.15, sy)).label(e.get("text", "V_IN"),
+                                                                  fontsize=fs - 1, color=MUT))
 
     # node names + operating-point voltages (파란 주석)
     for name, nd in nodes.items():

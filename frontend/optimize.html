@@ -54,8 +54,8 @@
       <div><label>초기 x2 (clamp)</label><input id="x2init" type="number" step="any" value="1415.232"></div>
       <div><label>초기 L (µm, Rvdd)</label><input id="linit" type="number" step="any" value="350"></div>
       <div><label>sweep Imax (A)</label><input id="imax" type="number" step="any" value="2.0"></div>
-      <div><label>victim gate V_IN (V)</label><input id="vgIn" type="number" step="any" value="0.0"></div>
       <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
+      <div><label>victim gate</label><input value="OUT (diode-connected)" disabled></div>
     </div>
     <h3>Rule 실험 (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
     <div class="in">
@@ -210,7 +210,7 @@ victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topol
 const CB={blue:MNA.C.s[0],orange:MNA.C.worst2,green:MNA.C.s[1],purple:MNA.C.s[2],sky:MNA.C.best2,gray:MNA.C.gray,red:MNA.C.fail,gold:MNA.C.gold};
 let DATA=null;
 
-const P=['x1init','x2init','linit','rio','imax','warmStart','vTopo','vgIn','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
+const P=['x1init','x2init','linit','rio','imax','warmStart','vTopo','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
 const f=MNA.f, pct=MNA.pct;
 const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
@@ -225,9 +225,10 @@ V_c   = V_clamp(I; x2)        · model2 측정 보정(scale)
 Rvdd  = 0.5Ω · L/350µm        · R device (L 변수, W 고정)
 V_IO  = I·(Rio + Rvdd) + V_d + V_c
 
-victim (inverter, IO ─Resd→ OUT):
+victim (inverter, IO ─Resd→ OUT, gate=OUT diode-connected):
 V(OUT) = (Rj·V_IO + Resd·(V_N3 + Von)) / (Rj + Resd)   · PMOS 접합 도통 시
-I_v    = (V_IO − V(OUT)) / Resd`;
+I_v    = (V_IO − V(OUT)) / Resd
+oxide 검사: VG = V(OUT) 기준 VGS/VGD/VGB`;
   document.getElementById('lossEq').textContent =
 `Rules (비대칭):
 x1 ≥ ${val('x1min')} (min=가혹 FAIL) · x1 ≤ ${val('x1max')} (준-rule)
