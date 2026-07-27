@@ -208,3 +208,17 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
   I_ESD {I:I_sweep}, XVictim {topology:vTopo}; 2차 보호는 미바인딩 {}).
 - 검증: `GET /api/schematic/mapping` — cell 존재·model 소속·바인딩 표를 반환하고
   위반을 issues로 보고한다. 레이아웃 수정 후 이 API로 확인.
+
+## R15. 회로도 → 행렬 자동 변환 (netlist 추출)
+
+**회로도가 netlist의 유일한 원천이다.** server/netlist.py:
+- 연결 규칙: 배선은 축정렬 세그먼트, **등록점**(배선·소자 endpoints, dot, ground, FET anchor)이
+  세그먼트 위에 있으면 그 net에 합류. 등록점 없는 교차는 미연결(표준 규약).
+- 소자↔instance 결합: 소자 중점이 들어 있는 instance 상자(cell/model/params)로 귀속.
+- open(회색) 소자·전류원은 G에 미조립. 시나리오는 (inject net, ground net, I)로 지정.
+- model equation은 임의 placeholder(2026-07-27 사용자 허용): softplus diode(Von 0.7),
+  양방향 clamp(트리거 4V), 선형 R(params.R 또는 rdd(L)), FET=접합 diode(bulk=source).
+  크기 파라미터(x1/x2) 미반영 — 실측 모델로 교체 예정.
+- API: GET /api/schematic/matrix?inject=IO&ground=VSS&i=1.33 (circuit 화면 §3.5).
+- 검증: tests/test_netlist.py — net 소속 전수 15건 + KCL/직렬 보존/대칭/수렴 9건.
+  레이아웃 수정 시 이 테스트가 topology 변화를 잡는다.

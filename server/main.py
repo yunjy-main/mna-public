@@ -50,7 +50,7 @@ def meta():
 def regression():
     outputs, code = [], 0
     for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py",
-                   "test_victim_probe.py", "test_victim_soa.py"):
+                   "test_victim_probe.py", "test_victim_soa.py", "test_netlist.py"):
         p = subprocess.run(
             [sys.executable, os.path.join(ROOT, "tests", script)],
             capture_output=True, text=True, cwd=ROOT, timeout=300,
@@ -556,6 +556,34 @@ def schematic_library_cell(cell_id: str):
     if svg is None:
         return PlainTextResponse("unknown cell", status_code=404)
     return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@app.get(PREFIX + "/api/schematic/matrix")
+def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L: float = 350.0):
+    """회로도 → netlist → MNA 자동 변환·해석.
+
+    기하 연결성에서 net 추출, instance(cell/model/params)와 결합해 조립.
+    model equation은 임의 placeholder(softplus 계열) — 구조 변환이 목적.
+    inject/ground = net 이름(IO/VDD/VSS/MVSS/VSS2...), open 소자는 미조립."""
+    from server.schematic import DEFAULT_LAYOUT
+    from server.netlist import extract_netlist, assemble_and_solve
+    nl = extract_netlist(DEFAULT_LAYOUT)
+    try:
+        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L)
+    except ValueError as ex:
+        return PlainTextResponse(str(ex), status_code=422)
+    names = nl["nets"]
+    devs = []
+    for d in nl["devices"]:
+        if d["kind"] in ("pfet", "nfet"):
+            pins = "d={} g={} s={}".format(names[d["drain"]], names[d["gate"]], names[d["source"]])
+        else:
+            pins = "{} – {}".format(names[d["a"]], names[d["b"]])
+        devs.append({"instance": d["instance"], "cell": d["cell"], "kind": d["kind"],
+                     "model": d["model"], "open": d["open"], "pins": pins})
+    return {"nets": sorted(names.values()),
+            "n_nets": len(names), "n_wires": nl["n_wires"], "devices": devs,
+            "solution": sol}
 
 
 @app.get(PREFIX + "/api/schematic/mapping")

@@ -61,9 +61,23 @@
   </div>
 
   <div class="card">
-    <h2>3. MNA 행렬 (동작점 선형화)</h2>
+    <h2>3. MNA 행렬 (동작점 선형화 — 수기 6×6, 참고용)</h2>
     <pre id="mna"></pre>
     <div class="cap" id="mnaCap"></div>
+  </div>
+
+  <div class="card">
+    <h2>3.5 회로도 → 행렬 자동 변환 (netlist 추출 + MNA 조립 + Newton)</h2>
+    <div class="ctl">
+      <div><label>inject net</label><select id="mInj"><option>IO</option><option>VDD</option><option>VSS2</option><option>IO2</option><option>MVSS</option></select></div>
+      <div><label>ground net</label><select id="mGnd"><option>VSS</option><option>VDD</option><option>MVSS</option><option>VSS2</option></select></div>
+      <div><label>I (A)</label><input id="mI" type="number" step="any" value="1.33"></div>
+      <button id="mBtn">변환·해석</button>
+    </div>
+    <div class="cap" id="mStat"></div>
+    <pre id="mOut"></pre>
+    <div class="cap">회로도(레이아웃 기하)에서 net을 추출하고 instance cell/model/params로 조립.
+      model equation은 임의 placeholder(softplus diode·양방향 clamp·선형 R) — open(회색) 소자는 미조립.</div>
   </div>
 </main>
 <script>
@@ -146,6 +160,35 @@ function load(){
 }
 document.getElementById('loadBtn').addEventListener('click', load);
 load();
+
+// ---- §3.5 회로도 → 행렬 자동 변환 ----
+function loadMatrix(){
+  const st=document.getElementById('mStat'), out=document.getElementById('mOut');
+  st.textContent='변환 중…';
+  fetch('api/schematic/matrix?inject='+encodeURIComponent(mInj.value)
+        +'&ground='+encodeURIComponent(mGnd.value)+'&i='+encodeURIComponent(mI.value)
+        +'&L='+encodeURIComponent(lop.value))
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
+    .then(d=>{
+      const s=d.solution;
+      st.textContent='net '+d.n_nets+'개 (배선 '+d.n_wires+'), 미지수 '+s.size
+        +' · nnz '+s.nnz+' · Newton '+s.newton_iters+'회 · residual '+s.residual.toExponential(2)
+        +' · ref: '+s.ref_nets.join(', ');
+      let t='netlist (회로도에서 추출):\n';
+      d.devices.forEach(v=>{t+='  '+String(v.instance).padEnd(26)+(v.cell||'—').padEnd(8)
+        +String(v.model||'—').padEnd(22)+v.pins+(v.open?'  (open — 미조립)':'')+'\n';});
+      t+='\n해 (V):\n';
+      Object.entries(s.v).forEach(([k,v])=>{t+='  '+k.padEnd(6)+v.toFixed(4)+'\n';});
+      t+='\nG (Newton 해에서의 Jacobian, '+s.size+' S 단위):\n';
+      const lbl=s.unknowns.map(u=>(u+'     ').slice(0,5));
+      s.G.forEach((row,ri)=>{t+=lbl[ri]+'[ '+row.map(x=>{
+        const a=Math.abs(x); return (a<1e-12?'    ·    ':x.toFixed(3).padStart(9));}).join(' ')+' ]\n';});
+      out.textContent=t;
+    })
+    .catch(e=>{st.textContent='오류: '+(e.message||e); out.textContent='';});
+}
+document.getElementById('mBtn').addEventListener('click', loadMatrix);
+loadMatrix();
 
 // ---- 레이아웃 편집 ----
 function qs(){return 'x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
