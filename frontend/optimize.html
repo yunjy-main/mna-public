@@ -379,6 +379,7 @@ document.getElementById('ival').addEventListener('change',e=>{
 });
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
+start(); // v4와 동일: 로드 시 자동 precompute → 시각화 즉시 표시
 </script>
 </body>
 </html>
