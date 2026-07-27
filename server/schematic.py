@@ -27,40 +27,43 @@ DEFAULT_LAYOUT = {
     "unit": 2,
     "fontsize": 9,
     "nodes": {
-        "IO":  {"xy": [3.4, 3.0],  "ofst": [-0.35, 0.45]},
+        "IO":  {"xy": [3.4, 3.0],  "ofst": [-0.45, 0.45]},
         "N2":  {"xy": [3.4, 6.0],  "ofst": [-1.3, 0.35]},
-        "N3":  {"xy": [7.4, 6.0],  "ofst": [0.3, 0.35]},
-        "OUT": {"xy": [11.0, 3.0], "ofst": [0.1, 0.45]},
+        "N3":  {"xy": [9.0, 6.0],  "ofst": [0.3, 0.35]},
+        "OUT": {"xy": [6.4, 3.0],  "ofst": [0.15, 0.45]},
     },
     "elements": [
-        {"type": "line", "from": [-1.8, 0], "to": [11.0, 0]},
-        {"type": "label", "at": [11.4, 0.0], "text": "VSS"},
-        {"type": "ground", "at": [5.4, 0]},
+        {"type": "port", "at": [-3.0, 6.0], "text": "VDD"},
+        {"type": "port", "at": [-3.0, 3.0], "text": "IO"},
+        {"type": "port", "at": [-3.0, 0.0], "text": "VSS"},
+        {"type": "line", "from": [-3.0, 0], "to": [9.0, 0]},
+        {"type": "ground", "at": [1.4, 0]},
         {"type": "sourcei", "from": [-1.8, 0], "to": [-1.8, 3]},
-        {"type": "label", "at": [-2.6, 1.5], "text": "I_ESD"},
-        {"type": "line", "from": [-1.8, 3], "to": [0, 3]},
+        {"type": "dot", "at": [-1.8, 0]},
+        {"type": "dot", "at": [-1.8, 3]},
+        {"type": "label", "at": [-1.15, 1.5], "text": "I_ESD"},
+        {"type": "line", "from": [-3.0, 3], "to": [0, 3]},
         {"type": "resistor", "from": [0, 3], "to": "IO", "label": "Rio 0.1Ω", "loc": "top"},
         {"type": "dot", "at": "IO"},
         {"type": "diode", "from": "IO", "to": "N2", "label": "D_up x1={x1}", "loc": "bottom"},
         {"type": "dot", "at": "N2"},
-        {"type": "resistor", "from": "N2", "to": "N3", "label": "Rvdd {rvdd}Ω L={L}µm", "loc": "top"},
+        {"type": "line", "from": [-3.0, 6], "to": "N2"},
+        {"type": "resistor", "from": "N2", "to": [6.0, 6.0], "label": "Rvdd {rvdd}Ω L={L}µm", "loc": "top"},
+        {"type": "line", "from": [6.0, 6.0], "to": "N3"},
         {"type": "dot", "at": "N3"},
-        {"type": "line", "from": "N3", "to": [11.0, 6]},
-        {"type": "label", "at": [11.4, 6.0], "text": "VDD"},
-        {"type": "zener", "from": "N3", "to": [7.4, 0], "label": "Clamp x2={x2}", "loc": "bottom"},
+        {"type": "zener", "from": "N3", "to": [9.0, 0], "label": "Clamp x2={x2}", "loc": "bottom"},
         {"type": "diode", "from": [3.4, 0], "to": "IO", "label": "D_down", "loc": "top"},
-        {"type": "line", "from": "IO", "to": [4.4, 3.0]},
-        {"type": "line", "from": [4.4, 3.0], "to": [4.4, 0.9]},
-        {"type": "resistor", "from": [4.4, 0.9], "to": [6.8, 0.9], "label": "Resd 500Ω", "loc": "bottom"},
-        {"type": "line", "from": [6.8, 0.9], "to": [10.0, 0.9]},
-        {"type": "line", "from": [10.0, 0.9], "to": [10.0, 3.0]},
-        {"type": "line", "from": [10.0, 3.0], "to": "OUT"},
+        {"type": "dot", "at": [3.4, 0]},
+        {"type": "resistor", "from": "IO", "to": [5.0, 3.0], "label": "Resd 500Ω", "loc": "bottom"},
+        {"type": "line", "from": [5.0, 3.0], "to": "OUT"},
         {"type": "dot", "at": "OUT"},
-        {"type": "pfet", "drain": "OUT", "label": "PMOS", "rail_y": 6.0},
-        {"type": "nfet", "drain": "OUT", "label": "NMOS", "rail_y": 0.0},
+        {"type": "pfet", "drain": "OUT", "label": "PMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0},
+        {"type": "nfet", "drain": "OUT", "label": "NMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0},
+        {"type": "dot", "at": [6.4, 6.0]},
+        {"type": "dot", "at": [6.4, 0.0]},
         {"type": "gates", "text": "V_IN=0"},
     ],
-    "current_labels": {"i": [1.7, 2.45], "iv": [5.6, 1.25]},
+    "current_labels": {"i": [1.7, 2.45], "iv": [5.65, 3.4]},
 }
 
 
@@ -125,10 +128,20 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             if e.get("label"):
                 el = el.label(txt(e["label"]), loc=e.get("loc", "top"), fontsize=fs)
             d.add(el)
+        elif t == "port":
+            x, y = pt(e["at"])
+            d.add(elm.Dot(open=True).at((x, y)))
+            d.add(elm.Label().at((x - 0.75, y)).label(e.get("text", ""), fontsize=fs, color='#20242a'))
         elif t in ("pfet", "nfet"):
             cls = elm.PFet if t == "pfet" else elm.NFet
-            q = d.add(cls().at(pt(e["drain"])).anchor('drain')
-                      .label(e.get("label", ""), loc="right", fontsize=fs))
+            el = cls()
+            if e.get("rot"):
+                el = el.theta(e["rot"])
+            if e.get("flip"):
+                el = el.flip()
+            lloc = e.get("loc", "right")
+            q = d.add(el.at(pt(e["drain"])).anchor('drain')
+                      .label(e.get("label", ""), loc=lloc, fontsize=fs))
             fets[t] = q
             src = q.absanchors['source']
             if "rail_y" in e:
@@ -137,10 +150,11 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             if "pfet" in fets and "nfet" in fets:
                 g1 = fets["pfet"].absanchors['gate']
                 g2 = fets["nfet"].absanchors['gate']
-                ym = (g1.y + g2.y) / 2
                 d.add(elm.Line().at((g1.x, g1.y)).to((g2.x, g2.y)))
-                d.add(elm.Line().at((g1.x, ym)).to((g1.x + 0.6, ym)))
-                d.add(elm.Label().at((g1.x + 0.75, ym)).label(e.get("text", "V_IN"),
+                # 입력 스텁: NMOS gate 높이에서 왼쪽으로 (Resd 배선과 겹침 방지)
+                sy = g2.y
+                d.add(elm.Line().at((g2.x, sy)).to((g2.x - 0.6, sy)))
+                d.add(elm.Label().at((g2.x - 1.15, sy)).label(e.get("text", "V_IN"),
                                                               fontsize=fs - 1, color=MUT))
 
     # node names + operating-point voltages (파란 주석)
