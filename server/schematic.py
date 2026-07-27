@@ -246,7 +246,7 @@ LIBRARY_CELLS = [
         {"type": "port", "at": [7.9, -7.9], "text": ""},
         {"type": "port", "at": [7.9, -9.1], "text": ""},
     ]},
-    {"id": "clamp", "name": "Clamp", "models": [], "elements": [
+    {"id": "clamp", "name": "Clamp", "models": ["nfet_clamp"], "elements": [
         {"type": "zener", "from": [9.7, -9.1], "to": [9.7, -7.9]},
         {"type": "rect", "corner1": [9.2, -9.1], "corner2": [10.2, -7.9], "title": "Clamp", "model": "model2", "equation": "softplus_bi"},
         {"type": "port", "at": [9.7, -7.9], "text": ""},
