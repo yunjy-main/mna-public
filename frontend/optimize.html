@@ -32,6 +32,13 @@
   <a href="hub">화면 목록 ▤</a>
 </header>
 <main>
+  <!-- ================= 0. 회로도 ================= -->
+  <div class="card">
+    <h2>0. 회로도 (schematic)</h2>
+    <div id="schem0" style="max-width:860px"></div>
+    <div class="cap" id="schem0cap">초기 설계값 기준 · 동작점 = 선택 전류(worst corner) · 편집은 <a href="circuit">Circuit/MNA 화면</a>에서</div>
+  </div>
+
   <!-- ================= 1. 설정값 입력 (v4 입력부 → 새 구현/바로가기 대체) ================= -->
   <div class="card">
     <h2>1. 설정값 입력</h2>
@@ -239,10 +246,22 @@ function start(){
 function cur(){return DATA.sweep[+document.getElementById('islider').value];}
 
 // ---------- renderers ----------
+let schemT=null;
+function renderSchematic(I){
+  clearTimeout(schemT);
+  schemT=setTimeout(()=>{
+    fetch('api/schematic?x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
+      +'&L='+encodeURIComponent(val('linit'))+'&i='+encodeURIComponent(I)+'&corner=worst')
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
+    .then(svg=>{document.getElementById('schem0').innerHTML=svg;})
+    .catch(e=>{document.getElementById('schem0').textContent='회로도 오류: '+(e.message||e);});
+  },200);
+}
 function renderAll(){
   const e=cur(),fin=e.final,p=DATA.settings;
   document.getElementById('ival').value=e.I.toFixed(2);
   document.getElementById('currentScrubLabel').textContent='Injected current: '+e.I.toFixed(2)+' A';
+  renderSchematic(e.I);
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
   renderMaps(p);renderIter();renderMetrics(fin,p);renderTable();
 }
@@ -412,6 +431,7 @@ document.getElementById('ival').addEventListener('change',e=>{
 });
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
+renderSchematic(1.33); // 섹션 0: 로드 즉시 회로도 표시
 start(); // v4와 동일: 로드 시 자동 precompute → 시각화 즉시 표시
 </script>
 </body>
