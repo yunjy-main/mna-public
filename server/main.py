@@ -540,10 +540,20 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
 
 @app.get(PREFIX + "/api/schematic/library")
 def schematic_library():
-    """Subcircuit Set (중복 없는 cell 세트) — 회로도와 분리된 별도 canvas."""
-    from server.schematic import build_svg, LIBRARY_LAYOUT
-    return Response(build_svg(2.56, 1415.232, 350.0, None, LIBRARY_LAYOUT),
-                    media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+    """Subcircuit Set 목록 — cell별 id/이름/사용 가능 model list (canvas는 개별 SVG)."""
+    from server.schematic import LIBRARY_CELLS
+    return {"cells": [{"id": c["id"], "name": c["name"], "models": c["models"]}
+                      for c in LIBRARY_CELLS]}
+
+
+@app.get(PREFIX + "/api/schematic/library/{cell_id}")
+def schematic_library_cell(cell_id: str):
+    """라이브러리 cell 1개의 개별 canvas SVG."""
+    from server.schematic import build_cell_svg
+    svg = build_cell_svg(cell_id)
+    if svg is None:
+        return PlainTextResponse("unknown cell", status_code=404)
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
 @app.get(PREFIX + "/api/schematic/layout")

@@ -138,9 +138,13 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 
 ## R11. Subcircuit Set (라이브러리 행)
 
-**회로도와 별개의 canvas** — `LIBRARY_LAYOUT`(schematic.py)을
-`GET /api/schematic/library`로 서빙하고, HTML에서 본 회로도(#schem0/#schem)와
-분리된 컨테이너(#schemLib)에 표시한다. 형태 기준 중복 제거 cell을 가로 나열, 12종:
+**cell마다 개별 canvas/div** — `LIBRARY_CELLS`(schematic.py)의 각 cell을
+`GET /api/schematic/library/{id}`로 개별 SVG 서빙하고, `GET /api/schematic/library`는
+목록 JSON(id/name/**models**)을 준다. HTML(#schemLib)은 flex-wrap 그리드로 cell div를
+나열하고 **각 canvas 아래에 사용 가능한 process model list**를 표기한다.
+현재 model list: D_up=esdvpnp·esdvpnp_rg / D_down=esdndsx·esdndsx_rg·esdnwsx /
+R=rmres / D_b2b=essvpnp ×2 (나머지는 미지정 — 추후 추가).
+형태 기준 중복 제거 cell 12종:
 `I_ESD`(1-port 소스+ground) · `GND`(1-port, I_ESD와 동일 크기) · `R` ·
 `short`(2-port 직결) · `open`(2-port 미연결, R와 동일 크기) ·
 `D_up` · `D_down`(검게 채움) · `Clamp` · `D_b2b`(역병렬 묶음) ·

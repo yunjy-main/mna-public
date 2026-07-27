@@ -72,8 +72,22 @@ function load(){
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
     .then(svg=>{document.getElementById('schem').innerHTML=svg;})
     .catch(e=>{document.getElementById('schem').textContent='회로도 오류: '+(e.message||e);});
-  fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
-    .then(svg=>{document.getElementById('schemLib').innerHTML=svg;})
+  fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+    .then(d=>{
+      const box=document.getElementById('schemLib');
+      box.innerHTML='';
+      box.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start';
+      d.cells.forEach(c=>{
+        const cell=document.createElement('div');
+        cell.style.cssText='display:flex;flex-direction:column;align-items:flex-start';
+        const cv=document.createElement('div');
+        const ml=document.createElement('div');
+        ml.style.cssText='font-size:10px;color:#5b6673;line-height:1.25';
+        ml.innerHTML=c.models.length?c.models.map(m=>'· '+m).join('<br>'):'';
+        cell.appendChild(cv); cell.appendChild(ml); box.appendChild(cell);
+        fetch('api/schematic/library/'+c.id).then(r=>r.text()).then(svg=>{cv.innerHTML=svg;});
+      });
+    })
     .catch(e=>{document.getElementById('schemLib').textContent='subcircuit set 오류: '+(e.message||e);});
   fetch(q).then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
     document.getElementById('nodes').innerHTML='<tr><th>node</th><th>역할</th></tr>'

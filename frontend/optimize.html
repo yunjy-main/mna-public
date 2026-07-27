@@ -485,8 +485,21 @@ document.getElementById('ival').addEventListener('change',e=>{
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
 loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
-fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
-  .then(svg=>{document.getElementById('schemLib').innerHTML=svg;})
+fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+  .then(d=>{
+    const box=document.getElementById('schemLib');
+    box.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start';
+    d.cells.forEach(c=>{
+      const cell=document.createElement('div');
+      cell.style.cssText='display:flex;flex-direction:column;align-items:flex-start';
+      const cv=document.createElement('div');
+      const ml=document.createElement('div');
+      ml.style.cssText='font-size:10px;color:#5b6673;line-height:1.25';
+      ml.innerHTML=c.models.length?c.models.map(m=>'· '+m).join('<br>'):'';
+      cell.appendChild(cv); cell.appendChild(ml); box.appendChild(cell);
+      fetch('api/schematic/library/'+c.id).then(r=>r.text()).then(svg=>{cv.innerHTML=svg;});
+    });
+  })
   .catch(e=>{document.getElementById('schemLib').textContent='subcircuit set 오류: '+(e.message||e);});
 start(); // v4와 동일: 로드 시 자동 precompute → 시각화 즉시 표시
 </script>

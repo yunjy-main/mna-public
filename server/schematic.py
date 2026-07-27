@@ -196,47 +196,63 @@ DEFAULT_LAYOUT = {
     "current_labels": {"i": [0.8, 2.4], "iv": [2.2, 1.95]},
 }
 
-# Subcircuit Set — 별도 canvas로 서빙 (/api/schematic/library). 형태 기준 중복 없는 cell 목록.
-LIBRARY_LAYOUT = {
-    "unit": 2,
-    "fontsize": 9,
-    "symbol_scale": 0.64,
-    "nodes": {},
-    "elements": [
+# Subcircuit Set — cell별 개별 canvas로 서빙 (/api/schematic/library 목록,
+# /api/schematic/library/{id} SVG). models = 해당 cell에 사용할 수 있는 process model 목록.
+_LIB_COMMON = {"unit": 2, "fontsize": 9, "symbol_scale": 0.64, "annotations": False,
+               "nodes": {}, "current_labels": {}}
+
+LIBRARY_CELLS = [
+    {"id": "i_esd", "name": "I_ESD", "models": [], "elements": [
         {"type": "line", "from": [-3.8, -8.05], "to": [-3.8, -8.0]},
         {"type": "sourcei", "from": [-3.8, -9.05], "to": [-3.8, -8.05]},
         {"type": "ground", "at": [-3.8, -9.05]},
         {"type": "rect", "corner1": [-4.3, -9.55], "corner2": [-3.3, -8.0], "title": "I_ESD"},
         {"type": "port", "at": [-3.8, -8.0], "text": ""},
+    ]},
+    {"id": "gnd", "name": "GND", "models": [], "elements": [
         {"type": "line", "from": [-2.0, -8.0], "to": [-2.0, -9.05]},
         {"type": "ground", "at": [-2.0, -9.05]},
         {"type": "rect", "corner1": [-2.5, -9.55], "corner2": [-1.5, -8.0], "title": "GND"},
         {"type": "port", "at": [-2.0, -8.0], "text": ""},
+    ]},
+    {"id": "r", "name": "R", "models": ["rmres"], "elements": [
         {"type": "resistor", "from": [-0.7, -8.5], "to": [0.6, -8.5]},
         {"type": "rect", "corner1": [-0.7, -8.95], "corner2": [0.6, -8.05], "title": "R"},
         {"type": "port", "at": [-0.7, -8.5], "text": ""},
         {"type": "port", "at": [0.6, -8.5], "text": ""},
+    ]},
+    {"id": "short", "name": "short", "models": [], "elements": [
         {"type": "line", "from": [1.4, -8.5], "to": [2.7, -8.5]},
         {"type": "rect", "corner1": [1.4, -8.95], "corner2": [2.7, -8.05], "title": "short"},
         {"type": "port", "at": [1.4, -8.5], "text": ""},
         {"type": "port", "at": [2.7, -8.5], "text": ""},
+    ]},
+    {"id": "open", "name": "open", "models": [], "elements": [
         {"type": "line", "from": [3.5, -8.5], "to": [3.85, -8.5]},
         {"type": "line", "from": [4.45, -8.5], "to": [4.8, -8.5]},
         {"type": "rect", "corner1": [3.5, -8.95], "corner2": [4.8, -8.05], "title": "open"},
         {"type": "port", "at": [3.5, -8.5], "text": ""},
         {"type": "port", "at": [4.8, -8.5], "text": ""},
+    ]},
+    {"id": "d_up", "name": "D_up", "models": ["esdvpnp", "esdvpnp_rg"], "elements": [
         {"type": "diode", "from": [6.1, -9.1], "to": [6.1, -7.9]},
         {"type": "rect", "corner1": [5.6, -9.1], "corner2": [6.6, -7.9], "title": "D_up", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [6.1, -7.9], "text": ""},
         {"type": "port", "at": [6.1, -9.1], "text": ""},
+    ]},
+    {"id": "d_down", "name": "D_down", "models": ["esdndsx", "esdndsx_rg", "esdnwsx"], "elements": [
         {"type": "diode", "from": [7.9, -9.1], "to": [7.9, -7.9], "fill": "black"},
         {"type": "rect", "corner1": [7.4, -9.1], "corner2": [8.4, -7.9], "title": "D_down", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [7.9, -7.9], "text": ""},
         {"type": "port", "at": [7.9, -9.1], "text": ""},
+    ]},
+    {"id": "clamp", "name": "Clamp", "models": [], "elements": [
         {"type": "zener", "from": [9.7, -9.1], "to": [9.7, -7.9]},
         {"type": "rect", "corner1": [9.2, -9.1], "corner2": [10.2, -7.9], "title": "Clamp", "model": "model2", "equation": "softplus_bi"},
         {"type": "port", "at": [9.7, -7.9], "text": ""},
         {"type": "port", "at": [9.7, -9.1], "text": ""},
+    ]},
+    {"id": "d_b2b", "name": "D_b2b", "models": ["essvpnp ×2"], "elements": [
         {"type": "line", "from": [11.0, -8.5], "to": [11.2, -8.5]},
         {"type": "dot", "at": [11.2, -8.5]},
         {"type": "line", "from": [11.2, -8.5], "to": [11.2, -8.2]},
@@ -250,6 +266,8 @@ LIBRARY_LAYOUT = {
         {"type": "rect", "corner1": [11.0, -9.15], "corner2": [12.3, -7.85], "title": "D_b2b"},
         {"type": "port", "at": [11.0, -8.5], "text": ""},
         {"type": "port", "at": [12.3, -8.5], "text": ""},
+    ]},
+    {"id": "victim", "name": "Victim", "models": [], "elements": [
         {"type": "line", "from": [13.1, -8.5], "to": [13.425, -8.5]},
         {"type": "dot", "at": [13.425, -8.5]},
         {"type": "rect", "corner1": [13.1, -9.85], "corner2": [14.65, -7.15], "title": "Victim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"]},
@@ -260,6 +278,8 @@ LIBRARY_LAYOUT = {
         {"type": "port", "at": [13.1, -8.5], "text": ""},
         {"type": "port", "at": [14.3, -7.15], "text": ""},
         {"type": "port", "at": [14.3, -9.85], "text": ""},
+    ]},
+    {"id": "victim_n", "name": "Victim (NMOS)", "models": [], "elements": [
         {"type": "line", "from": [15.45, -8.5], "to": [15.775, -8.5]},
         {"type": "line", "from": [16.65, -8.02], "to": [16.65, -7.55]},
         {"type": "nfet", "drain": [16.65, -8.02], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.45, "bulk": True},
@@ -267,6 +287,8 @@ LIBRARY_LAYOUT = {
         {"type": "port", "at": [15.45, -8.5], "text": ""},
         {"type": "port", "at": [16.65, -7.55], "text": ""},
         {"type": "port", "at": [16.65, -9.45], "text": ""},
+    ]},
+    {"id": "victim_p", "name": "Victim (PMOS)", "models": [], "elements": [
         {"type": "line", "from": [17.8, -8.5], "to": [18.125, -8.5]},
         {"type": "line", "from": [19.0, -8.98], "to": [19.0, -9.45]},
         {"type": "pfet", "drain": [19.0, -8.98], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.55, "bulk": True},
@@ -274,9 +296,18 @@ LIBRARY_LAYOUT = {
         {"type": "port", "at": [17.8, -8.5], "text": ""},
         {"type": "port", "at": [19.0, -7.55], "text": ""},
         {"type": "port", "at": [19.0, -9.45], "text": ""},
-    ],
-    "current_labels": {},
-}
+    ]},
+]
+
+
+def build_cell_svg(cell_id):
+    """라이브러리 cell 하나를 개별 SVG로 렌더 (없으면 None)."""
+    for c in LIBRARY_CELLS:
+        if c["id"] == cell_id:
+            layout = dict(_LIB_COMMON)
+            layout["elements"] = c["elements"]
+            return build_svg(2.56, 1415.232, 350.0, None, layout)
+    return None
 
 
 def load_layout():
