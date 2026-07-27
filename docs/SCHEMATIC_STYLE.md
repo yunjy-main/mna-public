@@ -84,10 +84,9 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 
 ## R8. subcircuit 상자
 
-**모든 소자**(D_up, D_down, D_up2, D_down2, Clamp, D_b2b_m, D_b2b, I_ESD 4종,
-저항 6종, Victim — 총 18 블록)를 점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다.
-소자 개별 라벨은 제거하고 상자 title(좌상단)로 이동 — 파라미터 포함
-(예: "D_up x1={x1}", "Clamp x2={x2}", "RDD_un1 {rvdd}Ω L={L}µm").
+**모든 소자**(D_up, D_down, D_up2, D_down2, Clamp, D_b2b_m/D_b2b_m2, D_b2b, I_ESD 4종,
+저항 6종, Victim — 총 19 블록)를 점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다.
+소자 개별 라벨은 제거하고 상자의 라벨 3계층(R13: instance/model/equation)으로 표기한다.
 
 - 세로 diode cell: 상자 [열±0.5] × [rail+0.9, rail−0.9], port는 상/하 경계의 배선 교차점.
 - Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.9,5.1], port (7.1,5.1)/(7.1,0.9).
