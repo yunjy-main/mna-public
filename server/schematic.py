@@ -4,8 +4,11 @@
 The drawing is fully described by a layout dict (JSON-editable from the circuit
 screen): node coordinates + label offsets, and an ordered element list.
 Element types: line, dot, ground, sourcei, resistor, diode, zener, label,
-pfet, nfet, gates. Coordinates are [x, y] or a node name. Labels may use
-{x1} {x2} {L} {rvdd} placeholders.
+port(lofst), rect(subcircuit box), pfet, nfet, gates. Coordinates are [x, y]
+or a node name. Labels may use {x1} {x2} {L} {rvdd} placeholders.
+
+Styling rules (rail y=0/2/4, 심볼 간격 0.8, 저항 스팬 2.0, symbol_scale 0.64,
+저항 직결/중앙 배치 등)은 docs/SCHEMATIC_STYLE.md 에 성문화 — 레이아웃 수정 시 준수.
 
 Custom layouts persist to assets/schematic_layout.json (DELETE to restore the
 built-in default).
@@ -69,8 +72,9 @@ DEFAULT_LAYOUT = {
         {"type": "zener", "from": "N3B", "to": "N3", "label": "Clamp x2={x2}", "loc": "bottom"},
         {"type": "dot", "at": "N3"},
         {"type": "dot", "at": "N3B"},
-        {"type": "resistor", "from": "IO", "to": [1.8, 2.0], "label": "Resd 500Ω", "loc": "bottom"},
-        {"type": "line", "from": [1.8, 2.0], "to": [2.6, 2.0]},
+        {"type": "line", "from": "IO", "to": [0.2, 2.0]},
+        {"type": "resistor", "from": [0.2, 2.0], "to": [2.2, 2.0], "label": "Resd 500Ω", "loc": "bottom"},
+        {"type": "line", "from": [2.2, 2.0], "to": [2.6, 2.0]},
         {"type": "diode", "from": [2.6, 2.0], "to": [2.6, 4.0], "label": "D_up2", "loc": "top"},
         {"type": "diode", "from": [2.6, 0.0], "to": [2.6, 2.0], "label": "D_down2", "loc": "top"},
         {"type": "dot", "at": [2.6, 2.0]},
