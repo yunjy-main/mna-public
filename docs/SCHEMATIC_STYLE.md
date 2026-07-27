@@ -67,12 +67,21 @@ open dot. 도메인1(VDD/IO/VSS, x=−3) 라벨은 좌상단(lofst [−0.45,0.38
 도메인2(VDD2/IO2/VSS2, x=10.3) 라벨은 우측(lofst [0.6~0.65,0]). 도메인2 리드 길이 0.8 통일.
 도메인2는 독립 — VSS↔VSS2 back-to-back diode 쌍(D_b2b)으로만 연결.
 
-## R8. victim subcircuit
+## R8. subcircuit 상자
 
-점선 상자(rect) + 3 port: **IN**(좌변 중앙) / **VDD**(상변) / **VSS**(하변).
-FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행), gate tie = diode-connected(OUT 전위).
-상자 내부 소자는 레이아웃 JSON에서 교체 가능(inverter ↔ 단일 NMOS/PMOS).
-상자는 FET 심볼 기준 좌우 대칭(±0.35), 라벨 overflow는 허용.
+**victim과 보호 cell 전부**(D_up, D_down, D_up2, D_down2, D_b2b_m, D_b2b)를
+점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다. 소자 개별 라벨은 제거하고
+상자 title(좌상단)로 이동 — 파라미터 포함(예: "D_up x1={x1}").
+
+- 세로 diode cell: 상자 [열±0.5] × [rail+0.3, rail−0.3], port는 상/하 경계의 배선 교차점.
+- b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (1.2,−0.35)/(1.2,−1.65),
+  가로 (8.05,0)/(9.35,0)).
+- **victim**: 3 port: **IN**(좌변 중앙) / **VDD**(상변) / **VSS**(하변).
+  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행), gate tie = diode-connected(OUT).
+  내부 소자는 레이아웃 JSON에서 교체 가능(inverter ↔ 단일 NMOS/PMOS).
+  상자는 FET 심볼 기준 좌우 대칭(±0.35).
+
+상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). clamp·저항·전류원은 상자 없음.
 
 ## R9. 세로 소자 라벨 위치 (schemdraw 0.15 특성)
 
