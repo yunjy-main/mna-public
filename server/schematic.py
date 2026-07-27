@@ -363,10 +363,10 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             # 코너 우선순위는 반시계 tl→bl→br→tr.
             # 라벨은 외곽선 스트로크와 겹치지 않게 (좌측 들여쓰기 없음 — 좌변 정렬).
             # schemdraw .label() 자체 x오프셋 +0.10을 앵커에서 상쇄.
-            OUTC = {"tl": (xa - 0.1, yb + 0.12, 'left'), "bl": (xa - 0.1, ya - 0.32, 'left'),
-                    "br": (xb - 0.1, ya - 0.32, 'right'), "tr": (xb - 0.1, yb + 0.12, 'right')}
-            INC = [(xa - 0.07, yb - 0.26, 'left'), (xa - 0.07, ya + 0.08, 'left'),
-                   (xb - 0.13, ya + 0.08, 'right'), (xb - 0.13, yb - 0.26, 'right')]
+            OUTC = {"tl": (xa - 0.1, yb + 0.24, 'left'), "bl": (xa - 0.1, ya - 0.45, 'left'),
+                    "br": (xb - 0.1, ya - 0.45, 'right'), "tr": (xb - 0.1, yb + 0.24, 'right')}
+            INC = [(xa - 0.07, yb - 0.2, 'left'), (xa - 0.07, ya + 0.05, 'left'),
+                   (xb - 0.13, ya + 0.05, 'right'), (xb - 0.13, yb - 0.2, 'right')]
             if e.get("instance"):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,

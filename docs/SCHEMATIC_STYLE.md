@@ -175,9 +175,11 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 
 fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라지면 tl로 복귀.
 검증: 라벨 bbox vs 상자 4변 교차 전수 검사 = 0건.
-**정렬/오프셋 — padding 없이 선에 밀착**: 좌상단(및 좌하단) 배치 시 좌측 들여쓰기
-없음 — instance는 상자 좌변과 정확히 정렬(x=xa), 안쪽 model/equation은 +0.03만.
-세로도 밀착: instance 밖 = 상변+0.12/하변−0.32(baseline), 안쪽 첫 줄 = 상변−0.26.
+**정렬/오프셋**: 좌상단(및 좌하단) 배치 시 좌측 들여쓰기 없음 — instance는 상자
+좌변과 정확히 정렬(x=xa), 안쪽 model/equation은 +0.03만.
+세로: **바깥(instance) 라벨은 외곽선과 겹치지 않게 띄운다** — 상변+0.24/하변−0.45
+(descender 포함 클리어). **안쪽(model/equation) 라벨은 외곽선에 밀착** — 첫 줄
+상변−0.20(글자 상단이 선 0.02 아래), 하단 슬롯 +0.05.
 **model↔equation 줄간격 = 글자높이+0.1** (baseline pitch 0.28).
 (schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
