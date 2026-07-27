@@ -232,6 +232,7 @@ Loss = Cost + μSOA·Σ softplus(usage−1) + μRule·Σ softplus(rule 위반)`;
 function start(){
   const btn=document.getElementById('startBtn'),st=document.getElementById('status'),err=document.getElementById('err');
   btn.disabled=true;st.textContent='0→Imax sweep 최적화 중… (테이블 기반, 수 초)';err.textContent='';
+  loadSchematic(); // 입력이 바뀌었을 수 있으므로 회로도·주석 테이블 재로드
   fetch('api/optimize?'+new URLSearchParams(collect()).toString())
   .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
   .then(d=>{DATA=d;
@@ -246,22 +247,52 @@ function start(){
 function cur(){return DATA.sweep[+document.getElementById('islider').value];}
 
 // ---------- renderers ----------
-let schemT=null;
-function renderSchematic(I){
-  clearTimeout(schemT);
-  schemT=setTimeout(()=>{
-    fetch('api/schematic?x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
-      +'&L='+encodeURIComponent(val('linit'))+'&i='+encodeURIComponent(I)+'&corner=worst')
+// ---------- 섹션 0: 회로도 — 슬라이더 이동 시 주석을 클라이언트에서 실시간 갱신 ----------
+let SCHEM_TBL=null, ANN=null;
+function loadSchematic(){
+  const q='x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
+        +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
+  SCHEM_TBL=null; ANN=null;
+  fetch('api/schematic?'+q+'&i=1.33')
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
-    .then(svg=>{document.getElementById('schem0').innerHTML=svg;})
+    .then(svg=>{
+      document.getElementById('schem0').innerHTML=svg;
+      // 주석 text 요소 스캔 (tspan 유지로 위치 보존)
+      ANN={};
+      const pats={IO:/^IO /,N2:/^N2 /,N3:/^N3 /,OUT:/^OUT /,i:/^I=/,iv:/^I_v=/};
+      [...document.querySelectorAll('#schem0 text')].forEach(t=>{
+        const c=t.textContent;
+        for(const k in pats) if(pats[k].test(c)) ANN[k]=t.querySelector('tspan')||t;
+      });
+      if(DATA) updateSchemAnn(cur().I);
+    })
     .catch(e=>{document.getElementById('schem0').textContent='회로도 오류: '+(e.message||e);});
-  },200);
+  fetch('api/schematic/table?'+q)
+    .then(r=>r.json()).then(t=>{SCHEM_TBL=t; if(DATA&&ANN) updateSchemAnn(cur().I);});
+}
+function updateSchemAnn(I){
+  if(!SCHEM_TBL||!ANN) return;
+  const t=SCHEM_TBL,n=t.I.length;
+  const set=(k,txt)=>{if(ANN[k])ANN[k].textContent=txt;};
+  if(I>t.ifail+1e-9){ // 경로 파괴 영역: 소자 It2 초과
+    ['IO','N2','N3','OUT'].forEach(k=>set(k,k+' —'));
+    set('i','I='+(+I).toFixed(2)+'A (>Ifail)');set('iv','I_v=—');
+    return;
+  }
+  const x=Math.max(0,Math.min(n-1,I/t.ifail*(n-1))),k0=Math.floor(x),k1=Math.min(n-1,k0+1),w=x-k0;
+  const ip=a=>a[k0]+(a[k1]-a[k0])*w;
+  set('IO','IO '+ip(t.IO).toFixed(2)+'V');
+  set('N2','N2 '+ip(t.N2).toFixed(2)+'V');
+  set('N3','N3 '+ip(t.N3).toFixed(2)+'V');
+  set('OUT','OUT '+ip(t.OUT).toFixed(2)+'V');
+  set('i','I='+(+I).toFixed(2)+'A');
+  set('iv','I_v='+(1000*ip(t.IV)).toFixed(2)+'mA');
 }
 function renderAll(){
   const e=cur(),fin=e.final,p=DATA.settings;
   document.getElementById('ival').value=e.I.toFixed(2);
   document.getElementById('currentScrubLabel').textContent='Injected current: '+e.I.toFixed(2)+' A';
-  renderSchematic(e.I);
+  updateSchemAnn(e.I);
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
   renderMaps(p);renderIter();renderMetrics(fin,p);renderTable();
 }
@@ -431,7 +462,7 @@ document.getElementById('ival').addEventListener('change',e=>{
 });
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
-renderSchematic(1.33); // 섹션 0: 로드 즉시 회로도 표시
+loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
 start(); // v4와 동일: 로드 시 자동 precompute → 시각화 즉시 표시
 </script>
 </body>

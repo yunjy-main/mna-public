@@ -476,6 +476,37 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
                     headers={"Cache-Control": "no-store"})
 
 
+@app.get(PREFIX + "/api/schematic/table")
+def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
+                    corner: str = "worst", n: int = 81):
+    """Node-voltage table over the current grid — 클라이언트 실시간 주석 갱신용."""
+    err = _window_error(x1, x2)
+    if err:
+        return err
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
+    ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+    rvdd = 0.5 * L / 350.0
+    out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "OUT": [], "IV": []}
+    n = max(2, min(401, int(n)))
+    for k in range(n):
+        i = ifail * k / (n - 1.0)
+        vd = M.VofI(c1["pos"], i) if i > 0 else 0.0
+        vc = M.VofI(c2["pos"], i) if i > 0 else 0.0
+        n2v = vc + i * rvdd
+        vio = n2v + vd + i * M.RIO
+        vout, iv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        out["I"].append(i)
+        out["IO"].append(vio)
+        out["N1"].append(n2v + vd)
+        out["N2"].append(n2v)
+        out["N3"].append(vc)
+        out["OUT"].append(vout)
+        out["IV"].append(iv)
+    return out
+
+
 @app.get(PREFIX + "/api/schematic/layout")
 def schematic_layout_get():
     from server import schematic as SCH
