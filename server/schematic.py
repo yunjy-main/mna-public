@@ -226,15 +226,15 @@ LIBRARY_LAYOUT = {
         {"type": "port", "at": [3.5, -8.5], "text": ""},
         {"type": "port", "at": [4.8, -8.5], "text": ""},
         {"type": "diode", "from": [6.1, -9.1], "to": [6.1, -7.9]},
-        {"type": "rect", "corner1": [5.6, -9.1], "corner2": [6.6, -7.9], "title": "D_up"},
+        {"type": "rect", "corner1": [5.6, -9.1], "corner2": [6.6, -7.9], "title": "D_up", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [6.1, -7.9], "text": ""},
         {"type": "port", "at": [6.1, -9.1], "text": ""},
         {"type": "diode", "from": [7.9, -9.1], "to": [7.9, -7.9], "fill": "black"},
-        {"type": "rect", "corner1": [7.4, -9.1], "corner2": [8.4, -7.9], "instance": "XD_down", "model": "model1", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [7.4, -9.1], "corner2": [8.4, -7.9], "title": "D_down", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [7.9, -7.9], "text": ""},
         {"type": "port", "at": [7.9, -9.1], "text": ""},
         {"type": "zener", "from": [9.7, -9.1], "to": [9.7, -7.9]},
-        {"type": "rect", "corner1": [9.2, -9.1], "corner2": [10.2, -7.9], "title": "Clamp"},
+        {"type": "rect", "corner1": [9.2, -9.1], "corner2": [10.2, -7.9], "title": "Clamp", "model": "model2", "equation": "softplus_bi"},
         {"type": "port", "at": [9.7, -7.9], "text": ""},
         {"type": "port", "at": [9.7, -9.1], "text": ""},
         {"type": "line", "from": [11.0, -8.5], "to": [11.2, -8.5]},
@@ -252,7 +252,7 @@ LIBRARY_LAYOUT = {
         {"type": "port", "at": [12.3, -8.5], "text": ""},
         {"type": "line", "from": [13.1, -8.5], "to": [13.425, -8.5]},
         {"type": "dot", "at": [13.425, -8.5]},
-        {"type": "rect", "corner1": [13.1, -9.85], "corner2": [14.65, -7.15], "instance": "XVictim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"]},
+        {"type": "rect", "corner1": [13.1, -9.85], "corner2": [14.65, -7.15], "title": "Victim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"]},
         {"type": "pfet", "drain": [14.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.15, "bulk": True},
         {"type": "nfet", "drain": [14.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.85, "bulk": True},
         {"type": "gates", "stub": False},
@@ -263,14 +263,14 @@ LIBRARY_LAYOUT = {
         {"type": "line", "from": [15.45, -8.5], "to": [15.775, -8.5]},
         {"type": "line", "from": [16.65, -8.02], "to": [16.65, -7.55]},
         {"type": "nfet", "drain": [16.65, -8.02], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.45, "bulk": True},
-        {"type": "rect", "corner1": [15.45, -9.45], "corner2": [17.0, -7.55], "title": "Victim (NMOS)"},
+        {"type": "rect", "corner1": [15.45, -9.45], "corner2": [17.0, -7.55], "title": "Victim (NMOS)", "model": "SG_NFET 1stk_1rx"},
         {"type": "port", "at": [15.45, -8.5], "text": ""},
         {"type": "port", "at": [16.65, -7.55], "text": ""},
         {"type": "port", "at": [16.65, -9.45], "text": ""},
         {"type": "line", "from": [17.8, -8.5], "to": [18.125, -8.5]},
         {"type": "line", "from": [19.0, -8.98], "to": [19.0, -9.45]},
         {"type": "pfet", "drain": [19.0, -8.98], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.55, "bulk": True},
-        {"type": "rect", "corner1": [17.8, -9.45], "corner2": [19.35, -7.55], "title": "Victim (PMOS)"},
+        {"type": "rect", "corner1": [17.8, -9.45], "corner2": [19.35, -7.55], "title": "Victim (PMOS)", "model": "SG_PFET 1stk_1rx"},
         {"type": "port", "at": [17.8, -8.5], "text": ""},
         {"type": "port", "at": [19.0, -7.55], "text": ""},
         {"type": "port", "at": [19.0, -9.45], "text": ""},
@@ -357,8 +357,9 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                          ((xb, yb), (xa, yb)), ((xa, yb), (xa, ya))):
                 d.add(elm.Line().at(a).to(b).linestyle(ls).color(col))
             if e.get("title"):
-                d.add(elm.Label().at((xa + 0.15, yb - 0.32)).label(txt(e["title"]), fontsize=fs - 1,
-                                                                   color=col, halign='left'))
+                # type 이름(라이브러리) — instance와 동일하게 상자 밖 좌상단
+                d.add(elm.Label().at((xa - 0.1, yb + 0.24)).label(txt(e["title"]), fontsize=fs - 1,
+                                                                  color=col, halign='left'))
             # 라벨 3계층 (SCHEMATIC_STYLE.md): instance=상자 밖, model/equation=상자 안.
             # 코너 우선순위는 반시계 tl→bl→br→tr.
             # 라벨은 외곽선 스트로크와 겹치지 않게 (좌측 들여쓰기 없음 — 좌변 정렬).

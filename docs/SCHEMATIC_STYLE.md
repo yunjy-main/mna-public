@@ -146,8 +146,12 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 `D_up` · `D_down`(검게 채움) · `Clamp` · `D_b2b`(역병렬 묶음) ·
 `Victim`(inverter FET쌍+bulk) · `Victim (NMOS)` · `Victim (PMOS)`(단일 FET,
 gate 좌/drain·source 상하 port, 서로 거울 대칭).
-각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port+title)이되,
+각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port)이되,
 **상자 밖 실선 배선 금지** — 소자 endpoints를 상자 경계에 맞춰 트림한다.
+라이브러리 라벨: **type 이름(title)은 상자 밖 좌상단**(instance와 동일 위치·서식),
+**model/equation은 상자 안**(R13과 동일) — D_up/D_down(model1+softplus_bi),
+Clamp(model2+softplus_bi), Victim(SG_PFET+SG_NFET **2개 모두**),
+Victim (NMOS)/(PMOS)(각자 SG 모델 1개).
 인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 목록에도 추가한다.
 
 ## R12. 수정 후 검증 절차
@@ -183,4 +187,4 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 **model↔equation 줄간격 = 글자높이+0.1** (baseline pitch 0.28).
 (schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
-라이브러리 canvas의 cell type 이름은 `title` 키로 유지(별개 층).
+라이브러리 canvas의 cell type 이름은 `title` 키 — instance와 같은 자리(밖 좌상단)에 그린다.
