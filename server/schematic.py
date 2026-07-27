@@ -26,6 +26,7 @@ MUT = '#5b6673'
 DEFAULT_LAYOUT = {
     "unit": 2,
     "fontsize": 9,
+    "symbol_scale": 0.8,
     "nodes": {
         "IO":  {"xy": [-0.2, 2.0], "ofst": [-1.5, 0.42]},
         "N2":  {"xy": [-0.2, 4.0], "ofst": [-1.3, 0.35]},
@@ -147,6 +148,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
     d = schemdraw.Drawing(backend='svg')
     d.config(unit=layout.get("unit", 2), fontsize=layout.get("fontsize", 9))
     fs = layout.get("fontsize", 9)
+    ss = layout.get("symbol_scale", 1.0)  # 심볼 몸체 배율 (endpoints 스팬·anchor는 불변)
     fets = {}
 
     for e in layout.get("elements", []):
@@ -156,7 +158,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
         elif t == "dot":
             d.add(elm.Dot().at(pt(e["at"])))
         elif t == "ground":
-            d.add(elm.Ground().at(pt(e["at"])))
+            d.add(elm.Ground().at(pt(e["at"])).scale(ss))
         elif t == "label":
             d.add(elm.Label().at(pt(e["at"])).label(txt(e.get("text", "")), fontsize=fs - 1,
                                                     color=e.get("color", MUT)))
@@ -175,7 +177,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
         elif t in ("resistor", "diode", "zener", "sourcei"):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,
                    "zener": elm.Zener, "sourcei": elm.SourceI}[t]
-            el = cls().endpoints(pt(e["from"]), pt(e["to"]))
+            el = cls().endpoints(pt(e["from"]), pt(e["to"])).scale(ss)
             if e.get("label"):
                 el = el.label(txt(e["label"]), loc=e.get("loc", "top"), fontsize=fs)
             d.add(el)
@@ -192,7 +194,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             if e.get("flip"):
                 el = el.flip()
             lloc = e.get("loc", "right")
-            q = d.add(el.at(pt(e["drain"])).anchor('drain')
+            q = d.add(el.at(pt(e["drain"])).anchor('drain').scale(ss)
                       .label(e.get("label", ""), loc=lloc, fontsize=fs))
             fets[t] = q
             src = q.absanchors['source']
