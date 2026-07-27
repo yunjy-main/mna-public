@@ -361,11 +361,12 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                                                                    color=col, halign='left'))
             # 라벨 3계층 (SCHEMATIC_STYLE.md): instance=상자 밖, model/equation=상자 안.
             # 코너 우선순위는 반시계 tl→bl→br→tr.
-            # 라벨은 외곽선 스트로크와 겹치지 않게 여유 오프셋 (좌상단 기준)
-            OUTC = {"tl": (xa + 0.05, yb + 0.22, 'left'), "bl": (xa + 0.05, ya - 0.52, 'left'),
-                    "br": (xb - 0.05, ya - 0.52, 'right'), "tr": (xb - 0.05, yb + 0.22, 'right')}
-            INC = [(xa + 0.14, yb - 0.42, 'left'), (xa + 0.14, ya + 0.2, 'left'),
-                   (xb - 0.14, ya + 0.2, 'right'), (xb - 0.14, yb - 0.42, 'right')]
+            # 라벨은 외곽선 스트로크와 겹치지 않게 (좌측 들여쓰기 없음 — 좌변 정렬).
+            # schemdraw .label() 자체 x오프셋 +0.10을 앵커에서 상쇄.
+            OUTC = {"tl": (xa - 0.1, yb + 0.22, 'left'), "bl": (xa - 0.1, ya - 0.52, 'left'),
+                    "br": (xb - 0.1, ya - 0.52, 'right'), "tr": (xb - 0.1, yb + 0.22, 'right')}
+            INC = [(xa - 0.04, yb - 0.42, 'left'), (xa - 0.04, ya + 0.2, 'left'),
+                   (xb - 0.16, ya + 0.2, 'right'), (xb - 0.16, yb - 0.42, 'right')]
             if e.get("instance"):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,

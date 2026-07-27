@@ -175,8 +175,9 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 
 fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라지면 tl로 복귀.
 검증: 라벨 bbox vs 상자 4변 교차 전수 검사 = 0건.
-**외곽선 비겹침 오프셋**: instance 밖 tl/tr = 상변+0.22, bl/br = 하변−0.52;
-model/equation 안쪽 = 상변−0.42(위) · 하변+0.2(아래), 좌우 ±0.14 — 라벨 텍스트가
-상자 스트로크에 닿지 않게 좌상단 기준으로 배치.
+**정렬/오프셋**: 좌상단(및 좌하단) 배치 시 **좌측 들여쓰기 없음** — instance는 상자
+좌변과 정확히 정렬(x=xa), 안쪽 model/equation은 스트로크 회피 최소값(+0.06)만.
+세로: instance 밖 tl/tr = 상변+0.22, bl/br = 하변−0.52; 안쪽 첫 줄 = 상변−0.42.
+(schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
 라이브러리 canvas의 cell type 이름은 `title` 키로 유지(별개 층).
