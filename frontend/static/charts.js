@@ -82,51 +82,96 @@ window.MNA = (function () {
     el.innerHTML = s + '</svg>';
   }
 
-  // 방사형: 바깥=위험, 200% 스케일, 100% 경계 점선(주석용) — 창립 확정 스펙
+  // 방사형: 바깥=위험, 200% 스케일, 100% 경계 점선 — v4 원형(꼭짓점 점·100%/200% 라벨 포함)
   function radar(el, title, labels, vals, ghosts, size) {
-    const W = size || 220, H = W, cx = W / 2, cy = H / 2 + 5, R = W * 0.36, n = labels.length, MAX = 2.0;
+    const W = size || 230, H = W, cx = W / 2, cy = H / 2 + 5, R = W * 0.34, n = labels.length, MAX = 2.0;
     const pt = (k, v) => {
-      const a = -Math.PI / 2 + 2 * Math.PI * k / n, r = R * Math.min(v, MAX) / MAX;
+      const a = -Math.PI / 2 + 2 * Math.PI * k / n, r = R * Math.max(0, Math.min(v, MAX)) / MAX;
       return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
     };
     let s = '<svg viewBox="0 0 ' + W + ' ' + H + '">';
-    for (const g of [0.5, 1.5, 2.0]) {
+    for (const g of [0.5, 1.0, 1.5, 2.0]) {
       const pts = labels.map((_, k) => pt(k, g).map(v => v.toFixed(1)).join(',')).join(' ');
-      s += '<polygon points="' + pts + '" fill="none" stroke="' + C.grid + '"/>';
-    }
-    {
-      const pts = labels.map((_, k) => pt(k, 1).map(v => v.toFixed(1)).join(',')).join(' ');
-      s += '<polygon points="' + pts + '" fill="none" stroke="' + C.fail + '" stroke-dasharray="4 3"/>';
+      s += (g === 1.0)
+        ? '<polygon points="' + pts + '" fill="none" stroke="' + C.fail + '" stroke-width="1.3" stroke-dasharray="5 4"/>'
+        : '<polygon points="' + pts + '" fill="none" stroke="' + C.grid + '"/>';
     }
     labels.forEach((lb, k) => {
-      const [x, y] = pt(k, MAX * 1.06); const a = pt(k, MAX);
-      s += '<line x1="' + cx + '" y1="' + cy + '" x2="' + a[0] + '" y2="' + a[1] + '" stroke="' + C.grid + '"/>'
-        + '<text x="' + x + '" y="' + y + '" text-anchor="middle" font-size="8" fill="' + C.gray + '">' + lb + '</text>';
+      const a = -Math.PI / 2 + 2 * Math.PI * k / n;
+      const lx = cx + R * 1.3 * Math.cos(a), ly = cy + R * 1.3 * Math.sin(a);
+      const anchor = Math.abs(Math.cos(a)) < 0.25 ? 'middle' : (Math.cos(a) > 0 ? 'start' : 'end');
+      const e = pt(k, MAX);
+      s += '<line x1="' + cx + '" y1="' + cy + '" x2="' + e[0] + '" y2="' + e[1] + '" stroke="' + C.grid + '"/>'
+        + '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" font-size="8" fill="' + C.gray + '">' + lb + '</text>';
     });
     (ghosts || []).forEach(g => {
       const pts = g.vals.map((v, k) => pt(k, v).map(q => q.toFixed(1)).join(',')).join(' ');
-      s += '<polygon points="' + pts + '" fill="none" stroke="#b9c2cc" stroke-width="1" opacity="0.7"/>';
+      s += '<polygon points="' + pts + '" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="2 4" opacity="0.4"/>';
     });
     {
       const pts = vals.map((v, k) => pt(k, v).map(q => q.toFixed(1)).join(',')).join(' ');
       s += '<polygon points="' + pts + '" fill="' + C.accent + '22" stroke="' + C.accent + '" stroke-width="1.8"/>';
+      vals.forEach((v, k) => {
+        const q = pt(k, v);
+        s += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.8" fill="' + (v > 1 ? C.fail : C.accent) + '"/>';
+      });
     }
-    s += '<text x="' + cx + '" y="11" text-anchor="middle" font-size="10.5" fill="#20242a">' + title + '</text>';
+    s += '<text x="' + cx + '" y="11" text-anchor="middle" font-size="10.5" fill="#20242a">' + title + '</text>'
+      + '<text x="' + cx + '" y="' + (cy - R * 0.5) + '" text-anchor="middle" font-size="7.5" fill="' + C.fail + '">100%</text>'
+      + '<text x="' + cx + '" y="' + (cy - R * 1.02) + '" text-anchor="middle" font-size="7.5" fill="' + C.gray + '">200%</text>';
     el.innerHTML = s + '</svg>';
   }
 
-  // 게이지: kind 'window'(0~1 위치) | 기본(usage, 200% 스케일 + 100% 마커)
-  function gauge(el, name, val, lim, kind) {
-    const okv = kind === 'window' ? (val >= 0 && val <= 1) : (val <= 1);
+  // 게이지 — v4 gaugeHtml 원형: 값 텍스트 + min/max 라벨 + marker + PASS/FAIL
+  // 호출: gauge(el, name, val, lim(무시), kind, opts={valueText,minLabel,maxLabel,pass})
+  function gauge(el, name, val, lim, kind, opts) {
+    opts = opts || {};
+    const okv = (opts.pass !== undefined) ? opts.pass
+      : (kind === 'window' ? (val >= 0 && val <= 1) : (val <= 1));
     const w = Math.max(0, Math.min(1, kind === 'window' ? val : val / 2)) * 100;
     const col = okv ? C.pass : C.fail;
+    const right = (opts.valueText ? opts.valueText + ' · ' : '')
+      + (kind === 'window' ? ('pos ' + pct(val)) : pct(val)) + ' · ' + (okv ? 'PASS' : 'FAIL');
+    let sub = '';
+    if (opts.minLabel || opts.maxLabel) {
+      sub = '<div class="lbl" style="margin-top:0"><span>' + (opts.minLabel || '') + '</span><span>'
+        + (opts.maxLabel || '') + '</span></div>';
+    }
     el.insertAdjacentHTML('beforeend',
-      '<div class="gauge"><div class="lbl"><span>' + name + '</span><span style="color:' + (okv ? C.pass : C.fail) + '">'
-      + (kind === 'window' ? ('pos ' + pct(val)) : pct(val)) + ' · ' + (okv ? 'PASS' : 'FAIL') + '</span></div>'
+      '<div class="gauge"><div class="lbl"><span>' + name + '</span><span style="color:' + col + '">'
+      + right + '</span></div>'
       + '<div class="bar"><i style="width:' + w + '%;background:' + col + '"></i>'
       + (kind !== 'window' ? '<i style="left:50%;width:2px;background:' + C.fail + '"></i>' : '')
-      + '</div></div>');
+      + '</div>' + sub + '</div>');
   }
 
-  return { C: C, lineChart: lineChart, radar: radar, gauge: gauge, f: f, pct: pct, fmtN: fmtN };
+  // V-I SOA map — v4 drawSOAMap 원형: safe region 음영 + Vlim/Ilim 점선 + sweep 궤적 + 동작점
+  function soaMap(el, o) {
+    const W = o.w || 340, H = o.h || 225, mL = 44, mR = 12, mT = o.title ? 20 : 10, mB = 30;
+    const iw = W - mL - mR, ih = H - mT - mB;
+    const pairs = o.pairs || [];
+    const vmax = Math.max(o.Vlim * 2.0, o.V * 1.15, ...pairs.map(p => p.V * 1.05), 1e-9);
+    const imax = Math.max(o.Ilim * 2.0, o.I * 1.15, ...pairs.map(p => p.I * 1.05), 1e-9);
+    const X = v => mL + v / vmax * iw, Y = i => mT + (imax - i) / imax * ih;
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '">';
+    s += '<rect x="' + mL + '" y="' + mT + '" width="' + iw + '" height="' + ih + '" fill="#fff" stroke="' + C.frame + '"/>';
+    s += '<rect x="' + mL + '" y="' + Y(o.Ilim) + '" width="' + (X(o.Vlim) - mL) + '" height="' + (Y(0) - Y(o.Ilim)) + '" fill="rgba(10,125,56,.14)"/>';
+    s += '<line x1="' + X(o.Vlim) + '" y1="' + mT + '" x2="' + X(o.Vlim) + '" y2="' + (mT + ih) + '" stroke="' + C.fail + '" stroke-width="1.2" stroke-dasharray="5 4"/>';
+    s += '<line x1="' + mL + '" y1="' + Y(o.Ilim) + '" x2="' + (mL + iw) + '" y2="' + Y(o.Ilim) + '" stroke="' + C.fail + '" stroke-width="1.2" stroke-dasharray="5 4"/>';
+    if (pairs.length) {
+      s += '<path d="' + pairs.map((p, i) => (i ? 'L' : 'M') + X(p.V).toFixed(1) + ',' + Y(p.I).toFixed(1)).join(' ')
+        + '" fill="none" stroke="#64748b" stroke-width="1.3" stroke-dasharray="4 4"/>';
+    }
+    const pass = o.V <= o.Vlim && o.I <= o.Ilim;
+    s += '<circle cx="' + X(o.V) + '" cy="' + Y(o.I) + '" r="5" fill="' + (pass ? C.pass : C.fail) + '"/>';
+    s += '<text x="' + (X(o.Vlim) - 3) + '" y="' + (mT + 10) + '" text-anchor="end" font-size="8.5" fill="' + C.fail + '">Vlim</text>';
+    s += '<text x="' + (mL + 3) + '" y="' + (Y(o.Ilim) - 4) + '" font-size="8.5" fill="' + C.fail + '">Ilim</text>';
+    s += '<text x="' + (mL + iw - 3) + '" y="' + (mT + ih - 4) + '" text-anchor="end" font-size="9" fill="'
+      + (pass ? C.pass : C.fail) + '">' + o.V.toFixed(3) + (o.unitV || 'V') + ', ' + o.fmtI(o.I) + '</text>';
+    if (o.title) s += '<text x="' + (mL + 2) + '" y="12" font-size="10.5" fill="#20242a">' + o.title + '</text>';
+    s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + (o.xlabel || 'Voltage') + '</text>';
+    el.innerHTML = s + '</svg>';
+  }
+
+  return { C: C, lineChart: lineChart, radar: radar, gauge: gauge, soaMap: soaMap, f: f, pct: pct, fmtN: fmtN };
 })();

@@ -240,14 +240,19 @@ function ghostSets(ax){
   return gs;
 }
 function renderRadars(fin){
-  const axInt=r=>[r.x1pos,r.x2pos,r.lpos,r.uV,r.uBI,r.uID,r.uIC,r.uPJ];
-  const axA=r=>[r.x1pos,r.uVD,r.uID,r.uCap1,r.uLeak1];
-  const axB=r=>[r.uV,r.uBI,r.vio/(r.limNterm||3.1)];
-  const axC=r=>[r.x2pos,r.uVC,r.uIC,r.uCap2,r.uLeak2];
-  radar(document.getElementById('radarInt'),'Integrated',['x1','x2','L','Vic V','Vic I','D I','C I','Joule'],axInt(fin),ghostSets(axInt));
-  radar(document.getElementById('radarA'),'A: up diode',['pos','V SOA','I SOA','Cap','Leak'],axA(fin),ghostSets(axA));
-  radar(document.getElementById('radarB'),'B: victim',['V SOA','I SOA','PAD'],axB(fin),ghostSets(axB));
-  radar(document.getElementById('radarC'),'C: clamp',['pos','V SOA','I SOA','Cap','Leak'],axC(fin),ghostSets(axC));
+  // v4 1:1 축 세트 (placeholder 축은 실계산 물리량으로 대체: Ron effect=전압 분담, Cap/Leak share=계수 기반 usage)
+  const axInt=r=>[r.x1pos,r.x2pos,r.lpos,r.uV,r.uBI,r.uVD,r.uVC,r.uCap1];
+  const axA=r=>[r.x1pos,r.uVD,r.uID,(r.vd||0)/(r.vio||1),r.uCap1,r.uLeak1,Math.max(0,r.x1pos),Math.max(0,1-r.x1pos)];
+  const axB=r=>[r.uV,r.uBI,Math.max(0,1-r.uV),Math.max(0,1-r.uBI),r.uRV,r.vio/(r.limNterm||3.1)];
+  const axC=r=>[r.x2pos,r.uVC,r.uIC,(r.vc||0)/(r.vio||1),r.uCap2,r.uLeak2,Math.max(0,r.x2pos),Math.max(0,1-r.x2pos)];
+  radar(document.getElementById('radarInt'),'Integrated',
+    ['x1 pos','x2 pos','L pos','Victim V','Victim I','Up V','Clamp V','Cap'],axInt(fin),ghostSets(axInt));
+  radar(document.getElementById('radarA'),'A: up diode',
+    ['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'],axA(fin),ghostSets(axA));
+  radar(document.getElementById('radarB'),'B: victim',
+    ['V usage','I usage','V margin','I margin','Rail drop','PAD stress'],axB(fin),ghostSets(axB));
+  radar(document.getElementById('radarC'),'C: clamp',
+    ['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'],axC(fin),ghostSets(axC));
 }
 function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAIL 점 + 현재 marker
   const s=DATA.sweep,p=DATA.settings,e=cur();
@@ -260,21 +265,21 @@ function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAI
 }
 function renderGauges(fin,p){
   const g=document.getElementById('gauges');g.innerHTML='<div></div><div></div><div></div>';
-  const c=g.children;
-  gauge(c[0],'x1 window (min=rule/max=준rule)',fin.x1pos,1,'window');
-  gauge(c[0],'x2 window',fin.x2pos,1,'window');
-  gauge(c[0],'L window (min=공정/max=EM)',fin.lpos,1,'window');
-  gauge(c[1],'Victim SOA U ('+fin.vWorst+')',fin.uV,1);
-  gauge(c[1],'  · NMOS term '+f(fin.vnds,2)+'/'+f(fin.limNterm,1)+'V',fin.uVNt,1);
+  const c=g.children,e=cur();
+  // v4 9종 1:1 (값/min·max 라벨 형식) + 강화 회로 추가분(victim oxide·metal)
+  gauge(c[0],'x1 size window',fin.x1pos,1,'window',{valueText:'x1='+f(fin.x1),minLabel:'min '+p.x1min,maxLabel:'max '+p.x1max,pass:fin.x1>=p.x1min&&fin.x1<=p.x1max});
+  gauge(c[0],'x2 size window',fin.x2pos,1,'window',{valueText:'x2='+f(fin.x2,1),minLabel:'min '+p.x2min,maxLabel:'max '+p.x2max,pass:fin.x2>=p.x2min&&fin.x2<=p.x2max});
+  gauge(c[0],'L (Rvdd) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
+  gauge(c[1],'Victim voltage SOA ('+fin.vWorst+')',fin.uV,1,undefined,{valueText:f(fin.vnds)+' / '+f(fin.limNterm,1)+' V',maxLabel:'U=100% at limit'});
+  gauge(c[1],'Victim current SOA',fin.uBI,1,undefined,{valueText:f(1000*fin.iv,2)+' / '+f(1000*p.bILim,0)+' mA'});
+  gauge(c[1],'  · NMOS terminal',fin.uVNt,1);
   gauge(c[1],'  · NMOS oxide',fin.uVNo,1);
   gauge(c[1],'  · PMOS term/oxide',Math.max(fin.uVPt,fin.uVPo),1);
-  gauge(c[1],'Victim I ('+f(1000*fin.iv,1)+'mA/'+f(1000*p.bILim,0)+'mA)',fin.uBI,1);
-  gauge(c[2],'Diode I (It2='+f(fin.it2d,2)+'A)',fin.uID,1);
-  gauge(c[2],'Clamp I (It2='+f(fin.it2c,2)+'A)',fin.uIC,1);
-  gauge(c[2],'Metal Vdrop',fin.uRV,1);
-  gauge(c[2],'Metal EM',fin.uEM,1);
-  gauge(c[2],'Metal Joule',fin.uPJ,1);
-  gauge(c[2],'Metal resource',fin.uRes,1);
+  gauge(c[2],'Up diode voltage SOA',fin.uVD,1,undefined,{valueText:f(fin.vd)+' / '+f(fin.vt2d)+' V',maxLabel:'Vt2 '+f(fin.vt2d,2)});
+  gauge(c[2],'Up diode current SOA',fin.uID,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2d,2)+' A',maxLabel:'It2 '+f(fin.it2d,2)});
+  gauge(c[2],'Clamp voltage SOA',fin.uVC,1,undefined,{valueText:f(fin.vc)+' / '+f(fin.vt2c)+' V',maxLabel:'Vt2 '+f(fin.vt2c,2)});
+  gauge(c[2],'Clamp current SOA',fin.uIC,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2c,2)+' A',maxLabel:'It2 '+f(fin.it2c,2)});
+  gauge(c[2],'Metal Vdrop · EM · Joule · res',Math.max(fin.uRV,fin.uEM,fin.uPJ,fin.uRes),1,undefined,{pass:fin.passM});
 }
 function renderRank(fin){
   const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],
@@ -287,56 +292,65 @@ function renderRank(fin){
   }).join('');
 }
 function renderMaps(p){
+  // v4 drawSOAMap 1:1 — safe region 음영 + Vlim/Ilim 점선 + sweep 궤적 + 동작점 + 수치
   const s=DATA.sweep,e=cur(),fin=e.final;
-  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) vs I',
-    series:[{x:s.map(q=>q.final.vnds),y:s.map(q=>q.I),color:CB.blue,label:'V(OUT) 궤적'},
-            {x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.gray,label:'V_IO (참고)'}],
-    vlines:[{x:fin.limNterm,color:CB.red}],
-    points:[{x:fin.vnds,y:e.I,r:5,color:fin.passV?MNA.C.pass:MNA.C.fail}]});
-  lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',
-    series:[{x:s.map(q=>q.final.vd),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
-    hlines:[{y:fin.it2d,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2d,color:CB.red}],
-    points:[{x:fin.vd,y:e.I,r:5,color:fin.passD?MNA.C.pass:MNA.C.fail},{x:fin.vt2d,y:fin.it2d,r:3.5,color:CB.gold}]});
-  lineChart(document.getElementById('mapC'),{title:'Clamp: V vs I (endpoint=Vt2,It2)',
-    series:[{x:s.map(q=>q.final.vc),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
-    hlines:[{y:fin.it2c,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2c,color:CB.red}],
-    points:[{x:fin.vc,y:e.I,r:5,color:fin.passC?MNA.C.pass:MNA.C.fail},{x:fin.vt2c,y:fin.it2c,r:3.5,color:CB.gold}]});
+  const mA=v=>f(1000*v,2)+'mA', A=v=>f(v,3)+'A';
+  MNA.soaMap(document.getElementById('mapV'),{title:'Victim (V(OUT), I_v)',
+    V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
+    pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})), fmtI:mA, xlabel:'V(OUT) [V]'});
+  MNA.soaMap(document.getElementById('mapD'),{title:'Up diode (V_d, I)',
+    V:fin.vd, I:e.I, Vlim:fin.vt2d, Ilim:fin.it2d,
+    pairs:s.map(q=>({V:q.final.vd,I:q.I})), fmtI:A, xlabel:'V_d [V]'});
+  MNA.soaMap(document.getElementById('mapC'),{title:'Clamp (V_c, I)',
+    V:fin.vc, I:e.I, Vlim:fin.vt2c, Ilim:fin.it2c,
+    pairs:s.map(q=>({V:q.final.vc,I:q.I})), fmtI:A, xlabel:'V_c [V]'});
 }
 function renderIter(){
-  const h=cur().history;
+  const h=cur().history,p=DATA.settings;
+  // v4 chartUsage 1:1 — 6계열 (Victim V/I, Up V/I, Clamp V/I) + SOA boundary
   lineChart(document.getElementById('itUsage'),{title:'Normalized SOA usage',
     series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim SOA U'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.orange,label:'Diode I'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:CB.green,label:'Clamp I'}],
-    hlines:[{y:1,label:'100%'}]});
-  lineChart(document.getElementById('itVars'),{title:'x1/x2/L trajectory (window 정규화)',
+      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.purple,label:'Victim V'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uBI),color:'#a855f7',label:'Victim I'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uVD),color:CB.blue,label:'Up V'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.sky,label:'Up I'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uVC),color:CB.green,label:'Clamp V'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:'#86c8a0',label:'Clamp I'}],
+    hlines:[{y:1,label:'SOA boundary'}]});
+  // v4 chartVars 1:1 — 절대값 궤적 + min/max rule 점선 (스케일 차로 변수별 미니차트 세로 3개)
+  const box=document.getElementById('itVars');
+  box.innerHTML='<div></div><div></div><div></div>';
+  const sub=[['x1',r=>r.x1,p.x1min,p.x1max,CB.blue],['x2',r=>r.x2,p.x2min,p.x2max,CB.green],['L (µm)',r=>r.L,p.lmin,p.lmax,CB.orange]];
+  sub.forEach((sp,k)=>{
+    lineChart(box.children[k],{title:k===0?'x1/x2/L trajectory + rule':undefined,w:340,h:k===0?92:78,
+      series:[{x:h.map(r=>r.it),y:h.map(sp[1]),color:sp[4],label:sp[0]}],
+      hlines:[{y:sp[2],color:sp[4],label:'min'},{y:sp[3],color:sp[4],label:'max'}]});
+  });
+  // v4 chartLoss 1:1 — Vpad(V_IO)/cost/loss + Victim 한계 (V(OUT) 추가)
+  lineChart(document.getElementById('itLoss'),{title:'V_IO · V(OUT) / cost / loss',
     series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.x1pos),color:CB.blue,label:'x1'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.x2pos),color:CB.orange,label:'x2'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.lpos),color:CB.green,label:'L'}],
-    hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4'}]});
-  lineChart(document.getElementById('itLoss'),{title:'V_IO / V(OUT) / cost / loss',
-    series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.gray,label:'V_IO'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.purple,label:'V_IO'},
       {x:h.map(r=>r.it),y:h.map(r=>r.vnds),color:CB.blue,label:'V(OUT)'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.green,label:'cost'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.orange,label:'loss'}],
-    hlines:[{y:cur().final.limNterm,label:'NMOS term limit'}]});
+      {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.gray,label:'cost'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:'#111827',label:'loss'}],
+    hlines:[{y:cur().final.limNterm,label:'Victim limit '+f(cur().final.limNterm,1)+'V'}]});
 }
 function renderMetrics(fin,p){
   const chips=[['Overall',fin.passAll],['Victim',fin.passV],['Diode I',fin.passD],['Clamp I',fin.passC],['Metal',fin.passM],['Rule',fin.passRule]];
   document.getElementById('chips').innerHTML=chips.map(c=>'<span class="chip '+(c[1]?'ok':'bad')+'">'+c[0]+' '+(c[1]?'PASS':'FAIL')+'</span>').join('')
     +(fin.tier?'<span class="chip '+(fin.tier==='minimum'?'mid':'ok')+'">'+fin.tier+' (M='+f(fin.M,2)+')</span>':(fin.M!==null?'<span class="chip bad">M='+f(fin.M,2)+'</span>':''));
-  const m=[
-    ['Final x1 / x2', f(fin.x1)+' / '+f(fin.x2,1)],
-    ['Final L (Rvdd)', f(fin.L,1)+'µm ('+f(fin.R)+'Ω)'],
+  const pf=(ok)=>'<span style="color:'+(ok?MNA.C.pass:MNA.C.fail)+'">'+(ok?'PASS':'FAIL')+'</span>';
+  const m=[ // v4 8칸 1:1 (mOverall/mRules/mVictim/mProtection/mVars/mVp/mCost/mLoss) + 확장 2칸
+    ['Overall', pf(fin.passAll)],
+    ['x1/x2/L rules', pf(fin.passRule)],
+    ['Victim SOA', pf(fin.passV)],
+    ['Protection SOA', pf(fin.passD&&fin.passC&&fin.passM)],
+    ['Final x1 / x2 / L', f(fin.x1)+' / '+f(fin.x2,1)+' / '+f(fin.L,1)+'µm'],
     ['V_IO (worst/best)', f(fin.vio_w)+' / '+f(fin.vio_b)+' V'],
-    ['V(OUT) · I_v', f(fin.vnds)+' V · '+f(1000*fin.iv,2)+' mA'],
-    ['Ipass (첫 FAIL 전류)', f(fin.ipass)+' A ≈ HBM '+f(fin.ipass/1.33,2)+' kV'],
-    ['경로한계 Ifail', f(fin.ifail)+' A'],
     ['Cost', f(fin.cost)],
     ['Total loss', f(fin.loss)],
+    ['V(OUT) · I_v', f(fin.vnds)+' V · '+f(1000*fin.iv,2)+' mA'],
+    ['Ipass', f(fin.ipass)+' A ≈ HBM '+f(fin.ipass/1.33,2)+' kV'],
   ];
   document.getElementById('metrics').innerHTML=m.map(x=>'<div class="metric"><div class="name">'+x[0]+'</div><div class="value">'+x[1]+'</div></div>').join('');
 }
