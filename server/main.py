@@ -565,7 +565,13 @@ def ref(path: str):
 @app.get(PREFIX + "/")
 @app.get(PREFIX)
 def index():
-    return _page("index.html")
+    """Main = v4-faithful optimizer (사용자 지정). 링크 허브는 /hub에 보존."""
+    return _page("optimize.html")
+
+
+@app.get(PREFIX + "/hub")
+def hub_page():
+    return _page("hub.html")
 
 
 @app.get("/")
