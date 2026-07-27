@@ -364,10 +364,10 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             # 코너 우선순위는 반시계 tl→bl→br→tr.
             # 라벨은 외곽선 스트로크와 겹치지 않게 (좌측 들여쓰기 없음 — 좌변 정렬).
             # schemdraw .label() 자체 x오프셋 +0.10을 앵커에서 상쇄.
-            OUTC = {"tl": (xa - 0.1, yb + 0.24, 'left'), "bl": (xa - 0.1, ya - 0.45, 'left'),
-                    "br": (xb - 0.1, ya - 0.45, 'right'), "tr": (xb - 0.1, yb + 0.24, 'right')}
-            INC = [(xa - 0.07, yb - 0.2, 'left'), (xa - 0.07, ya + 0.05, 'left'),
-                   (xb - 0.13, ya + 0.05, 'right'), (xb - 0.13, yb - 0.2, 'right')]
+            OUTC = {"tl": (xa - 0.1, yb + 0.24, 'left'), "bl": (xa - 0.1, ya - 0.3, 'left'),
+                    "br": (xb - 0.1, ya - 0.3, 'right'), "tr": (xb - 0.1, yb + 0.24, 'right')}
+            INC = [(xa - 0.09, yb - 0.18, 'left'), (xa - 0.09, ya + 0.02, 'left'),
+                   (xb - 0.11, ya + 0.02, 'right'), (xb - 0.11, yb - 0.18, 'right')]
             if e.get("instance"):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,
@@ -381,7 +381,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             if e.get("equation"):
                 # equation은 model 라벨 바로 아래 (model 없으면 model 자리)
                 sx, sy, ha = INC[koff]
-                ey_ = sy - 0.28 if models else sy  # 줄간격 = 글자높이 + 0.1
+                ey_ = sy - 0.23 if models else sy  # 줄간격 = 글자높이 + 0.05
                 d.add(elm.Label().at((sx, ey_)).label(txt(e["equation"]), fontsize=fs - 3,
                                                       color=col, halign=ha))
         elif t in ("resistor", "diode", "zener", "sourcei"):

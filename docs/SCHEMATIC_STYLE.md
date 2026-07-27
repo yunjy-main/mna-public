@@ -181,10 +181,10 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 검증: 라벨 bbox vs 상자 4변 교차 전수 검사 = 0건.
 **정렬/오프셋**: 좌상단(및 좌하단) 배치 시 좌측 들여쓰기 없음 — instance는 상자
 좌변과 정확히 정렬(x=xa), 안쪽 model/equation은 +0.03만.
-세로: **바깥(instance) 라벨은 외곽선과 겹치지 않게 띄운다** — 상변+0.24/하변−0.45
-(descender 포함 클리어). **안쪽(model/equation) 라벨은 외곽선에 밀착** — 첫 줄
-상변−0.20(글자 상단이 선 0.02 아래), 하단 슬롯 +0.05.
-**model↔equation 줄간격 = 글자높이+0.1** (baseline pitch 0.28).
+세로: **바깥(instance) 라벨은 외곽선과 겹치지 않게 띄운다** — 상변+0.24/하변−0.30
+(descender/cap 포함 클리어, 하단도 외곽선에 붙임). **안쪽(model/equation) 라벨은
+외곽선에 최대 밀착** — 첫 줄 상변−0.18, 좌 +0.01, 하단 슬롯 +0.02.
+**model↔equation 줄간격 = 글자높이+0.05** (baseline pitch 0.23).
 (schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
 라이브러리 canvas의 cell type 이름은 `title` 키 — instance와 같은 자리(밖 좌상단)에 그린다.
