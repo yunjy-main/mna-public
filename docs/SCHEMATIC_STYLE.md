@@ -194,3 +194,17 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 (schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
 라이브러리 canvas의 cell type 이름은 `title` 키 — instance와 같은 자리(밖 좌상단)에 그린다.
+
+## R14. instance→cell 매핑
+
+**회로의 모든 instance는 Subcircuit Set의 cell을 골라 instant화한 것이다.** 데이터로:
+
+- 각 instance rect는 `"cell": "<id>"` 참조 필수 (i_esd/r/d_up/d_down/clamp/d_b2b/victim...).
+- `model`은 해당 cell의 **model list에서 선택**한 process 모델명 (목록이 비어 있으면 무제약).
+- **회전/미러 변형 허용**: 같은 cell을 가로/세로로 눕혀 쓸 수 있고 `"variant"` 키로 표기
+  (예: d_b2b — XD_b2b_m/m2=vertical, XD_b2b=horizontal).
+- **파라미터 바인딩** `"params"`: instance가 쓰는 solver/UI 변수 또는 상수
+  (XD_up {size:x1}, XClamp {size:x2}, XRDD {R:rdd(L), L:L}, RDL {R:0.1}, XResd {R:500},
+  I_ESD {I:I_sweep}, XVictim {topology:vTopo}; 2차 보호는 미바인딩 {}).
+- 검증: `GET /api/schematic/mapping` — cell 존재·model 소속·바인딩 표를 반환하고
+  위반을 issues로 보고한다. 레이아웃 수정 후 이 API로 확인.

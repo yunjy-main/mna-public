@@ -51,47 +51,47 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [-3.8, 5.5], "to": [-3.8, 6.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, 4.5], "to": [-3.8, 5.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, 4.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, 4.0], "corner2": [-3.3, 5.55], "instance": "XI_ESD (IO→VDD) (open)", "instance_loc": "br", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, 4.0], "corner2": [-3.3, 5.55], "instance": "XI_ESD (IO→VDD) (open)", "instance_loc": "br", "cell": "i_esd", "params": {"I": "I_sweep"}, "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, 5.55], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, 2.5], "to": [-3.8, 3.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, 1.5], "to": [-3.8, 2.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, 1.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, 1.0], "corner2": [-3.3, 2.55], "instance": "XI_ESD (IO→VSS) (open)", "instance_loc": "br", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, 1.0], "corner2": [-3.3, 2.55], "instance": "XI_ESD (IO→VSS) (open)", "instance_loc": "br", "cell": "i_esd", "params": {"I": "I_sweep"}, "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, 2.55], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, -0.5], "to": [-3.8, 0.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, -1.5], "to": [-3.8, -0.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, -1.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, -2.0], "corner2": [-3.3, -0.45], "instance": "XI_ESD (GND→VSS) (open)", "instance_loc": "bl", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, -2.0], "corner2": [-3.3, -0.45], "instance": "XI_ESD (GND→VSS) (open)", "instance_loc": "bl", "cell": "i_esd", "params": {"I": "I_sweep"}, "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, -0.45], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, -3.5], "to": [-3.8, -3.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, -4.5], "to": [-3.8, -3.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, -4.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, -5.0], "corner2": [-3.3, -3.45], "instance": "XI_ESD (GND→MVSS) (open)", "instance_loc": "bl", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, -5.0], "corner2": [-3.3, -3.45], "instance": "XI_ESD (GND→MVSS) (open)", "instance_loc": "bl", "cell": "i_esd", "params": {"I": "I_sweep"}, "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, -3.45], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.0, 6.0], "to": [-2.6, 6.0]},
         {"type": "resistor", "from": [-2.6, 6.0], "to": [-0.6, 6.0]},
-        {"type": "rect", "corner1": [-2.25, 5.55], "corner2": [-0.95, 6.45], "instance": "XRvdd_rdl", "model": "metal", "equation": "0.1Ω"},
+        {"type": "rect", "corner1": [-2.25, 5.55], "corner2": [-0.95, 6.45], "instance": "XRvdd_rdl", "cell": "r", "model": "metal", "equation": "0.1Ω", "params": {"R": 0.1}},
         {"type": "port", "at": [-2.25, 6.0], "text": ""},
         {"type": "port", "at": [-0.95, 6.0], "text": ""},
         {"type": "line", "from": [-0.6, 6.0], "to": "N2"},
         {"type": "line", "from": [-3.0, 3.0], "to": [-2.6, 3.0]},
         {"type": "resistor", "from": [-2.6, 3.0], "to": [-0.6, 3.0]},
-        {"type": "rect", "corner1": [-2.25, 2.55], "corner2": [-0.95, 3.45], "instance": "XRio_rdl", "model": "metal", "equation": "0.1Ω"},
+        {"type": "rect", "corner1": [-2.25, 2.55], "corner2": [-0.95, 3.45], "instance": "XRio_rdl", "cell": "r", "model": "metal", "equation": "0.1Ω", "params": {"R": 0.1}},
         {"type": "port", "at": [-2.25, 3.0], "text": ""},
         {"type": "port", "at": [-0.95, 3.0], "text": ""},
         {"type": "line", "from": [-0.6, 3.0], "to": "IO"},
         {"type": "line", "from": [-3.0, 0.0], "to": [-2.6, 0.0]},
         {"type": "resistor", "from": [-2.6, 0.0], "to": [-0.6, 0.0]},
-        {"type": "rect", "corner1": [-2.25, -0.45], "corner2": [-0.95, 0.45], "instance": "XRvss_rdl", "model": "metal", "equation": "0.1Ω"},
+        {"type": "rect", "corner1": [-2.25, -0.45], "corner2": [-0.95, 0.45], "instance": "XRvss_rdl", "cell": "r", "model": "metal", "equation": "0.1Ω", "params": {"R": 0.1}},
         {"type": "port", "at": [-2.25, 0.0], "text": ""},
         {"type": "port", "at": [-0.95, 0.0], "text": ""},
         {"type": "line", "from": [-0.6, 0.0], "to": [5.1, 0.0]},
         {"type": "diode", "from": "IO", "to": "N2"},
-        {"type": "rect", "corner1": [-0.9, 3.9], "corner2": [0.5, 5.1], "instance": "XD_up", "model": "esdvpnp", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [-0.9, 3.9], "corner2": [0.5, 5.1], "instance": "XD_up", "cell": "d_up", "model": "esdvpnp", "equation": "softplus_bi", "params": {"size": "x1"}},
         {"type": "port", "at": [-0.2, 5.1], "text": ""},
         {"type": "port", "at": [-0.2, 3.9], "text": ""},
         {"type": "diode", "from": [-0.2, 0.0], "to": "IO", "fill": "black"},
-        {"type": "rect", "corner1": [-0.9, 0.9], "corner2": [0.5, 2.1], "instance": "XD_down", "model": "esdndsx", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [-0.9, 0.9], "corner2": [0.5, 2.1], "instance": "XD_down", "cell": "d_down", "model": "esdndsx", "equation": "softplus_bi", "params": {"size": "x1"}},
         {"type": "port", "at": [-0.2, 2.1], "text": ""},
         {"type": "port", "at": [-0.2, 0.9], "text": ""},
         {"type": "dot", "at": "IO"},
@@ -99,38 +99,38 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [-0.2, 0.0]},
         {"type": "line", "from": "N2", "to": [5.1, 6.0]},
         {"type": "resistor", "from": [5.1, 6.0], "to": "N3"},
-        {"type": "rect", "corner1": [5.55, 5.55], "corner2": [6.65, 6.45], "instance": "XRDD_un1", "model": "metal", "equation": "rdd(L)"},
+        {"type": "rect", "corner1": [5.55, 5.55], "corner2": [6.65, 6.45], "instance": "XRDD_un1", "cell": "r", "model": "metal", "equation": "rdd(L)", "params": {"R": "rdd(L)", "L": "L"}},
         {"type": "port", "at": [5.55, 6.0], "text": ""},
         {"type": "port", "at": [6.65, 6.0], "text": ""},
         {"type": "resistor", "from": [5.1, 0.0], "to": "N3B"},
-        {"type": "rect", "corner1": [5.55, -0.45], "corner2": [6.65, 0.45], "instance": "XRDD_dn1", "model": "metal", "equation": "rdd(L)"},
+        {"type": "rect", "corner1": [5.55, -0.45], "corner2": [6.65, 0.45], "instance": "XRDD_dn1", "cell": "r", "model": "metal", "equation": "rdd(L)", "params": {"R": "rdd(L)", "L": "L"}},
         {"type": "port", "at": [5.55, 0.0], "text": ""},
         {"type": "port", "at": [6.65, 0.0], "text": ""},
         {"type": "zener", "from": "N3B", "to": "N3"},
-        {"type": "rect", "corner1": [6.4, 0.9], "corner2": [7.8, 5.1], "instance": "XClamp", "model": "nfet_clamp", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [6.4, 0.9], "corner2": [7.8, 5.1], "instance": "XClamp", "cell": "clamp", "model": "nfet_clamp", "equation": "softplus_bi", "params": {"size": "x2"}},
         {"type": "port", "at": [7.1, 5.1], "text": ""},
         {"type": "port", "at": [7.1, 0.9], "text": ""},
         {"type": "dot", "at": "N3"},
         {"type": "dot", "at": "N3B"},
         {"type": "line", "from": "IO", "to": [0.2, 3.0]},
         {"type": "resistor", "from": [0.2, 3.0], "to": [2.2, 3.0]},
-        {"type": "rect", "corner1": [0.55, 2.55], "corner2": [1.85, 3.45], "instance": "XResd", "model": "series_res", "equation": "500Ω"},
+        {"type": "rect", "corner1": [0.55, 2.55], "corner2": [1.85, 3.45], "instance": "XResd", "cell": "r", "model": "series_res", "equation": "500Ω", "params": {"R": 500}},
         {"type": "port", "at": [0.55, 3.0], "text": ""},
         {"type": "port", "at": [1.85, 3.0], "text": ""},
         {"type": "line", "from": [2.2, 3.0], "to": [2.6, 3.0]},
         {"type": "diode", "from": [2.6, 3.0], "to": [2.6, 6.0]},
-        {"type": "rect", "corner1": [1.9, 3.9], "corner2": [3.3, 5.1], "instance": "XD_up2", "model": "esdvpnp", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [1.9, 3.9], "corner2": [3.3, 5.1], "instance": "XD_up2", "cell": "d_up", "model": "esdvpnp", "equation": "softplus_bi", "params": {}},
         {"type": "port", "at": [2.6, 5.1], "text": ""},
         {"type": "port", "at": [2.6, 3.9], "text": ""},
         {"type": "diode", "from": [2.6, 0.0], "to": [2.6, 3.0], "fill": "black"},
-        {"type": "rect", "corner1": [1.9, 0.9], "corner2": [3.3, 2.1], "instance": "XD_down2", "model": "esdndsx", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [1.9, 0.9], "corner2": [3.3, 2.1], "instance": "XD_down2", "cell": "d_down", "model": "esdndsx", "equation": "softplus_bi", "params": {}},
         {"type": "port", "at": [2.6, 2.1], "text": ""},
         {"type": "port", "at": [2.6, 0.9], "text": ""},
         {"type": "dot", "at": [2.6, 3.0]},
         {"type": "dot", "at": [2.6, 6.0]},
         {"type": "dot", "at": [2.6, 0.0]},
         {"type": "line", "from": [2.6, 3.0], "to": [4.225, 3.0]},
-        {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "instance": "XVictim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"]},
+        {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "instance": "XVictim", "cell": "victim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"], "params": {"topology": "vTopo"}},
         {"type": "pfet", "drain": [5.1, 3.0], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0, "bulk": True},
         {"type": "nfet", "drain": [5.1, 3.0], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0, "bulk": True},
         {"type": "gates", "tie": "OUT"},
@@ -148,7 +148,7 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [8.25, 0.0], "to": [8.25, -0.3], "color": "#b0b6bf"},
         {"type": "diode", "from": [8.25, 0.3], "to": [9.15, 0.3], "color": "#b0b6bf"},
         {"type": "diode", "from": [9.15, -0.3], "to": [8.25, -0.3], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [8.05, -0.65], "corner2": [9.35, 0.65], "instance": "XD_b2b (open)", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [8.05, -0.65], "corner2": [9.35, 0.65], "instance": "XD_b2b (open)", "cell": "d_b2b", "variant": "horizontal", "params": {}, "color": "#b0b6bf"},
         {"type": "port", "at": [8.05, 0.0], "text": "", "color": "#b0b6bf"},
         {"type": "port", "at": [9.35, 0.0], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [9.15, 0.3], "to": [9.15, 0.0], "color": "#b0b6bf"},
@@ -168,7 +168,7 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [10.3, -0.825], "to": [10.6, -0.825]},
         {"type": "diode", "from": [10.0, -2.175], "to": [10.0, -0.825]},
         {"type": "diode", "from": [10.6, -0.825], "to": [10.6, -2.175]},
-        {"type": "rect", "corner1": [9.75, -2.4], "corner2": [10.85, -0.6], "instance": "XD_b2b_m2"},
+        {"type": "rect", "corner1": [9.75, -2.4], "corner2": [10.85, -0.6], "instance": "XD_b2b_m2", "cell": "d_b2b", "variant": "vertical", "params": {}},
         {"type": "port", "at": [10.3, -0.6], "text": ""},
         {"type": "port", "at": [10.3, -2.4], "text": ""},
         {"type": "line", "from": [10.0, -2.175], "to": [10.3, -2.175]},
@@ -184,7 +184,7 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [7.1, -0.825], "to": [7.4, -0.825]},
         {"type": "diode", "from": [6.8, -2.175], "to": [6.8, -0.825]},
         {"type": "diode", "from": [7.4, -0.825], "to": [7.4, -2.175]},
-        {"type": "rect", "corner1": [6.55, -2.4], "corner2": [7.65, -0.6], "instance": "XD_b2b_m", "instance_loc": "bl"},
+        {"type": "rect", "corner1": [6.55, -2.4], "corner2": [7.65, -0.6], "instance": "XD_b2b_m", "instance_loc": "bl", "cell": "d_b2b", "variant": "vertical", "params": {}},
         {"type": "port", "at": [7.1, -0.6], "text": ""},
         {"type": "port", "at": [7.1, -2.4], "text": ""},
         {"type": "line", "from": [6.8, -2.175], "to": [7.1, -2.175]},
@@ -308,6 +308,30 @@ def build_cell_svg(cell_id):
             layout["elements"] = c["elements"]
             return build_svg(2.56, 1415.232, 350.0, None, layout)
     return None
+
+
+def validate_mapping():
+    """instance→cell 매핑 검증: cell 존재·model이 cell.models 원소인지(목록 비면 무제약)."""
+    cells = {c["id"]: c for c in LIBRARY_CELLS}
+    rows, issues = [], []
+    for e in DEFAULT_LAYOUT.get("elements", []):
+        if e.get("type") == "rect" and e.get("instance"):
+            inst, cid = e["instance"], e.get("cell")
+            mdl = e.get("model")
+            mdls = [mdl] if isinstance(mdl, str) else list(mdl or [])
+            rows.append({"instance": inst, "cell": cid, "variant": e.get("variant"),
+                         "model": mdls, "params": e.get("params", {})})
+            if not cid:
+                issues.append(inst + ": cell 참조 없음")
+            elif cid not in cells:
+                issues.append("{}: 미지 cell '{}'".format(inst, cid))
+            else:
+                allowed = cells[cid]["models"]
+                if allowed:
+                    for m in mdls:
+                        if m not in allowed:
+                            issues.append("{}: model '{}' ∉ {}.models {}".format(inst, m, cid, allowed))
+    return {"instances": rows, "issues": issues}
 
 
 def load_layout():

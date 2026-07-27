@@ -556,6 +556,13 @@ def schematic_library_cell(cell_id: str):
     return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
+@app.get(PREFIX + "/api/schematic/mapping")
+def schematic_mapping():
+    """instance→cell 매핑 표 + 검증 결과 (cell 참조·model∈cell.models·params 바인딩)."""
+    from server.schematic import validate_mapping
+    return validate_mapping()
+
+
 @app.get(PREFIX + "/api/schematic/layout")
 def schematic_layout_get():
     from server import schematic as SCH
