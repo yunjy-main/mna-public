@@ -26,7 +26,7 @@ MUT = '#5b6673'
 DEFAULT_LAYOUT = {
     "unit": 2,
     "fontsize": 9,
-    "symbol_scale": 0.8,
+    "symbol_scale": 0.64,
     "nodes": {
         "IO":  {"xy": [-0.2, 2.0], "ofst": [-1.5, 0.42]},
         "N2":  {"xy": [-0.2, 4.0], "ofst": [-1.3, 0.35]},
