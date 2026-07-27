@@ -66,8 +66,12 @@ rail-to-rail 스팬 금지(상하 wire를 짧게 유지), 소스 간 daisy-chain
 | I_ESD (GND→MVSS) | MVSS −3 | −4.4→−3 | −3.7 | (−3.8,−4.4) |
 
 **모든 소스가 전용 ground를 갖는다** (공유 버스 금지). 화살표는 위(주입 rail 방향) =
-스트레스 전류 주입. 라벨의 (A→B)가 주입/리턴 net 쌍을 문서화한다.
+스트레스 전류 주입. title의 (A→B)가 주입/리턴 net 쌍을 문서화한다.
 각 rail 행은 tap(−3.8) → 선 → port(−3) 패턴 공통.
+
+각 소스 유닛은 **subcircuit 상자**(R8): [−4.3,−3.3] × [rail−1.95, rail−0.45],
+경계 port는 상변(−3.8, rail−0.45) 1개 — ground는 상자 내부(1-port cell).
+I_ESD 라벨은 상자 title.
 
 ## R7. 포트
 
@@ -77,9 +81,9 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 
 ## R8. subcircuit 상자
 
-**victim과 보호 cell 전부**(D_up, D_down, D_up2, D_down2, Clamp, D_b2b_m, D_b2b)를
-점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다. 소자 개별 라벨은 제거하고
-상자 title(좌상단)로 이동 — 파라미터 포함(예: "D_up x1={x1}", "Clamp x2={x2}").
+**victim·보호 cell·전류원 전부**(D_up, D_down, D_up2, D_down2, Clamp, D_b2b_m, D_b2b,
+I_ESD 4종)를 점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다. 소자 개별 라벨은
+제거하고 상자 title(좌상단)로 이동 — 파라미터 포함(예: "D_up x1={x1}", "Clamp x2={x2}").
 
 - 세로 diode cell: 상자 [열±0.5] × [rail+0.45, rail−0.45], port는 상/하 경계의 배선 교차점.
 - Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.45,5.55], port (7.1,5.55)/(7.1,0.45).
@@ -90,7 +94,9 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
   내부 소자는 레이아웃 JSON에서 교체 가능(inverter ↔ 단일 NMOS/PMOS).
   상자는 FET 심볼 기준 좌우 대칭(±0.35).
 
-상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). 저항·전류원은 상자 없음.
+- 전류원 cell: 1-port (R6) — 상자 내부에 소스+전용 ground.
+
+상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). 저항만 상자 없음.
 
 ## R9. 세로 소자 라벨 위치 (schemdraw 0.15 특성)
 
