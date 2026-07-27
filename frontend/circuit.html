@@ -55,6 +55,12 @@
   </div>
 
   <div class="card">
+    <h2>2.5 Instance → Cell 매핑 (Subcircuit Set)</h2>
+    <div class="cap" id="mapStatus"></div>
+    <table id="mapping"><tr><th>instance</th><th>cell</th><th>variant</th><th>model</th><th>params</th></tr></table>
+  </div>
+
+  <div class="card">
     <h2>3. MNA 행렬 (동작점 선형화)</h2>
     <pre id="mna"></pre>
     <div class="cap" id="mnaCap"></div>
@@ -97,6 +103,20 @@ function load(){
       });
     })
     .catch(e=>{document.getElementById('schemLib').textContent='subcircuit set 오류: '+(e.message||e);});
+  fetch('api/schematic/mapping').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
+    .then(d=>{
+      const st=document.getElementById('mapStatus');
+      st.innerHTML=d.issues.length
+        ?'<span style="color:#b3261e">위반 '+d.issues.length+'건: '+d.issues.join(' · ')+'</span>'
+        :'검증 무결 — instance '+d.instances.length+'개 전부 cell 참조·model 소속 확인 (GET /api/schematic/mapping)';
+      document.getElementById('mapping').innerHTML=
+        '<tr><th>instance</th><th>cell</th><th>variant</th><th>model</th><th>params</th></tr>'
+        +d.instances.map(r=>'<tr><td>'+r.instance+'</td><td>'+r.cell+'</td><td>'+(r.variant||'—')
+          +'</td><td>'+(r.model.length?r.model.join(', '):'—')
+          +'</td><td>'+(Object.keys(r.params||{}).length?Object.entries(r.params).map(([k,v])=>k+'='+v).join(', '):'—')
+          +'</td></tr>').join('');
+    })
+    .catch(e=>{document.getElementById('mapStatus').textContent='매핑 오류: '+(e.message||e);});
   fetch(q).then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
     document.getElementById('nodes').innerHTML='<tr><th>node</th><th>역할</th></tr>'
       +m.nodes.map(n=>'<tr><td>'+n.name+'</td><td>'+n.role+'</td></tr>').join('');
