@@ -32,6 +32,8 @@
   <div class="card">
     <h2>1. 회로도 (schemdraw, 동작점 주석 포함)</h2>
     <div id="schem" style="max-width:880px"></div>
+    <div class="cap" style="margin-top:6px;border-top:1px dashed #b0b6bf;padding-top:4px">Subcircuit Set (중복 없는 cell 세트)</div>
+    <div id="schemLib" style="max-width:880px"></div>
     <div class="cap">파란 주석 = node 전압, 청록 = 전류. 교차선은 접점(dot) 없으면 미연결. R 계열(Rio_rdl/RDD_un1/RDD_dn1/Rvss_rdl/Resd)도 device.</div>
     <details>
       <summary>회로도 레이아웃 편집 (JSON) <span class="hint" id="layoutState"></span></summary>
@@ -70,6 +72,9 @@ function load(){
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
     .then(svg=>{document.getElementById('schem').innerHTML=svg;})
     .catch(e=>{document.getElementById('schem').textContent='회로도 오류: '+(e.message||e);});
+  fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
+    .then(svg=>{document.getElementById('schemLib').innerHTML=svg;})
+    .catch(e=>{document.getElementById('schemLib').textContent='subcircuit set 오류: '+(e.message||e);});
   fetch(q).then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
     document.getElementById('nodes').innerHTML='<tr><th>node</th><th>역할</th></tr>'
       +m.nodes.map(n=>'<tr><td>'+n.name+'</td><td>'+n.role+'</td></tr>').join('');

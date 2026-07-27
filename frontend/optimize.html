@@ -37,6 +37,8 @@
     <h2>0. 회로도 (schematic)</h2>
     <div id="schem0" style="max-width:860px"></div>
     <div class="cap" id="schem0cap">초기 설계값 기준 · 동작점 = 선택 전류(worst corner) · 편집은 <a href="circuit">Circuit/MNA 화면</a>에서</div>
+    <div class="cap" style="margin-top:6px;border-top:1px dashed #b0b6bf;padding-top:4px">Subcircuit Set (중복 없는 cell 세트)</div>
+    <div id="schemLib" style="max-width:860px"></div>
   </div>
 
   <!-- ================= 1. 설정값 입력 (v4 입력부 → 새 구현/바로가기 대체) ================= -->
@@ -483,6 +485,9 @@ document.getElementById('ival').addEventListener('change',e=>{
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
 loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
+fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
+  .then(svg=>{document.getElementById('schemLib').innerHTML=svg;})
+  .catch(e=>{document.getElementById('schemLib').textContent='subcircuit set 오류: '+(e.message||e);});
 start(); // v4와 동일: 로드 시 자동 precompute → 시각화 즉시 표시
 </script>
 </body>

@@ -129,14 +129,17 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 
 ## R11. Subcircuit Set (라이브러리 행)
 
-회로도 하단, 점선 구분선(y=−6.4, `#b0b6bf`) 아래 별도 영역(y≈−6.4~−9.85)에
-**형태 기준 중복 제거한 cell 세트를 가로로 나열**한다 — 동일 형태 심볼은 1개만
-(저항류는 파라미터만 다르므로 `R` 하나). 7종:
-`I_ESD`(1-port 소스+ground) · `R` · `D_up` · `D_down`(검게 채움) · `Clamp` ·
-`D_b2b`(역병렬 묶음) · `Victim`(FET쌍+bulk, compact [7.1,8.65]×[−9.85,−7.15]).
+**회로도와 별개의 canvas** — `LIBRARY_LAYOUT`(schematic.py)을
+`GET /api/schematic/library`로 서빙하고, HTML에서 본 회로도(#schem0/#schem)와
+분리된 컨테이너(#schemLib)에 표시한다. 형태 기준 중복 제거 cell을 가로 나열, 12종:
+`I_ESD`(1-port 소스+ground) · `GND`(1-port, I_ESD와 동일 크기) · `R` ·
+`short`(2-port 직결) · `open`(2-port 미연결, R와 동일 크기) ·
+`D_up` · `D_down`(검게 채움) · `Clamp` · `D_b2b`(역병렬 묶음) ·
+`Victim`(inverter FET쌍+bulk) · `Victim (NMOS)` · `Victim (PMOS)`(단일 FET,
+gate 좌/drain·source 상하 port, 서로 거울 대칭).
 각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port+title)이되,
 **상자 밖 실선 배선 금지** — 소자 endpoints를 상자 경계에 맞춰 트림한다.
-인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 행에도 추가한다.
+인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 목록에도 추가한다.
 
 ## R12. 수정 후 검증 절차
 

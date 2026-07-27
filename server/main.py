@@ -538,6 +538,14 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     return out
 
 
+@app.get(PREFIX + "/api/schematic/library")
+def schematic_library():
+    """Subcircuit Set (중복 없는 cell 세트) — 회로도와 분리된 별도 canvas."""
+    from server.schematic import build_svg, LIBRARY_LAYOUT
+    return Response(build_svg(2.56, 1415.232, 350.0, None, LIBRARY_LAYOUT),
+                    media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
 @app.get(PREFIX + "/api/schematic/layout")
 def schematic_layout_get():
     from server import schematic as SCH
