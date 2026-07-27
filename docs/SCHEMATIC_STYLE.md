@@ -14,8 +14,9 @@ endpoints를 노드에 두면 schemdraw가 몸체를 자동 중앙 배치하고,
 | VDD rail | 4.0 | |
 | IO rail | 2.0 | victim drain 행 겸용 |
 | VSS rail | 0.0 | |
-| ground | −2.0 | GND→VSS 소스 하단 |
-| b2b 분기 | ±0.7 | VSS rail 기준 대칭 |
+| MVSS rail | −2.0 | Main VSS — port(−3)에서 10.3까지 전폭, VSS와 수직 b2b로만 연결 |
+| ground | −2.0 | GND→VSS 소스 하단 (x=−3.8 열, MVSS와 별개 net) |
+| b2b 분기 | ±0.7 | VSS rail 기준 대칭 (도메인2 가로 쌍) |
 
 rail 간격 2.0 고정 — 심볼 몸체 대비 리드가 균일해지는 값(저항/전류원/FET-rail 리드 0.5·0.64 스케일 전 기준).
 
@@ -24,6 +25,9 @@ rail 간격 2.0 고정 — 심볼 몸체 대비 리드가 균일해지는 값(�
 소스열 **−3.8** → port **−3** → RDL **[−2.6,−0.6]** → 1차 보호(D_up/D_down) **−0.2**
 → Resd **[0.2,2.2]** → 2차 보호(D_up2/D_down2) **2.6** → victim 상자 **[3.4,5.45]**(drain 5.1)
 → RDD **[5.1,7.1]** → clamp **7.1** → b2b **[7.9,9.5]** → 도메인2 port **10.3**
+
+세로 요소: VSS↔MVSS 수직 b2b(D_b2b_m) — x **0.6/1.8** (1차 −0.2·2차 2.6 열 사이 중앙,
+양쪽 edge gap 0.8, Resd center 1.2와 수직 정렬). 두 다이오드는 rail-to-rail 직결(R0 자동 중앙).
 
 ## R3. 심볼 간격 균일
 
