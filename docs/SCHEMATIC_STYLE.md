@@ -55,22 +55,23 @@ endpoints 스팬·anchor 접점은 불변(연결 유지). 접점 dot·port open-
 ## R6. 전류원 (스트레스 소스)
 
 4개 모두 **x=−3.8 단일 열**, 각 소스는 **주입 rail 바로 아래에 매달린 독립 유닛**:
-`rail tap → 소스(스팬 1.4, 상하 리드 ≈0.38) → 전용 ground 직결`.
-rail-to-rail 스팬 금지(상하 wire를 짧게 유지), 소스 간 daisy-chain 금지.
+`rail tap → 선(0.5) → 소스(스팬 1.0, 몸체 중심 rail−1.0) → 전용 ground 직결`.
+rail-to-rail 스팬 금지, 소스 간 daisy-chain 금지.
 
-| 소스 | 부착 rail | 스팬 | 몸체 y | ground |
+| 소스 | 부착 rail | 소스 스팬 | 몸체 y | ground |
 |---|---|---|---|---|
-| I_ESD (IO→VDD) | VDD 6 | 4.6→6 | 5.3 | (−3.8,4.6) |
-| I_ESD (IO→VSS) | IO 3 | 1.6→3 | 2.3 | (−3.8,1.6) |
-| I_ESD (GND→VSS) | VSS 0 | −1.4→0 | −0.7 | (−3.8,−1.4) |
-| I_ESD (GND→MVSS) | MVSS −3 | −4.4→−3 | −3.7 | (−3.8,−4.4) |
+| I_ESD (IO→VDD) | VDD 6 | 4.5→5.5 | 5.0 | (−3.8,4.5) |
+| I_ESD (IO→VSS) | IO 3 | 1.5→2.5 | 2.0 | (−3.8,1.5) |
+| I_ESD (GND→VSS) | VSS 0 | −1.5→−0.5 | −1.0 | (−3.8,−1.5) |
+| I_ESD (GND→MVSS) | MVSS −3 | −4.5→−3.5 | −4.0 | (−3.8,−4.5) |
 
 **모든 소스가 전용 ground를 갖는다** (공유 버스 금지). 화살표는 위(주입 rail 방향) =
 스트레스 전류 주입. title의 (A→B)가 주입/리턴 net 쌍을 문서화한다.
 각 rail 행은 tap(−3.8) → 선 → port(−3) 패턴 공통.
 
-각 소스 유닛은 **subcircuit 상자**(R8): [−4.3,−3.3] × [rail−1.95, rail−0.45],
+각 소스 유닛은 **subcircuit 상자**(R8): [−4.3,−3.3] × [rail−2.0, rail−0.45],
 경계 port는 상변(−3.8, rail−0.45) 1개 — ground는 상자 내부(1-port cell).
+**심볼-상자 여백 ≥0.2** (몸체 상단↔상변 0.23, ground 하단↔하변 ≈0.2).
 I_ESD 라벨은 상자 title.
 
 ## R7. 포트
