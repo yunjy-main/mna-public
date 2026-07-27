@@ -158,11 +158,14 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
-| **instance** | subcircuit instant화 시 부여되는 고유 이름 (D_up, RDD_un1, Victim, I_ESD (IO→VDD)...) | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
+| **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
 | **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | fs−2, MUT |
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | fs−2, MUT |
 
-현재 배치: RDL 3종 instance=bl(노드 주석 회피), I_ESD 3종=br(왼쪽 빈 공간), 나머지 tl.
+**회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
+주석(`annotations: False`)과 port 이름은 삭제된 상태(추후 층별 재도입 예정).
+
+현재 배치: RDL 3종 instance=bl, I_ESD 3종=br(왼쪽 빈 공간), 나머지 tl.
 **외곽선 비겹침 오프셋**: instance 밖 tl/tr = 상변+0.22, bl/br = 하변−0.52;
 model/equation 안쪽 = 상변−0.42(위) · 하변+0.2(아래), 좌우 ±0.14 — 라벨 텍스트가
 상자 스트로크에 닿지 않게 좌상단 기준으로 배치.
