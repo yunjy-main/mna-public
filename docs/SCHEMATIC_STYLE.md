@@ -87,11 +87,11 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 소자 개별 라벨은 제거하고 상자 title(좌상단)로 이동 — 파라미터 포함
 (예: "D_up x1={x1}", "Clamp x2={x2}", "RDD_un1 {rvdd}Ω L={L}µm").
 
-- 세로 diode cell: 상자 [열±0.5] × [rail+0.45, rail−0.45], port는 상/하 경계의 배선 교차점.
-- Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.45,5.55], port (7.1,5.55)/(7.1,0.45).
-- b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.525)/(7.1,−2.475),
+- 세로 diode cell: 상자 [열±0.5] × [rail+0.6, rail−0.6], port는 상/하 경계의 배선 교차점.
+- Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.6,5.4], port (7.1,5.4)/(7.1,0.6).
+- b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.6)/(7.1,−2.4),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.9).
-- **victim**: 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.55) / **VSS**(하변 0.45).
+- **victim**: 상자 [3.4,5.45]×[0.6,5.4], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.4) / **VSS**(하변 0.6).
   FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3), gate tie = diode-connected(OUT).
   내부 소자는 레이아웃 JSON에서 교체 가능(inverter ↔ 단일 NMOS/PMOS).
   상자는 FET 심볼 기준 좌우 대칭(±0.35).
@@ -99,6 +99,9 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 - 전류원 cell: 1-port (R6) — 상자 내부에 소스+전용 ground.
 - 저항 cell: **compact 상자** [center±0.65] × [rail±0.45] (몸체 0.64 기준 여백 0.33/0.29),
   port는 좌/우 경계의 배선 교차점.
+
+**테두리 비접촉 원칙**: 상자끼리 겹치거나 맞닿지 않게 한다 — 세로 cell 상자는
+rail∓0.6에서 끝나고 저항 상자는 rail±0.45까지라 rail마다 0.15 간격이 남는다.
 
 상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). 상자 없는 소자는 없다.
 
