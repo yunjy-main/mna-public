@@ -169,7 +169,7 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
-| **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx; 저항: Resd 외 전부 **metal** 공통·값만 상이, Resd=series_res(가안)) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
+| **model** | 내부 심볼의 **process 모델명** — cell의 model list에서 선택 (esdvpnp, esdndsx, nfet_clamp, metal, SG_PFET/SG_NFET 1stk_1rx; Resd=series_res(가안)). solver 내부명(model1/model2)은 화면에 쓰지 않는다 | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | **fs−3(6pt)**, MUT |
 
 **회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
