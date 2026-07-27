@@ -106,6 +106,11 @@ rail∓0.9에서 끝나고 저항 상자는 rail±0.45까지라 rail마다 0.45 
 
 상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). 상자 없는 소자는 없다.
 
+## R8.5. down diode 채움
+
+**D_down·D_down2는 삼각형 안쪽을 검게 채운다**(`"fill": "black"`) — up/down 방향 구분용.
+up diode·clamp·b2b arm은 미채움. 렌더러의 `fill` 키는 모든 2단자 소자에서 사용 가능.
+
 ## R9. 세로 소자 라벨 위치 (schemdraw 0.15 특성)
 
 세로(위 방향) 소자: `loc:"top"` = **왼쪽 중앙**, `loc:"bottom"` = 오른쪽 중앙.

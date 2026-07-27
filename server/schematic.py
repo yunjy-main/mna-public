@@ -88,7 +88,7 @@ DEFAULT_LAYOUT = {
         {"type": "rect", "corner1": [-0.7, 3.9], "corner2": [0.3, 5.1], "title": "D_up x1={x1}"},
         {"type": "port", "at": [-0.2, 5.1], "text": ""},
         {"type": "port", "at": [-0.2, 3.9], "text": ""},
-        {"type": "diode", "from": [-0.2, 0.0], "to": "IO"},
+        {"type": "diode", "from": [-0.2, 0.0], "to": "IO", "fill": "black"},
         {"type": "rect", "corner1": [-0.7, 0.9], "corner2": [0.3, 2.1], "title": "D_down"},
         {"type": "port", "at": [-0.2, 2.1], "text": ""},
         {"type": "port", "at": [-0.2, 0.9], "text": ""},
@@ -120,7 +120,7 @@ DEFAULT_LAYOUT = {
         {"type": "rect", "corner1": [2.1, 3.9], "corner2": [3.1, 5.1], "title": "D_up2"},
         {"type": "port", "at": [2.6, 5.1], "text": ""},
         {"type": "port", "at": [2.6, 3.9], "text": ""},
-        {"type": "diode", "from": [2.6, 0.0], "to": [2.6, 3.0]},
+        {"type": "diode", "from": [2.6, 0.0], "to": [2.6, 3.0], "fill": "black"},
         {"type": "rect", "corner1": [2.1, 0.9], "corner2": [3.1, 2.1], "title": "D_down2"},
         {"type": "port", "at": [2.6, 2.1], "text": ""},
         {"type": "port", "at": [2.6, 0.9], "text": ""},
@@ -252,6 +252,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,
                    "zener": elm.Zener, "sourcei": elm.SourceI}[t]
             el = cls().endpoints(pt(e["from"]), pt(e["to"])).scale(ss)
+            if e.get("fill"):
+                el = el.fill(e["fill"] if isinstance(e["fill"], str) else True)
             if e.get("label"):
                 el = el.label(txt(e["label"]), loc=e.get("loc", "top"), fontsize=fs)
             d.add(el)
