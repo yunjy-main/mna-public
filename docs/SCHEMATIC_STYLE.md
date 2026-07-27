@@ -157,7 +157,7 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 (D_up, RDD_un1, Victim, I_ESD (IO→VDD)...) | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
 | **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | fs−2, MUT |
-| **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | 상자 안, model 다음의 안쪽 코너 | fs−2, MUT |
+| **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | fs−2, MUT |
 
 현재 배치: RDL 3종 instance=bl(노드 주석 회피), I_ESD 3종=br(왼쪽 빈 공간), 나머지 tl.
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.

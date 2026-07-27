@@ -367,16 +367,18 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,
                                                      color=e.get("color", '#20242a'), halign=ha))
-            inner = []
             mdl = e.get("model")
-            if mdl:
-                inner += [mdl] if isinstance(mdl, str) else list(mdl)
-            if e.get("equation"):
-                inner.append(e["equation"])
+            models = ([mdl] if isinstance(mdl, str) else list(mdl)) if mdl else []
             koff = {"tl": 0, "bl": 1, "br": 2, "tr": 3}[e.get("model_loc", "tl")]
-            for i, tv in enumerate(inner):
+            for i, tv in enumerate(models):
                 sx, sy, ha = INC[(koff + i) % 4]
                 d.add(elm.Label().at((sx, sy)).label(txt(tv), fontsize=fs - 2, color=col, halign=ha))
+            if e.get("equation"):
+                # equation은 model 라벨 바로 아래 (model 없으면 model 자리)
+                sx, sy, ha = INC[koff]
+                ey_ = sy - 0.33 if models else sy
+                d.add(elm.Label().at((sx, ey_)).label(txt(e["equation"]), fontsize=fs - 2,
+                                                      color=col, halign=ha))
         elif t in ("resistor", "diode", "zener", "sourcei"):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,
                    "zener": elm.Zener, "sourcei": elm.SourceI}[t]
