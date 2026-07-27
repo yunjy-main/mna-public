@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse, Response
 
 from server import model as M
 from server import victim_soa as VS
@@ -39,7 +39,7 @@ def _refs():
 def meta():
     return {
         "app": "mna-esd-solver",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "phase": "1A(테이블)+2(직렬 optimizer) 부분 — v4-parity optimizer + display screens",
         "runtime": "python {} / fastapi".format(sys.version.split()[0]),
         "refs": _refs(),
@@ -419,7 +419,7 @@ def entities():
         (21, "RuleGenerator", PLAN, "창립 스펙 §10 · docs/ROADMAP.md", "최종 산출물: PDK table rule(Aup_min/Adown_min/Aclamp_min/Rpath_max) + pre-screen formula rule. Stage 2(SPICE/PERC sign-off)는 스코프 밖"),
     ]
     return {
-        "service": {"version": "0.3.0", "grid_N": M.N, "golden_checks": 50,
+        "service": {"version": "0.3.1", "grid_N": M.N, "golden_checks": 50,
                     "runtime": "python {} / fastapi".format(sys.version.split()[0])},
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
@@ -448,6 +448,32 @@ def optimize(request: Request):
     except FileNotFoundError:
         return PlainTextResponse(
             "calibration table missing — run: python -m server.calibtable", status_code=503)
+
+
+@app.get(PREFIX + "/api/schematic")
+def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
+              i: float = A_PER_KV, corner: str = "worst"):
+    """Real schematic SVG (schemdraw) with optional operating-point annotations."""
+    err = _window_error(x1, x2)
+    if err:
+        return err
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    op = None
+    c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
+    ifail = min(c1["e"]["ip"], c2["e"]["ip"])
+    if 0 < i <= ifail:
+        rvdd = 0.5 * L / 350.0
+        vd = M.VofI(c1["pos"], i)
+        vc = M.VofI(c2["pos"], i)
+        vio = i * (M.RIO + rvdd) + vd + vc
+        vout, ivv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        n2v = vc + i * rvdd
+        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": vc, "OUT": vout,
+              "i": i, "iv": ivv}
+    from server.schematic import build_svg
+    return Response(build_svg(x1, x2, L, op), media_type="image/svg+xml",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get(PREFIX + "/models")

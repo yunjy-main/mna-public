@@ -21,6 +21,7 @@
       <div><label>diode x1</label><input id="x1" type="number" step="any" value="2.56"></div>
       <div><label>clamp x2</label><input id="x2" type="number" step="any" value="1415.232"></div>
       <div><label>동작점 전류 I (A)</label><input id="iop" type="number" step="any" value="1.33"></div>
+      <div><label>Rvdd L (µm)</label><input id="lop" type="number" step="any" value="350"></div>
       <div><label>SOA corner</label><select id="corner"><option>worst</option><option>best</option></select></div>
       <button id="loadBtn">계산</button>
     </div>
@@ -28,8 +29,9 @@
   </div>
 
   <div class="card">
-    <h2>1. 회로도 (텍스트)</h2>
-    <pre id="ascii"></pre>
+    <h2>1. 회로도 (schemdraw, 동작점 주석 포함)</h2>
+    <div id="schem" style="max-width:880px"></div>
+    <div class="cap">파란 주석 = node 전압, 청록 = 전류. 교차선은 접점(dot) 없으면 미연결. R 계열(Rio/Rvdd/Resd)도 device.</div>
   </div>
 
   <div class="card">
@@ -51,8 +53,12 @@ function load(){
   const err=document.getElementById('err'); err.textContent='';
   const q='api/circuit?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
         +'&i='+encodeURIComponent(iop.value)+'&corner='+corner.value;
+  fetch('api/schematic?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
+        +'&i='+encodeURIComponent(iop.value)+'&L='+encodeURIComponent(lop.value)+'&corner='+corner.value)
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
+    .then(svg=>{document.getElementById('schem').innerHTML=svg;})
+    .catch(e=>{document.getElementById('schem').textContent='회로도 오류: '+(e.message||e);});
   fetch(q).then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();}).then(m=>{
-    document.getElementById('ascii').textContent=m.ascii.join('\n');
     document.getElementById('nodes').innerHTML='<tr><th>node</th><th>역할</th></tr>'
       +m.nodes.map(n=>'<tr><td>'+n.name+'</td><td>'+n.role+'</td></tr>').join('');
     document.getElementById('branches').innerHTML='<tr><th>branch</th><th>종류</th><th>연결</th><th>파라미터</th></tr>'
