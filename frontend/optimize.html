@@ -23,10 +23,10 @@
   .metric .value{font:700 12px Consolas,monospace;margin-top:1px}
   .short{font-size:11px}
   .short a{margin-right:8px}
-  /* 방사형: 넓으면 3열, 중간 2열, 좁으면 1열 */
-  .radars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1000px}
-  @media(max-width:1100px){.radars{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:700px){.radars{grid-template-columns:1fr}}
+  /* 2~3열 반응형(방사형·SOA map 공용): 넓으면 3열, 중간 2열, 좁으면 1열 */
+  .radars,.g23{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1000px}
+  @media(max-width:1100px){.radars,.g23{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:700px){.radars,.g23{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -131,14 +131,14 @@
     <div class="rank" id="rank"></div>
 
     <h3>2-5. Protection / victim V-I SOA map</h3>
-    <div class="grid-3">
+    <div class="g23">
       <div id="mapV"></div>
       <div id="mapD"></div>
       <div id="mapC"></div>
     </div>
 
     <h3>2-6. Iteration plots (선택 전류점)</h3>
-    <div class="grid-3">
+    <div class="g23">
       <div id="itUsage"></div>
       <div id="itVars"></div>
       <div id="itLoss"></div>
