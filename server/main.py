@@ -583,7 +583,28 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
                      "model": d["model"], "open": d["open"], "pins": pins})
     return {"nets": sorted(names.values()),
             "n_nets": len(names), "n_wires": nl["n_wires"], "devices": devs,
+            "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],
+            "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
+            "name_conflicts": nl["name_conflicts"],
             "solution": sol}
+
+
+@app.post(PREFIX + "/api/schematic/matrix/preview")
+async def schematic_matrix_preview(request: Request, inject: str = "IO", ground: str = "VSS",
+                                   i: float = 1.33, L: float = 350.0):
+    """POST된 layout(저장 전)을 netlist→MNA로 해석 — 편집 중 topology 확인용 (이슈 #9 P0)."""
+    from server.netlist import extract_netlist, assemble_and_solve
+    layout = await request.json()
+    try:
+        nl = extract_netlist(layout)
+        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L)
+    except (ValueError, KeyError, TypeError) as ex:
+        return PlainTextResponse("netlist/solve 실패: {}".format(ex), status_code=422)
+    names = nl["nets"]
+    return {"nets": sorted(names.values()), "n_nets": len(names),
+            "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],
+            "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
+            "name_conflicts": nl["name_conflicts"], "solution": sol}
 
 
 @app.get(PREFIX + "/api/schematic/mapping")
@@ -608,8 +629,17 @@ async def schematic_layout_save(request: Request):
         SCH.build_svg(2.56, 1415.232, 350.0, None, layout)  # validate by test render
     except Exception as ex:
         return PlainTextResponse("layout render 실패: {}".format(ex), status_code=422)
+    # 저장 전 netlist 무결성 검증 (이슈 #9 P0): 이름 충돌이 있으면 거부
+    from server.netlist import extract_netlist
+    try:
+        nl = extract_netlist(layout)
+    except Exception as ex:
+        return PlainTextResponse("netlist 추출 실패: {}".format(ex), status_code=422)
+    if nl["name_conflicts"]:
+        return PlainTextResponse("net 이름 충돌: {}".format("; ".join(nl["name_conflicts"])),
+                                 status_code=422)
     SCH.save_layout(layout)
-    return {"ok": True}
+    return {"ok": True, "n_nets": len(nl["nets"])}
 
 
 @app.delete(PREFIX + "/api/schematic/layout")

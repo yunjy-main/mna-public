@@ -10,22 +10,19 @@ model equation은 임의 placeholder(사용자 허용 2026-07-27):
   diode/b2b/FET접합 = softplus 다이오드, clamp = 양방향 softplus(트리거 4V),
   R = 선형(params.R 또는 rdd(L)). 크기 파라미터(x1/x2)는 아직 미반영.
 
-open(회색 #b0b6bf) 소자는 stamping 제외(배선은 유지). 전류원은 G에 기여하지
-않으므로 시나리오는 (inject port, ground port, I)로 지정한다.
+enabled=False 소자는 stamping 제외(배선은 유지) — 색상은 표시 전용(P0-3).
+net 이름은 layout nodes/port "net" 선언에서 온다(P0-4). reference는 scenario.ground +
+global=True ground만(P0-2). 전류원은 G에 기여하지 않으므로 시나리오는
+(inject net, ground net, I)로 지정한다. — 이슈 #9 P0 반영
 """
 import math
 
-OPEN_COLOR = "#b0b6bf"
 TOL = 0.02
 GMIN = 1e-9
 
-# net 이름 힌트: 대표 좌표 → 이름 (port 텍스트는 회로도에서 삭제된 상태라 좌표로 명명)
-NET_NAMES = [
-    ((-3.0, 6.0), "VDD"), ((-3.0, 3.0), "IO"), ((-3.0, 0.0), "VSS"), ((-3.0, -3.0), "MVSS"),
-    ((10.3, 6.0), "VDD2"), ((10.3, 3.0), "IO2"), ((10.3, 0.0), "VSS2"),
-    ((-0.2, 3.0), "N1"), ((-0.2, 6.0), "N2"), ((7.1, 6.0), "N3"), ((7.1, 0.0), "N3B"),
-    ((5.1, 3.0), "OUT"), ((2.6, 3.0), "IN"), ((-0.2, 0.0), "VSSR"),
-]
+# net 이름 원천 (P0-4, 이슈 #9): 좌표 하드코딩 금지 —
+#   port element의 "net" 키 + layout "nodes" 선언(이름→xy)이 semantic 이름을 준다.
+#   같은 component에 서로 다른 이름이 들어오면 name_conflicts로 보고.
 
 
 def _k(p):
@@ -65,8 +62,13 @@ def extract_netlist(layout):
         return tuple(ref)
 
     wires, devices, grounds, rects, fets = [], [], [], [], []
+    name_anchors = []  # (좌표, 이름) — port "net" + nodes 선언
+    for nm, nd in nodes.items():
+        name_anchors.append((tuple(nd["xy"]), nm))
     for e in layout.get("elements", []):
         t = e.get("type")
+        if t == "port" and e.get("net"):
+            name_anchors.append((pt(e["at"]), e["net"]))
         if t == "line":
             wires.append((pt(e["from"]), pt(e["to"])))
         elif t == "rect" and e.get("instance"):
@@ -75,21 +77,22 @@ def extract_netlist(layout):
                           "model": e.get("model"), "params": e.get("params", {}),
                           "variant": e.get("variant"),
                           "bb": (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)),
-                          "open": e.get("color") == OPEN_COLOR})
+                          "open": e.get("enabled") is False})  # P0-3: 색이 아니라 enabled가 semantics
         elif t in ("resistor", "diode", "zener", "sourcei"):
             a, b = pt(e["from"]), pt(e["to"])
             devices.append({"kind": t, "a": a, "b": b,
                             "mid": ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0),
-                            "open": e.get("color") == OPEN_COLOR})
+                            "open": e.get("enabled") is False})
         elif t == "ground":
-            grounds.append(pt(e["at"]))
+            # global=True인 ground만 항상 reference; 나머지는 cell 내부 local return (P0-2)
+            grounds.append({"at": pt(e["at"]), "global": bool(e.get("global"))})
         elif t in ("pfet", "nfet"):
             d = pt(e["drain"])
             sgn = 1.0 if t == "pfet" else -1.0  # 본 레이아웃 고정 방향(rot180+flip)
             src = (d[0], d[1] + 0.96 * sgn)
             gate = (d[0] - 0.875, d[1] + 0.48 * sgn)
             fets.append({"kind": t, "drain": d, "source": src, "gate": gate,
-                         "mid": ((d[0] + gate[0]) / 2.0, d[1]), "open": e.get("color") == OPEN_COLOR})
+                         "mid": ((d[0] + gate[0]) / 2.0, d[1]), "open": e.get("enabled") is False})
             if "rail_y" in e:
                 wires.append((src, (src[0], e["rail_y"])))
     # gates: 같은 drain의 pfet/nfet 쌍 → gate-gate 수직 배선 (tie 점은 세그먼트 위 등록점으로 합류)
@@ -108,7 +111,7 @@ def extract_netlist(layout):
     for f in fets:
         pts.add(_k(f["drain"])); pts.add(_k(f["source"])); pts.add(_k(f["gate"]))
     for g in grounds:
-        pts.add(_k(g))
+        pts.add(_k(g["at"]))
     for e in layout.get("elements", []):
         if e.get("type") == "dot":
             pts.add(_k(pt(e["at"])))
@@ -127,15 +130,32 @@ def extract_netlist(layout):
         roots.setdefault(uf.find(p), []).append(p)
     net_of = {}
     net_names = {}
+    name_conflicts = []
+
+    def _find_root(coord):
+        kc = _k(coord)
+        if kc in uf:
+            return uf.find(kc)
+        for a, b in wires:
+            if _on_seg(kc, _k(a), _k(b)):
+                return uf.find(_k(a))
+        return None
+
+    root_names = {}
+    for coord, nm in name_anchors:
+        rt = _find_root(coord)
+        if rt is None:
+            continue  # 미부착 anchor (annotation 전용 좌표 등)
+        root_names.setdefault(rt, [])
+        if nm not in root_names[rt]:
+            root_names[rt].append(nm)
     for i, (root, members) in enumerate(sorted(roots.items())):
         for p in members:
             net_of[p] = i
-        name = None
-        for coord, nm in NET_NAMES:
-            if _k(coord) in members:
-                name = nm
-                break
-        net_names[i] = name or "n{}".format(i)
+        nms = root_names.get(uf.find(root), [])
+        if len(nms) > 1:
+            name_conflicts.append("net {}: 이름 충돌 {}".format(i, nms))
+        net_names[i] = nms[0] if nms else "n{}".format(i)
 
     def net(p):
         kp = _k(p)
@@ -172,8 +192,11 @@ def extract_netlist(layout):
             "drain": net(f["drain"]), "source": net(f["source"]), "gate": net(f["gate"]),
         })
 
-    ground_nets = sorted(set(net(g) for g in grounds))
-    return {"nets": net_names, "devices": out_devices, "ground_nets": ground_nets,
+    global_grounds = sorted(set(net(g["at"]) for g in grounds if g["global"]))
+    local_grounds = sorted(set(net(g["at"]) for g in grounds if not g["global"]))
+    return {"nets": net_names, "devices": out_devices,
+            "global_ground_nets": global_grounds, "local_ground_nets": local_grounds,
+            "name_conflicts": name_conflicts,
             "n_points": len(pts), "n_wires": len(wires)}
 
 
@@ -214,9 +237,15 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
     name_to_net = {v: k for k, v in names.items()}
     if inject not in name_to_net or ground not in name_to_net:
         raise ValueError("unknown net: inject={} ground={}".format(inject, ground))
+    if inject == ground:
+        raise ValueError("inject와 ground가 같은 net입니다: {}".format(inject))
 
-    ref = set(nl["ground_nets"])
+    # P0-2 (이슈 #9): scenario.ground만 유일 강제 + 명시적 global ground.
+    # cell 내부 local ground는 return 단자 표현 — 자동 reference 아님.
+    ref = set(nl.get("global_ground_nets", []))
     ref.add(name_to_net[ground])
+    if name_to_net[inject] in ref:
+        raise ValueError("inject net {}이 reference에 속합니다".format(inject))
     unknowns = sorted(n for n in names if n not in ref)
     idx = {n: i for i, n in enumerate(unknowns)}
     N = len(unknowns)

@@ -173,8 +173,11 @@ function loadMatrix(){
       const s=d.solution;
       st.innerHTML='net '+d.n_nets+'개 (배선 '+d.n_wires+'), 미지수 '+s.size
         +' · nnz '+s.nnz+' · Newton '+s.newton_iters+'회 · residual '+s.residual.toExponential(2)
-        +' · ref: '+s.ref_nets.join(', ')+' · '
-        +(s.converged?'<b style="color:#0b7a3b">수렴</b>':'<b style="color:#b3261e">비수렴 — 해 신뢰 불가</b>');
+        +' · ref: '+s.ref_nets.join(', ')
+        +(d.global_ground_nets.length?' · global gnd: '+d.global_ground_nets.join(','):'')
+        +' · local gnd '+d.local_ground_nets.length+'개(ref 아님) · '
+        +(s.converged?'<b style="color:#0b7a3b">수렴</b>':'<b style="color:#b3261e">비수렴 — 해 신뢰 불가</b>')
+        +(d.name_conflicts.length?' · <b style="color:#b3261e">이름 충돌: '+d.name_conflicts.join('; ')+'</b>':'');
       let t='netlist (회로도에서 추출):\n';
       d.devices.forEach(v=>{t+='  '+String(v.instance).padEnd(26)+(v.cell||'—').padEnd(8)
         +String(v.model||'—').padEnd(22)+v.pins+(v.open?'  (open — 미조립)':'')+'\n';});

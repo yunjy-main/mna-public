@@ -57,6 +57,47 @@ chk("XVictim FETs", vic == sorted([("pfet", "OUT", "IN", "N2"), ("nfet", "OUT", 
 opens = [d["instance"] for d in nl["devices"] if d["open"]]
 chk("open 소자 6개(소스4+b2b가로2)", len(opens) == 6, str(opens))
 
+# 1b) 이슈 #9 P0 semantics
+chk("이름 충돌 없음", nl["name_conflicts"] == [], str(nl["name_conflicts"]))
+chk("global ground 없음(현 회로도)", nl["global_ground_nets"] == [], str(nl["global_ground_nets"]))
+chk("local ground 4개(전류원 리턴)", len(nl["local_ground_nets"]) == 4,
+    str([names[g] for g in nl["local_ground_nets"]]))
+
+# enabled가 semantics, color는 표시 전용 (P0-3)
+import copy  # noqa: E402
+L2 = copy.deepcopy(DEFAULT_LAYOUT)
+for e in L2["elements"]:
+    if e.get("instance") == "XClamp":
+        e["color"] = "#b0b6bf"
+chk("색만 회색 → open 아님", not [d for d in extract_netlist(L2)["devices"]
+                                  if d["instance"] == "XClamp"][0]["open"], "")
+for e in L2["elements"]:
+    if e.get("instance") == "XClamp":
+        e["enabled"] = False
+chk("enabled:False → open", [d for d in extract_netlist(L2)["devices"]
+                             if d["instance"] == "XClamp"][0]["open"], "")
+
+# net 이름은 좌표가 아닌 layout 선언에서 (P0-4): port net 키 제거 시 이름 소실
+L3 = copy.deepcopy(DEFAULT_LAYOUT)
+for e in L3["elements"]:
+    if e.get("type") == "port" and e.get("net") == "IO":
+        del e["net"]
+n3names = set(extract_netlist(L3)["nets"].values())
+chk("IO 이름은 port 선언 원천", "IO" not in n3names, str(sorted(n3names)))
+
+# 이름 충돌 감지: 같은 net에 두 이름 선언
+L4 = copy.deepcopy(DEFAULT_LAYOUT)
+L4["elements"].append({"type": "port", "at": [-3.0, 3.0], "text": "", "net": "IO_ALT"})
+nl4 = extract_netlist(L4)
+chk("이름 충돌 감지", len(nl4["name_conflicts"]) == 1, str(nl4["name_conflicts"]))
+
+# global ground 인식
+L5 = copy.deepcopy(DEFAULT_LAYOUT)
+L5["elements"].append({"type": "ground", "at": [-3.0, -3.0], "global": True})
+nl5 = extract_netlist(L5)
+chk("global ground=MVSS 인식", [nl5["nets"][g] for g in nl5["global_ground_nets"]] == ["MVSS"],
+    str(nl5["global_ground_nets"]))
+
 # 2) 해석 — IO 주입 / VSS 접지
 r = assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0)
 v = r["v"]
@@ -89,9 +130,25 @@ allc = all(assemble_and_solve(nl, inject=a, ground=b, I=1.33)["converged"]
            for a, b in (("VDD", "VSS"), ("MVSS", "VDD"), ("N3B", "VSS"), ("IO", "MVSS")))
 chk("추가 시나리오 4종 수렴", allc, "")
 
+# 5) 이슈 #9 P0-2: 시나리오 유효성 — inject==ground / inject∈reference 거부
+try:
+    assemble_and_solve(nl, inject="VSS", ground="VSS", I=1.0)
+    chk("inject==ground 거부", False, "예외 없음")
+except ValueError:
+    pass
+try:
+    assemble_and_solve(nl5, inject="MVSS", ground="VSS", I=1.0)  # MVSS는 global ground
+    chk("inject∈global-ground 거부", False, "예외 없음")
+except ValueError:
+    pass
+# local ground는 reference가 아니므로 그 net 주입은 허용되어야 함
+lg0 = nl["nets"][nl["local_ground_nets"][0]]
+chk("local ground net 주입 허용", assemble_and_solve(nl, inject=lg0, ground="VSS", I=0.1)["converged"],
+    lg0)
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:
         print("  -", f)
     sys.exit(1)
-print("PASS: schematic→netlist→MNA (net 추출 15건 + 해석 9건)")
+print("PASS: schematic→netlist→MNA (net 추출 15건 + P0 semantics 10건 + 해석 12건)")
