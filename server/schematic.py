@@ -61,12 +61,12 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [-3.8, -0.5], "to": [-3.8, 0.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, -1.5], "to": [-3.8, -0.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, -1.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, -2.0], "corner2": [-3.3, -0.45], "instance": "XI_ESD (GND→VSS) (open)", "instance_loc": "br", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, -2.0], "corner2": [-3.3, -0.45], "instance": "XI_ESD (GND→VSS) (open)", "instance_loc": "bl", "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, -0.45], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, -3.5], "to": [-3.8, -3.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, -4.5], "to": [-3.8, -3.5], "color": "#b0b6bf"},
         {"type": "ground", "at": [-3.8, -4.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, -5.0], "corner2": [-3.3, -3.45], "instance": "XI_ESD (GND→MVSS) (open)", "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [-4.3, -5.0], "corner2": [-3.3, -3.45], "instance": "XI_ESD (GND→MVSS) (open)", "instance_loc": "bl", "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, -3.45], "text": "", "color": "#b0b6bf"},
         {"type": "line", "from": [-3.0, 6.0], "to": [-2.6, 6.0]},
         {"type": "resistor", "from": [-2.6, 6.0], "to": [-0.6, 6.0]},
@@ -87,11 +87,11 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [-0.95, 0.0], "text": ""},
         {"type": "line", "from": [-0.6, 0.0], "to": [5.1, 0.0]},
         {"type": "diode", "from": "IO", "to": "N2"},
-        {"type": "rect", "corner1": [-0.7, 3.9], "corner2": [0.3, 5.1], "instance": "XD_up", "model": "model1", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [-0.9, 3.9], "corner2": [0.5, 5.1], "instance": "XD_up", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [-0.2, 5.1], "text": ""},
         {"type": "port", "at": [-0.2, 3.9], "text": ""},
         {"type": "diode", "from": [-0.2, 0.0], "to": "IO", "fill": "black"},
-        {"type": "rect", "corner1": [-0.7, 0.9], "corner2": [0.3, 2.1], "instance": "XD_down", "model": "model1", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [-0.9, 0.9], "corner2": [0.5, 2.1], "instance": "XD_down", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [-0.2, 2.1], "text": ""},
         {"type": "port", "at": [-0.2, 0.9], "text": ""},
         {"type": "dot", "at": "IO"},
@@ -107,7 +107,7 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [5.55, 0.0], "text": ""},
         {"type": "port", "at": [6.65, 0.0], "text": ""},
         {"type": "zener", "from": "N3B", "to": "N3"},
-        {"type": "rect", "corner1": [6.6, 0.9], "corner2": [7.6, 5.1], "instance": "XClamp", "model": "model2", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [6.4, 0.9], "corner2": [7.8, 5.1], "instance": "XClamp", "model": "model2", "equation": "softplus_bi"},
         {"type": "port", "at": [7.1, 5.1], "text": ""},
         {"type": "port", "at": [7.1, 0.9], "text": ""},
         {"type": "dot", "at": "N3"},
@@ -119,11 +119,11 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [1.85, 3.0], "text": ""},
         {"type": "line", "from": [2.2, 3.0], "to": [2.6, 3.0]},
         {"type": "diode", "from": [2.6, 3.0], "to": [2.6, 6.0]},
-        {"type": "rect", "corner1": [2.1, 3.9], "corner2": [3.1, 5.1], "instance": "XD_up2", "model": "model1", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [1.9, 3.9], "corner2": [3.3, 5.1], "instance": "XD_up2", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [2.6, 5.1], "text": ""},
         {"type": "port", "at": [2.6, 3.9], "text": ""},
         {"type": "diode", "from": [2.6, 0.0], "to": [2.6, 3.0], "fill": "black"},
-        {"type": "rect", "corner1": [2.1, 0.9], "corner2": [3.1, 2.1], "instance": "XD_down2", "model": "model1", "equation": "softplus_bi"},
+        {"type": "rect", "corner1": [1.9, 0.9], "corner2": [3.3, 2.1], "instance": "XD_down2", "model": "model1", "equation": "softplus_bi"},
         {"type": "port", "at": [2.6, 2.1], "text": ""},
         {"type": "port", "at": [2.6, 0.9], "text": ""},
         {"type": "dot", "at": [2.6, 3.0]},
@@ -184,7 +184,7 @@ DEFAULT_LAYOUT = {
         {"type": "line", "from": [7.1, -0.825], "to": [7.4, -0.825]},
         {"type": "diode", "from": [6.8, -2.175], "to": [6.8, -0.825]},
         {"type": "diode", "from": [7.4, -0.825], "to": [7.4, -2.175]},
-        {"type": "rect", "corner1": [6.55, -2.4], "corner2": [7.65, -0.6], "instance": "XD_b2b_m"},
+        {"type": "rect", "corner1": [6.55, -2.4], "corner2": [7.65, -0.6], "instance": "XD_b2b_m", "instance_loc": "bl"},
         {"type": "port", "at": [7.1, -0.6], "text": ""},
         {"type": "port", "at": [7.1, -2.4], "text": ""},
         {"type": "line", "from": [6.8, -2.175], "to": [7.1, -2.175]},
@@ -375,12 +375,12 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             koff = {"tl": 0, "bl": 1, "br": 2, "tr": 3}[e.get("model_loc", "tl")]
             for i, tv in enumerate(models):
                 sx, sy, ha = INC[(koff + i) % 4]
-                d.add(elm.Label().at((sx, sy)).label(txt(tv), fontsize=fs - 2, color=col, halign=ha))
+                d.add(elm.Label().at((sx, sy)).label(txt(tv), fontsize=fs - 3, color=col, halign=ha))
             if e.get("equation"):
                 # equation은 model 라벨 바로 아래 (model 없으면 model 자리)
                 sx, sy, ha = INC[koff]
                 ey_ = sy - 0.33 if models else sy
-                d.add(elm.Label().at((sx, ey_)).label(txt(e["equation"]), fontsize=fs - 2,
+                d.add(elm.Label().at((sx, ey_)).label(txt(e["equation"]), fontsize=fs - 3,
                                                       color=col, halign=ha))
         elif t in ("resistor", "diode", "zener", "sourcei"):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,

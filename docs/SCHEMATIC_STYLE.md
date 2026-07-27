@@ -91,8 +91,9 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 저항 6종, Victim — 총 19 블록)를 점선 상자(rect) + 경계 port(open dot, 무명)로 감싼다.
 소자 개별 라벨은 제거하고 상자의 라벨 3계층(R13: instance/model/equation)으로 표기한다.
 
-- 세로 diode cell: 상자 [열±0.5] × [rail+0.9, rail−0.9], port는 상/하 경계의 배선 교차점.
-- Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.9,5.1], port (7.1,5.1)/(7.1,0.9).
+- 세로 diode cell: 상자 [열**±0.7**] × [rail+0.9, rail−0.9] — 안쪽 라벨(softplus_bi)이
+  외곽선을 넘지 않는 폭. port는 상/하 경계의 배선 교차점.
+- Clamp cell: 두 rail 칸을 가로지르는 [6.4,7.8](±0.7)×[0.9,5.1], port (7.1,5.1)/(7.1,0.9).
 - b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.6)/(7.1,−2.4),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.65).
 - **victim**: 상자 [3.4,5.45]×[0.9,5.1], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.1) / **VSS**(하변 0.9).
@@ -159,15 +160,21 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
-| **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | fs−2, MUT |
-| **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | fs−2, MUT |
+| **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
+| **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | **fs−3(6pt)**, MUT |
 
 **회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
 주석(`annotations: False`)과 port 이름은 삭제된 상태(추후 층별 재도입 예정).
 
-현재 배치: I_ESD 3종=br(긴 라벨이 저항 상자를 가로지르는 충돌 — 왼쪽 빈 공간), 나머지 전부 tl.
-fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라지면 tl로 복귀
-(예: 노드 주석 삭제 후 RDL 3종 bl→tl 복귀).
+현재 instance 배치 (충돌 실재 기준, 2026-07-27 전수 재판정):
+- **tl(기본)**: RDL 3종, XResd, XRDD 2종, XD_up/XD_down/XD_up2/XD_down2, XClamp,
+  XVictim, XD_b2b_m2, XD_b2b(open)
+- **bl**: XI_ESD (GND→VSS)/(GND→MVSS) — tl이 저항 상자·MVSS rail과 충돌;
+  XD_b2b_m — tl이 XRDD_dn1 상자 모서리와 충돌
+- **br**: XI_ESD (IO→VDD)/(IO→VSS) — 긴 라벨이 저항 상자를 관통(왼쪽 빈 공간으로)
+
+fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라지면 tl로 복귀.
+검증: 라벨 bbox vs 상자 4변 교차 전수 검사 = 0건.
 **외곽선 비겹침 오프셋**: instance 밖 tl/tr = 상변+0.22, bl/br = 하변−0.52;
 model/equation 안쪽 = 상변−0.42(위) · 하변+0.2(아래), 좌우 ±0.14 — 라벨 텍스트가
 상자 스트로크에 닿지 않게 좌상단 기준으로 배치.
