@@ -26,8 +26,10 @@ rail 간격 **3.0** (2026-07-27 사용자 지시로 세로 간격 1.5배 — 이
 → Resd **[0.2,2.2]** → 2차 보호(D_up2/D_down2) **2.6** → victim 상자 **[3.4,5.45]**(drain 5.1)
 → RDD **[5.1,7.1]** → clamp **7.1** → b2b **[7.9,9.5]** → 도메인2 port **10.3**
 
-세로 요소: VSS↔MVSS 수직 b2b(D_b2b_m) — **clamp 열(7.1) 바로 아래**:
-tap = N3B(7.1,0) / MVSS(7.1,−3), 분기 y=−0.825/−2.175, arm x=6.8/7.4.
+세로 요소: 수직 b2b 2개 — 분기 y=−0.825/−2.175 공통:
+- **D_b2b_m** (VSS↔MVSS): clamp 열(7.1) 아래, tap = N3B(7.1,0) / MVSS(7.1,−3), arm 6.8/7.4.
+- **D_b2b_m2** (VSS2↔MVSS): VSS2 port 열(10.3) 아래, tap = VSS2 port(10.3,0) /
+  MVSS rail 끝(10.3,−3), arm 10.0/10.6, 상자 [9.75,10.85]×[−0.6,−2.4].
 
 **b2b 쌍 공통 형태 — 2-port 묶음**: 각 net에 tap 1개만 두고
 `tap → stub → 분기 → 역병렬 arm 2개 → 병합 → stub → tap` 구조로 그린다
@@ -92,7 +94,8 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 - b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.6)/(7.1,−2.4),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.65).
 - **victim**: 상자 [3.4,5.45]×[0.9,5.1], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.1) / **VSS**(하변 0.9).
-  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3).
+  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3),
+  **bulk 단자 표시**(`"bulk": True`) + bulk→source 직결선 (렌더러 자동, source y=drain±0.96).
   **IN 배선은 gate까지만**(gate x = drain − 1.367·symbol_scale = 4.225, tie dot) —
   gate→drain(junction) 경로는 그리지 않는다(2026-07-27 사용자 지시). drain은 별도
   OUT 노드(주석은 drain 위치). 내부 소자는 레이아웃 JSON에서 교체 가능.
@@ -127,7 +130,8 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 회로도 하단, 점선 구분선(y=−6.4, `#b0b6bf`) 아래 별도 영역(y≈−6.4~−10.6)에
 **중복 제거한 cell 세트를 가로로 나열**한다. instance가 아닌 종류 기준 9종:
 `I_ESD`(1-port 소스+ground) · `R_rdl 0.1Ω` · `Resd 500Ω` · `RDD 0.5Ω/350µm` ·
-`D_up (x1)` · `D_down`(검게 채움) · `Clamp (x2)` · `D_b2b`(역병렬 묶음) · `Victim`(FET쌍).
+`D_up (x1)` · `D_down`(검게 채움) · `Clamp (x2)` · `D_b2b`(역병렬 묶음) ·
+`Victim`(FET쌍+bulk, **compact 상자** [13.4,14.95]×[−9.85,−7.15] — 본 회로보다 작게).
 각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port+title)으로 그리고,
 인접 cell 간 간격은 R3(0.8)을 따른다. 새 cell 종류가 회로에 추가되면 이 행에도 추가한다.
 

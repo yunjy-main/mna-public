@@ -129,8 +129,8 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [2.6, 0.0]},
         {"type": "line", "from": [2.6, 3.0], "to": [4.225, 3.0]},
         {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "title": "Victim"},
-        {"type": "pfet", "drain": [5.1, 3.0], "label": "PMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0},
-        {"type": "nfet", "drain": [5.1, 3.0], "label": "NMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0},
+        {"type": "pfet", "drain": [5.1, 3.0], "label": "PMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0, "bulk": True},
+        {"type": "nfet", "drain": [5.1, 3.0], "label": "NMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0, "bulk": True},
         {"type": "gates", "tie": "OUT"},
         {"type": "dot", "at": [5.1, 3.0]},
         {"type": "dot", "at": [5.1, 6.0]},
@@ -160,6 +160,20 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [10.3, 3.0], "text": "IO2", "lofst": [0.6, 0.0]},
         {"type": "line", "from": [9.5, 6.0], "to": [10.3, 6.0]},
         {"type": "port", "at": [10.3, 6.0], "text": "VDD2", "lofst": [0.65, 0.0]},
+        {"type": "line", "from": [10.3, 0.0], "to": [10.3, -0.825]},
+        {"type": "dot", "at": [10.3, -0.825]},
+        {"type": "line", "from": [10.3, -0.825], "to": [10.0, -0.825]},
+        {"type": "line", "from": [10.3, -0.825], "to": [10.6, -0.825]},
+        {"type": "diode", "from": [10.0, -2.175], "to": [10.0, -0.825]},
+        {"type": "diode", "from": [10.6, -0.825], "to": [10.6, -2.175]},
+        {"type": "rect", "corner1": [9.75, -2.4], "corner2": [10.85, -0.6], "title": "D_b2b_m2"},
+        {"type": "port", "at": [10.3, -0.6], "text": ""},
+        {"type": "port", "at": [10.3, -2.4], "text": ""},
+        {"type": "line", "from": [10.0, -2.175], "to": [10.3, -2.175]},
+        {"type": "line", "from": [10.6, -2.175], "to": [10.3, -2.175]},
+        {"type": "dot", "at": [10.3, -2.175]},
+        {"type": "line", "from": [10.3, -2.175], "to": [10.3, -3.0]},
+        {"type": "dot", "at": [10.3, -3.0]},
         {"type": "port", "at": [-3.0, -3.0], "text": "MVSS", "lofst": [-0.45, 0.57]},
         {"type": "line", "from": [-3.0, -3.0], "to": [10.3, -3.0]},
         {"type": "line", "from": [7.1, 0.0], "to": [7.1, -0.825]},
@@ -222,14 +236,14 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [12.1, -8.5], "text": ""},
         {"type": "line", "from": [12.9, -8.5], "to": [13.725, -8.5]},
         {"type": "dot", "at": [13.725, -8.5]},
-        {"type": "rect", "corner1": [12.9, -10.6], "corner2": [14.95, -6.4], "title": "Victim"},
-        {"type": "pfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -6.4},
-        {"type": "nfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -10.6},
+        {"type": "rect", "corner1": [13.4, -9.85], "corner2": [14.95, -7.15], "title": "Victim"},
+        {"type": "pfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.15, "bulk": True},
+        {"type": "nfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.85, "bulk": True},
         {"type": "gates", "stub": False},
         {"type": "dot", "at": [14.6, -8.5]},
-        {"type": "port", "at": [12.9, -8.5], "text": ""},
-        {"type": "port", "at": [14.6, -6.4], "text": ""},
-        {"type": "port", "at": [14.6, -10.6], "text": ""},
+        {"type": "port", "at": [13.4, -8.5], "text": ""},
+        {"type": "port", "at": [14.6, -7.15], "text": ""},
+        {"type": "port", "at": [14.6, -9.85], "text": ""},
     ],
     "current_labels": {"i": [0.8, 2.4], "iv": [2.2, 1.95]},
 }
@@ -323,7 +337,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             d.add(elm.Label().at((x + lx, y + ly)).label(e.get("text", ""), fontsize=fs, color='#20242a'))
         elif t in ("pfet", "nfet"):
             cls = elm.PFet if t == "pfet" else elm.NFet
-            el = cls()
+            el = cls(bulk=True) if e.get("bulk") else cls()
             if e.get("rot"):
                 el = el.theta(e["rot"])
             if e.get("flip"):
@@ -333,6 +347,9 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                       .label(e.get("label", ""), loc=lloc, fontsize=fs))
             fets[t] = q
             src = q.absanchors['source']
+            if e.get("bulk"):
+                blk = q.absanchors['bulk']
+                d.add(elm.Line().at((blk.x, blk.y)).to((src.x, src.y)))
             if "rail_y" in e:
                 d.add(elm.Line().at((src.x, src.y)).to((src.x, e["rail_y"])))
         elif t == "gates":
