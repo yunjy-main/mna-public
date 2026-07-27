@@ -373,17 +373,16 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,
                                                      color=e.get("color", '#20242a'), halign=ha))
             mdl = e.get("model")
-            models = ([mdl] if isinstance(mdl, str) else list(mdl)) if mdl else []
-            koff = {"tl": 0, "bl": 1, "br": 2, "tr": 3}[e.get("model_loc", "tl")]
-            for i, tv in enumerate(models):
-                sx, sy, ha = INC[(koff + i) % 4]
-                d.add(elm.Label().at((sx, sy)).label(txt(tv), fontsize=fs - 3, color=col, halign=ha))
+            inner = ([mdl] if isinstance(mdl, str) else list(mdl)) if mdl else []
             if e.get("equation"):
-                # equation은 model 라벨 바로 아래 (model 없으면 model 자리)
-                sx, sy, ha = INC[koff]
-                ey_ = sy - 0.18 if models else sy  # 줄간격 축소
-                d.add(elm.Label().at((sx, ey_)).label(txt(e["equation"]), fontsize=fs - 3,
-                                                      color=col, halign=ha))
+                inner.append(e["equation"])
+            # model/equation 여러 개면 한 코너에서 위→아래 순차 스택 (코너 분산 금지)
+            koff = {"tl": 0, "bl": 1, "br": 2, "tr": 3}[e.get("model_loc", "tl")]
+            sx, sy, ha = INC[koff]
+            step = -0.18 if koff in (0, 3) else 0.18
+            for i, tv in enumerate(inner):
+                d.add(elm.Label().at((sx, sy + step * i)).label(txt(tv), fontsize=fs - 3,
+                                                                color=col, halign=ha))
         elif t in ("resistor", "diode", "zener", "sourcei"):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,
                    "zener": elm.Zener, "sourcei": elm.SourceI}[t]

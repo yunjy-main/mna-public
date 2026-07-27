@@ -150,7 +150,7 @@ gate 좌/drain·source 상하 port, 서로 거울 대칭).
 **상자 밖 실선 배선 금지** — 소자 endpoints를 상자 경계에 맞춰 트림한다.
 라이브러리 라벨: **type 이름(title)은 상자 밖 좌상단**(instance와 동일 위치·서식),
 **model/equation은 상자 안**(R13과 동일) — D_up/D_down(model1+softplus_bi),
-Clamp(model2+softplus_bi), Victim(SG_PFET+SG_NFET **2개 모두**),
+Clamp(model2+softplus_bi), Victim(SG_PFET+SG_NFET 2개 — 좌상단 순차 스택),
 Victim (NMOS)/(PMOS)(각자 SG 모델 1개).
 인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 목록에도 추가한다.
 
