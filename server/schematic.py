@@ -38,13 +38,13 @@ DEFAULT_LAYOUT = {
         "N2": {"xy": [-0.2, 6.0], "ofst": [-1.3, 0.525]},
         "N3": {"xy": [7.1, 6.0], "ofst": [0.3, -1.17]},
         "N3B": {"xy": [7.1, 0.0], "ofst": [0.3, 0.525]},
-        "OUT": {"xy": [5.1, 3.0], "ofst": [0.3, 0.45]},
         "VSSR": {"xy": [0.9, 0.0], "ofst": [-0.6, 0.525]},
     },
     "elements": [
         {"type": "port", "at": [-3.0, 6.0], "text": "", "net": "VDD"},
         {"type": "port", "at": [-3.0, 3.0], "text": "", "net": "IO"},
         {"type": "port", "at": [-3.0, 0.0], "text": "", "net": "VSS"},
+        {"type": "ground", "at": [-3.0, 0.0]},
         {"type": "line", "from": [-3.8, 6.0], "to": [-3.0, 6.0], "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, 3.0], "to": [-3.0, 3.0], "color": "#b0b6bf"},
         {"type": "line", "from": [-3.8, 0.0], "to": [-3.0, 0.0], "color": "#b0b6bf"},
@@ -54,11 +54,11 @@ DEFAULT_LAYOUT = {
         {"type": "ground", "at": [-3.8, 4.5], "color": "#b0b6bf"},
         {"type": "rect", "corner1": [-4.3, 4.0], "corner2": [-3.3, 5.55], "instance": "XI_ESD (IO→VDD) (open)", "instance_loc": "br", "cell": "i_esd", "params": {"I": "I_sweep"}, "enabled": False, "color": "#b0b6bf"},
         {"type": "port", "at": [-3.8, 5.55], "text": "", "color": "#b0b6bf"},
-        {"type": "line", "from": [-3.8, 2.5], "to": [-3.8, 3.0], "color": "#b0b6bf"},
-        {"type": "sourcei", "from": [-3.8, 1.5], "to": [-3.8, 2.5], "color": "#b0b6bf", "instance_id": "XI_ESD (IO→VSS) (open)"},
-        {"type": "ground", "at": [-3.8, 1.5], "color": "#b0b6bf"},
-        {"type": "rect", "corner1": [-4.3, 1.0], "corner2": [-3.3, 2.55], "instance": "XI_ESD (IO→VSS) (open)", "instance_loc": "br", "cell": "i_esd", "params": {"I": "I_sweep"}, "enabled": False, "color": "#b0b6bf"},
-        {"type": "port", "at": [-3.8, 2.55], "text": "", "color": "#b0b6bf"},
+        {"type": "line", "from": [-3.8, 2.5], "to": [-3.8, 3.0]},
+        {"type": "sourcei", "from": [-3.8, 1.5], "to": [-3.8, 2.5], "instance_id": "XI_ESD (IO→VSS)"},
+        {"type": "ground", "at": [-3.8, 1.5]},
+        {"type": "rect", "corner1": [-4.3, 1.0], "corner2": [-3.3, 2.55], "instance": "XI_ESD (IO→VSS)", "instance_loc": "br", "cell": "i_esd", "equation": "I: 0→2A sweep", "params": {"I": "I_sweep"}},
+        {"type": "port", "at": [-3.8, 2.55], "text": ""},
         {"type": "line", "from": [-3.8, -0.5], "to": [-3.8, 0.0], "color": "#b0b6bf"},
         {"type": "sourcei", "from": [-3.8, -1.5], "to": [-3.8, -0.5], "color": "#b0b6bf", "instance_id": "XI_ESD (GND→VSS) (open)"},
         {"type": "ground", "at": [-3.8, -1.5], "color": "#b0b6bf"},
@@ -131,11 +131,10 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [2.6, 6.0]},
         {"type": "dot", "at": [2.6, 0.0]},
         {"type": "line", "from": [2.6, 3.0], "to": [4.225, 3.0]},
-        {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "instance": "XVictim", "cell": "victim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"], "params": {"topology": "vTopo"}},
-        {"type": "pfet", "drain": [5.1, 3.0], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0, "bulk": True, "instance_id": "XVictim"},
+        {"type": "line", "from": [4.225, 3.0], "to": [4.225, 2.52]},
+        {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "instance": "XVictim", "cell": "victim_n", "model": "SG_NFET 1stk_1rx", "equation": None, "role": "soa_monitor", "params": {}},
         {"type": "nfet", "drain": [5.1, 3.0], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0, "bulk": True, "instance_id": "XVictim"},
-        {"type": "gates", "tie": "OUT"},
-        {"type": "dot", "at": [5.1, 3.0]},
+        {"type": "line", "from": [5.1, 3.0], "to": [5.1, 6.0]},
         {"type": "dot", "at": [5.1, 6.0]},
         {"type": "dot", "at": [5.1, 0.0]},
         {"type": "port", "at": [3.4, 3.0], "text": ""},
@@ -268,19 +267,7 @@ LIBRARY_CELLS = [
         {"type": "port", "at": [11.0, -8.5], "text": ""},
         {"type": "port", "at": [12.3, -8.5], "text": ""},
     ]},
-    {"id": "victim", "name": "Victim", "models": [], "elements": [
-        {"type": "line", "from": [13.1, -8.5], "to": [13.425, -8.5]},
-        {"type": "dot", "at": [13.425, -8.5]},
-        {"type": "rect", "corner1": [13.1, -9.85], "corner2": [14.65, -7.15], "title": "Victim", "model": ["SG_PFET 1stk_1rx", "SG_NFET 1stk_1rx"]},
-        {"type": "pfet", "drain": [14.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.15, "bulk": True},
-        {"type": "nfet", "drain": [14.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.85, "bulk": True},
-        {"type": "gates", "stub": False},
-        {"type": "dot", "at": [14.3, -8.5]},
-        {"type": "port", "at": [13.1, -8.5], "text": ""},
-        {"type": "port", "at": [14.3, -7.15], "text": ""},
-        {"type": "port", "at": [14.3, -9.85], "text": ""},
-    ]},
-    {"id": "victim_n", "name": "Victim (NMOS)", "models": [], "elements": [
+    {"id": "victim_n", "name": "Victim (NMOS)", "models": ["SG_NFET 1stk_1rx"], "elements": [
         {"type": "line", "from": [15.45, -8.5], "to": [15.775, -8.5]},
         {"type": "line", "from": [16.65, -8.02], "to": [16.65, -7.55]},
         {"type": "nfet", "drain": [16.65, -8.02], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.45, "bulk": True},
@@ -289,7 +276,7 @@ LIBRARY_CELLS = [
         {"type": "port", "at": [16.65, -7.55], "text": ""},
         {"type": "port", "at": [16.65, -9.45], "text": ""},
     ]},
-    {"id": "victim_p", "name": "Victim (PMOS)", "models": [], "elements": [
+    {"id": "victim_p", "name": "Victim (PMOS)", "models": ["SG_PFET 1stk_1rx"], "elements": [
         {"type": "line", "from": [17.8, -8.5], "to": [18.125, -8.5]},
         {"type": "line", "from": [19.0, -8.98], "to": [19.0, -9.45]},
         {"type": "pfet", "drain": [19.0, -8.98], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.55, "bulk": True},
@@ -470,6 +457,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             inner = ([mdl] if isinstance(mdl, str) else list(mdl)) if mdl else []
             if e.get("equation"):
                 inner.append(e["equation"])
+            if e.get("role") == "soa_monitor":
+                inner.append("SOA monitor · no equation")  # 이슈 #10 §7 표시
             # model/equation 여러 개면 한 코너에서 위→아래 순차 스택 (코너 분산 금지)
             koff = {"tl": 0, "bl": 1, "br": 2, "tr": 3}[e.get("model_loc", "tl")]
             sx, sy, ha = INC[koff]

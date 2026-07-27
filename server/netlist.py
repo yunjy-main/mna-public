@@ -82,6 +82,7 @@ def extract_netlist(layout):
             rects.append({"instance": e["instance"], "cell": e.get("cell"),
                           "model": e.get("model"), "params": e.get("params", {}),
                           "variant": e.get("variant"),
+                          "equation": e.get("equation"), "role": e.get("role"),
                           "bb": (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)),
                           "open": e.get("enabled") is False})  # P0-3: 색이 아니라 enabled가 semantics
         elif t in ("resistor", "diode", "zener", "sourcei"):
@@ -238,15 +239,20 @@ def extract_netlist(layout):
             "kind": d["kind"], "open": d["open"] or r.get("open", False),
             "instance": r.get("instance"), "cell": r.get("cell"),
             "model": r.get("model"), "params": r.get("params", {}),
+            "equation": r.get("equation"), "role": r.get("role"),
             "a": net(d["a"]), "b": net(d["b"]),
         })
     for f in fets:
         r = resolve(f)
+        dn, sn, gn = net(f["drain"]), net(f["source"]), net(f["gate"])
         out_devices.append({
             "kind": f["kind"], "open": f["open"] or r.get("open", False),
             "instance": r.get("instance"), "cell": r.get("cell"),
             "model": r.get("model"), "params": r.get("params", {}),
-            "drain": net(f["drain"]), "source": net(f["source"]), "gate": net(f["gate"]),
+            "equation": r.get("equation"), "role": r.get("role"),
+            "drain": dn, "source": sn, "gate": gn,
+            # 명시 terminal map (이슈 #10 §6) — bulk는 렌더러의 bulk→source 직결로 b=s
+            "terminals": {"d": dn, "g": gn, "s": sn, "b": sn},
         })
 
     global_grounds = sorted(set(net(g["at"]) for g in grounds if g["global"]))
@@ -287,9 +293,63 @@ def _res_R(dev, L):
     return float(R)
 
 
+# ---------------- 실측 model 연계 (사용자 궁극 목표, 이슈 #9 P1) ----------------
+# schematic instance의 cell이 실측 제공 model을 가지면 placeholder 대신
+# calib 곡선(pos+neg branch 병합)의 piecewise-linear I(V)로 stamping한다.
+#   d_up / d_down (esdvpnp/esdndsx) = Device1 — element 방향(anode a→cathode b)이
+#     회로 배치를 이미 담으므로 곡선은 그대로 사용 (D2 결정 "down=미러"는 배치로 표현됨)
+#   clamp (nfet_clamp) = Device2 — zener element가 a=하단(N3B)/b=상단(N3)이라
+#     주 도통(트리거)이 element 좌표계 V<0 → 곡선 미러
+#   d_b2b (essvpnp) = 실측 미제공 → placeholder softplus 유지
+
+def _pwl_iv(Vs, Is):
+    """병합 실측 곡선 → I(V) 구간선형 평가기 (양끝은 끝 기울기로 선형 외삽)."""
+    def f(V):
+        n = len(Vs)
+        if V <= Vs[0]:
+            g = (Is[1] - Is[0]) / ((Vs[1] - Vs[0]) or 1e-12)
+            return Is[0] + g * (V - Vs[0]), g
+        if V >= Vs[-1]:
+            g = (Is[-1] - Is[-2]) / ((Vs[-1] - Vs[-2]) or 1e-12)
+            return Is[-1] + g * (V - Vs[-1]), g
+        lo, hi = 0, n - 1
+        while hi - lo > 1:
+            m = (lo + hi) // 2
+            if Vs[m] <= V:
+                lo = m
+            else:
+                hi = m
+        g = (Is[hi] - Is[lo]) / ((Vs[hi] - Vs[lo]) or 1e-12)
+        return Is[lo] + g * (V - Vs[lo]), g
+    return f
+
+
+def _mirror(f):
+    def g(V):
+        i, gg = f(-V)
+        return -i, gg
+    return g
+
+
+def measured_context(x1=2.56, x2=1415.232, corner="worst"):
+    """cell id → 실측 I(V) 평가기 dict. 곡선은 server.model calib(D1/D2)에서 유도."""
+    from server import model as M
+
+    def merged(dev, x):
+        c = M.calib(dev, x, corner)
+        Vs = c["neg"]["V"][::-1] + c["pos"]["V"][1:]
+        Is = c["neg"]["I"][::-1] + c["pos"]["I"][1:]
+        return _pwl_iv(Vs, Is)
+
+    d1 = merged(M.D1, x1)
+    return {"d_up": d1, "d_down": d1, "clamp": _mirror(merged(M.D2, x2))}
+
+
 def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
-                       max_iter=200, tol=1e-9):
-    """netlist → MNA 조립 + Newton. inject/ground는 net 이름."""
+                       max_iter=200, tol=1e-9, v0=None, model_ctx=None):
+    """netlist → MNA 조립 + Newton. inject/ground는 net 이름.
+    v0: unknowns 순서의 초기 전압 벡터 (continuation sweep warm-start용).
+    model_ctx: measured_context() 결과 — cell별 실측 I(V). None이면 placeholder."""
     names = nl["nets"]
     name_to_net = {v: k for k, v in names.items()}
     if inject not in name_to_net or ground not in name_to_net:
@@ -307,7 +367,10 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
     idx = {n: i for i, n in enumerate(unknowns)}
     N = len(unknowns)
 
-    stamped = [d for d in nl["devices"] if not d["open"] and d["kind"] != "sourcei"]
+    # 이슈 #10 §2: role=soa_monitor는 equation이 없는 관측 전용 —
+    # residual/Jacobian에 0 기여 (placeholder 접합 diode도 적용하지 않음)
+    stamped = [d for d in nl["devices"] if not d["open"] and d["kind"] != "sourcei"
+               and d.get("role") != "soa_monitor"]
 
     def vof(n, v):
         return 0.0 if n in ref else v[idx[n]]
@@ -325,9 +388,12 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
             if d["kind"] in ("resistor", "diode", "zener"):
                 a, b = d["a"], d["b"]
                 V = vof(a, v) - vof(b, v)
+                meas = (model_ctx or {}).get(d.get("cell"))
                 if d["kind"] == "resistor":
                     g = 1.0 / _res_R(d, L)
                     Idev = g * V
+                elif meas is not None:  # 실측 곡선 (d_up/d_down/clamp)
+                    Idev, g = meas(V)
                 elif d["kind"] == "zener":
                     Idev, g = _clamp_iv(V)
                 else:
@@ -367,7 +433,7 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
                         M[r][j] -= f * M[c][j]
         return [M[i][n] / M[i][i] for i in range(n)]
 
-    v = [0.0] * N
+    v = list(v0) if (v0 is not None and len(v0) == N) else [0.0] * N
     it, res, prev_res = 0, float("inf"), float("inf")
     cap = 1.0  # 적응형 step 제한: 걸린 채 residual이 안 줄면 확대 (부동 net 고전압 해 수렴)
     for it in range(1, max_iter + 1):
@@ -386,14 +452,200 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
 
     G, F = build(v)
     res = max(abs(x) for x in F) if F else 0.0
+    vmap = {names[n]: v[idx[n]] for n in unknowns}
+    for n in ref:
+        if n in names:
+            vmap[names[n]] = 0.0  # reference net — monitor 평가에 전 net 전압 필요
     return {
         "inject": inject, "ground": ground, "I": I, "L": L,
         "unknowns": [names[n] for n in unknowns],
         "ref_nets": sorted(names[n] for n in ref if n in names),
-        "v": {names[n]: v[idx[n]] for n in unknowns},
+        "v": vmap,
         "G": G, "residual": res,
         "converged": res < 1e-6,
         "newton_iters": it,
         "size": "{0}×{0}".format(N),
         "nnz": sum(1 for row in G for x in row if abs(x) > 1e-12),
     }
+
+
+# ---------------- SOA monitor (이슈 #10) ----------------
+# role=soa_monitor 소자는 equation이 없어 행렬에 기여하지 않는다.
+# solve 이후 terminal 전압만 관측해 signed min/max rule로 SOA를 평가한다.
+# rule 수치는 코드 고정이 아니라 실측 데이터(server.victim_soa)에서 유도한다.
+
+def soa_rules_for(model):
+    """process model명("SG_NFET 1stk_1rx") → signed SOA rule 목록.
+
+    victim_soa 실측 등가 변환: |VDS|≤Vfail ⇔ VDS∈[−Vfail,+Vfail];
+    NFET u_inv = max(VGS,VGD,VGB,0)/Vinv < 1 ⇔ 각 항 ≤ +Vinv,
+    u_acc ⇔ 각 항 ≥ −Vacc (PFET는 부호 반대)."""
+    from server import victim_soa as VS
+    try:
+        dev_class, topology = model.split()
+        vfail = VS.TERMINAL_VFAIL[dev_class][topology]
+        ox = VS.OXIDE_LIMIT[dev_class]
+    except (AttributeError, ValueError, KeyError):
+        return []
+    if ox["type"] == "nfet":
+        gmin, gmax = -ox["accumulation"], ox["inversion"]
+    else:
+        gmin, gmax = -ox["inversion"], ox["accumulation"]
+    return [
+        {"quantity": "VDS", "min": -vfail, "max": vfail},
+        {"quantity": "VGS", "min": gmin, "max": gmax},
+        {"quantity": "VGD", "min": gmin, "max": gmax},
+        {"quantity": "VGB", "min": gmin, "max": gmax},
+    ]
+
+
+def evaluate_soa_monitors(nl, sol, rules_by_model=None):
+    """solve 이후 post-processing (이슈 #10 §3·§4).
+
+    terminal 유효성: active(stamped) 소자 그래프에서 reference와 같은 연결성분에
+    속해야 해석 가능. GMIN만으로 결정된 전압(부동 net)은 SOA 평가에 쓰지 않는다.
+    solver 비수렴이면 전 monitor를 solver_non_convergence로 무효 처리."""
+    names = nl["nets"]
+    name_to_net = {v: k for k, v in names.items()}
+    ref_ids = set(name_to_net[nm] for nm in sol.get("ref_nets", []) if nm in name_to_net)
+
+    # active 소자(비 open·비 monitor·비 전류원) pin으로 net 연결성분 구성
+    uf = _UF()
+    SENTINEL = ("ref",)
+    for n in ref_ids:
+        uf.union(n, SENTINEL)
+    for d in nl["devices"]:
+        if d["open"] or d.get("role") == "soa_monitor" or d["kind"] == "sourcei":
+            continue
+        if d["kind"] in ("pfet", "nfet"):
+            uf.union(d["drain"], d["source"])  # placeholder 접합 diode의 stamp 경로
+        else:
+            uf.union(d["a"], d["b"])
+
+    def resolved(net_id):
+        return net_id in ref_ids or uf.find(net_id) == uf.find(SENTINEL)
+
+    out = []
+    for d in nl["devices"]:
+        if d.get("role") != "soa_monitor" or d["open"]:
+            continue
+        term_nets = d.get("terminals") or {}
+        terminals = {}
+        unresolved = []
+        for tname, nid in term_nets.items():
+            nm = names.get(nid, "n{}".format(nid))
+            ok = resolved(nid)
+            terminals[tname] = {"net": nm,
+                                "voltage": sol["v"].get(nm) if ok else None}
+            if not ok:
+                unresolved.append({"terminal": tname, "net": nm})
+        res = {"instance": d.get("instance"), "role": "soa_monitor",
+               "model": d.get("model"), "terminals": terminals,
+               "valid": True, "reason": None, "unresolved_terminals": unresolved,
+               "stress": None, "checks": [], "passed": None,
+               "worst_quantity": None, "worst_margin": None}
+        if not sol.get("converged"):
+            res["valid"] = False
+            res["reason"] = "solver_non_convergence"
+            out.append(res)
+            continue
+        if unresolved:
+            res["valid"] = False
+            res["reason"] = "unresolved_monitor_terminal"
+            out.append(res)
+            continue
+        vd = terminals["d"]["voltage"]
+        vg = terminals["g"]["voltage"]
+        vs = terminals["s"]["voltage"]
+        vb = terminals["b"]["voltage"]
+        stress = {"VGS": vg - vs, "VGD": vg - vd, "VDS": vd - vs,
+                  "VGB": vg - vb, "VDB": vd - vb, "VSB": vs - vb}
+        res["stress"] = stress
+        rules = (rules_by_model or {}).get(d.get("model"))
+        if rules is None:
+            rules = soa_rules_for(d.get("model") or "")
+        checks = []
+        for r in rules:
+            val = stress[r["quantity"]]
+            margin = min(val - r["min"], r["max"] - val)  # fail이면 음수
+            checks.append({"quantity": r["quantity"], "value": val,
+                           "min": r["min"], "max": r["max"],
+                           "margin": margin, "passed": margin >= 0.0})
+        res["checks"] = checks
+        if checks:
+            worst = min(checks, key=lambda c: c["margin"])
+            res["passed"] = all(c["passed"] for c in checks)
+            res["worst_quantity"] = worst["quantity"]
+            res["worst_margin"] = worst["margin"]
+        out.append(res)
+    return out
+
+
+# Top Cell rail {VDD, IO, VSS}의 ordered force/ground 6종 (이슈 #10 §5)
+RAIL_SCENARIOS = [("IO", "VSS"), ("VSS", "IO"), ("IO", "VDD"),
+                  ("VDD", "IO"), ("VDD", "VSS"), ("VSS", "VDD")]
+
+
+def device_voltages(nl, sol):
+    """저항을 제외한 모든 device의 양단 전압 (사용자 요구: 동적 그래프 원천).
+    monitor FET은 VDS(상세 stress는 monitors에), 동일 instance 복수 소자는 #k 접미."""
+    names = nl["nets"]
+    v = sol["v"]
+    out = {}
+    seen = {}
+    for d in nl["devices"]:
+        if d["kind"] == "resistor" or d["open"]:
+            continue
+        key = d.get("instance") or d["kind"]
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            key = "{}#{}".format(key, seen[key])
+        if d["kind"] in ("pfet", "nfet"):
+            out[key] = v[names[d["drain"]]] - v[names[d["source"]]]
+        else:
+            out[key] = v[names[d["a"]]] - v[names[d["b"]]]
+    return out
+
+
+def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None):
+    """I=0→Imax continuation sweep (warm-start) + 매 point SOA 평가.
+
+    point 상태 4종: non_convergence / unresolved_monitor_terminal / soa_fail / pass.
+    SOA fail은 solve 실패가 아니다 — 해는 유효하게 저장하고 metadata만 기록."""
+    points = []
+    v0 = None
+    first_fail = None
+    last_conv = None
+    for k in range(n):
+        i = imax * k / float(n - 1) if n > 1 else imax
+        sol = assemble_and_solve(nl, inject=force, ground=ground, I=i, L=L, v0=v0,
+                                 model_ctx=model_ctx)
+        if sol["converged"]:
+            v0 = [sol["v"][nm] for nm in sol["unknowns"]]  # continuation warm-start
+            last_conv = {"current": i, "newton_iters": sol["newton_iters"]}
+        mons = evaluate_soa_monitors(nl, sol)
+        if not sol["converged"]:
+            status = "non_convergence"
+        elif any(m["reason"] == "unresolved_monitor_terminal" for m in mons):
+            status = "unresolved_monitor_terminal"
+        elif any(m["valid"] and m["passed"] is False for m in mons):
+            status = "soa_fail"
+        else:
+            status = "pass"
+        if status == "soa_fail" and first_fail is None:
+            fm = [m for m in mons if m["valid"] and m["passed"] is False][0]
+            first_fail = {"current": i, "instance": fm["instance"],
+                          "quantity": fm["worst_quantity"], "margin": fm["worst_margin"]}
+        points.append({"I": i, "status": status, "converged": sol["converged"],
+                       "residual": sol["residual"], "v": sol["v"],
+                       "device_v": device_voltages(nl, sol),
+                       "monitors": [{"instance": m["instance"], "valid": m["valid"],
+                                     "reason": m["reason"], "passed": m["passed"],
+                                     "stress": m["stress"],
+                                     "worst_quantity": m["worst_quantity"],
+                                     "worst_margin": m["worst_margin"]} for m in mons]})
+    return {"force": force, "ground": ground, "imax": imax, "n": n,
+            "points": points, "first_soa_fail": first_fail,
+            "last_converged": last_conv,
+            "active_limiter": ("{}:{}".format(first_fail["instance"], first_fail["quantity"])
+                               if first_fail else None)}

@@ -38,8 +38,9 @@ def pins(instance):
 
 # 1) 기대 net 구성 — 회로도 topology 그대로인가
 named = set(v for v in names.values() if not v.startswith("n"))
-chk("named nets", named == {"VDD", "IO", "VSS", "MVSS", "VDD2", "IO2", "VSS2",
-                            "N1", "N2", "N3", "N3B", "OUT", "IN", "VSSR"}, str(sorted(named)))
+chk("named nets (OUT은 #10에서 N2로 합류)", named == {"VDD", "IO", "VSS", "MVSS", "VDD2",
+                                                     "IO2", "VSS2", "N1", "N2", "N3",
+                                                     "N3B", "IN", "VSSR"}, str(sorted(named)))
 chk("XRio_rdl pins", pins("XRio_rdl") == [("resistor", "IO", "N1")], str(pins("XRio_rdl")))
 chk("XRvss_rdl pins", pins("XRvss_rdl") == [("resistor", "VSS", "VSSR")], str(pins("XRvss_rdl")))
 chk("XD_up pins", pins("XD_up") == [("diode", "N1", "N2")], str(pins("XD_up")))
@@ -54,16 +55,22 @@ b2bm = sorted(pins("XD_b2b_m"))
 chk("XD_b2b_m 역병렬", b2bm == sorted([("diode", "MVSS", "N3B"), ("diode", "N3B", "MVSS")]), str(b2bm))
 b2bm2 = sorted(pins("XD_b2b_m2"))
 chk("XD_b2b_m2 역병렬", b2bm2 == sorted([("diode", "MVSS", "VSS2"), ("diode", "VSS2", "MVSS")]), str(b2bm2))
-vic = sorted(pins("XVictim"))
-chk("XVictim FETs", vic == sorted([("pfet", "OUT", "IN", "N2"), ("nfet", "OUT", "IN", "VSSR")]), str(vic))
+vic = pins("XVictim")
+chk("XVictim = NMOS 1stk 단일 (이슈 #10, D=VDD rail)", vic == [("nfet", "N2", "IN", "VSSR")],
+    str(vic))
+chk("PFET 없음", not any(d["kind"] == "pfet" for d in nl["devices"]), "")
 opens = [d["instance"] for d in nl["devices"] if d["open"]]
-chk("open 소자 6개(소스4+b2b가로2)", len(opens) == 6, str(opens))
+chk("open 소자 5개(소스3+b2b가로2 — IO→VSS 소스는 활성)", len(opens) == 5, str(opens))
+chk("IO→VSS forcing 소스 활성", any(d["instance"] == "XI_ESD (IO→VSS)" and not d["open"]
+                                     for d in nl["devices"]), "")
 
 # 1b) 이슈 #9 P0 semantics
 chk("이름 충돌 없음", nl["name_conflicts"] == [], str(nl["name_conflicts"]))
 chk("global ground 없음(현 회로도)", nl["global_ground_nets"] == [], str(nl["global_ground_nets"]))
-chk("local ground 4개(전류원 리턴)", len(nl["local_ground_nets"]) == 4,
+chk("local ground 5개(전류원 4 + VSS 표현)", len(nl["local_ground_nets"]) == 5
+    and "VSS" in [names[g] for g in nl["local_ground_nets"]],
     str([names[g] for g in nl["local_ground_nets"]]))
+chk("VSS ground 표현은 ref 강제 아님(6 시나리오 보전)", True, "")  # 아래 6종 sweep이 검증
 
 # enabled가 semantics, color는 표시 전용 (P0-3)
 import copy  # noqa: E402
@@ -102,7 +109,7 @@ chk("global ground=MVSS 인식", [nl5["nets"][g] for g in nl5["global_ground_net
 
 # 1c) P0-6: instance_id 명시 귀속 — 기본 레이아웃은 충돌 0, 전 소자 귀속
 chk("귀속 충돌 없음", nl["assoc_conflicts"] == [], str(nl["assoc_conflicts"]))
-chk("전 소자 instance 귀속(23)", len(nl["devices"]) == 23
+chk("전 소자 instance 귀속(22)", len(nl["devices"]) == 22
     and all(d["instance"] for d in nl["devices"]),
     str([d for d in nl["devices"] if not d["instance"]]))
 
@@ -154,14 +161,20 @@ theta_ok = all(abs(qq.absanchors[n].x - aa0[n][0]) < 1e-9
 chk("rot 생략 시 theta 상속 차단(렌더=추출)", theta_ok,
     str({n: (qq.absanchors[n].x, qq.absanchors[n].y) for n in ("source", "gate")}))
 
-# (b) 구형 layout(symbol_scale 없음, scale=1.0)에서도 victim gate tie 접속 유지
+# (b) 구형 layout(symbol_scale 없음, scale=1.0): gate 배선이 명시 지오메트리(#10에서
+#     gates helper 삭제)이므로 렌더·추출 **일치되게** 끊긴다 — gate는 부동 net으로
+#     정직하게 보고되고 monitor 평가가 unresolved g를 잡는다 (무경고 오추출 없음).
 L8 = copy.deepcopy(DEFAULT_LAYOUT)
 del L8["symbol_scale"]
 nl8 = extract_netlist(L8)
-vic8 = sorted((d["kind"], nl8["nets"][d["gate"]]) for d in nl8["devices"]
-              if d["kind"] in ("pfet", "nfet"))
-chk("scale=1.0에서 gate tie=IN 유지", vic8 == [("nfet", "IN"), ("pfet", "IN")], str(vic8))
-chk("scale=1.0 net 수 불변", len(nl8["nets"]) == len(names), str(len(nl8["nets"])))
+g8 = [nl8["nets"][d["gate"]] for d in nl8["devices"] if d["kind"] == "nfet"][0]
+chk("scale=1.0 gate는 부동 net(시각과 일치)", g8 != "IN" and g8.startswith("n"), g8)
+from server.netlist import evaluate_soa_monitors  # noqa: E402
+r8 = assemble_and_solve(nl8, inject="IO", ground="VSS", I=1.33)
+m8 = evaluate_soa_monitors(nl8, r8)[0]
+chk("scale=1.0 monitor가 g 미해석 보고", m8["reason"] == "unresolved_monitor_terminal"
+    and any(u["terminal"] == "g" for u in m8["unresolved_terminals"]),
+    str(m8["unresolved_terminals"]))
 
 # (c) 상자 겹침: midpoint가 자기 instance_id 상자 안이면 충돌 아님
 L9 = copy.deepcopy(DEFAULT_LAYOUT)
@@ -244,10 +257,160 @@ try:
     chk("inject∈global-ground 거부", False, "예외 없음")
 except ValueError:
     pass
-# local ground는 reference가 아니므로 그 net 주입은 허용되어야 함
-lg0 = nl["nets"][nl["local_ground_nets"][0]]
+# local ground는 reference가 아니므로 그 net 주입은 허용되어야 함 (전류원 내부 stub 선택)
+lg0 = [nl["nets"][g] for g in nl["local_ground_nets"] if nl["nets"][g].startswith("n")][0]
 chk("local ground net 주입 허용", assemble_and_solve(nl, inject=lg0, ground="VSS", I=0.1)["converged"],
     lg0)
+
+# 6) 이슈 #10 — NMOS 1stk SOA monitor
+from server.netlist import evaluate_soa_monitors, soa_rules_for, sweep_scenario, RAIL_SCENARIOS  # noqa: E402
+
+vic_dev = [d for d in nl["devices"] if d["instance"] == "XVictim"][0]
+chk("monitor role 보존", vic_dev["role"] == "soa_monitor", str(vic_dev["role"]))
+chk("monitor equation 없음", vic_dev["equation"] is None, str(vic_dev["equation"]))
+chk("monitor model 단일 문자열", vic_dev["model"] == "SG_NFET 1stk_1rx", str(vic_dev["model"]))
+tm = vic_dev["terminals"]
+chk("terminal map D/G/S/B", (names[tm["d"]], names[tm["g"]], names[tm["s"]]) == ("N2", "IN", "VSSR"),
+    str({k: names[v] for k, v in tm.items()}))
+chk("B=S short 유지", tm["b"] == tm["s"], "")
+
+# matrix 불변: monitor 제거 전후 active 해 동일 (0 기여)
+L11 = copy.deepcopy(DEFAULT_LAYOUT)
+L11["elements"] = [e for e in L11["elements"]
+                   if not (e.get("instance_id") == "XVictim" or e.get("instance") == "XVictim")]
+r11 = assemble_and_solve(extract_netlist(L11), inject="IO", ground="VSS", I=1.33)
+common = set(r["v"]) & set(r11["v"])
+chk("monitor 제거 시 해 불변", max(abs(r["v"][k] - r11["v"][k]) for k in common) < 1e-12, "")
+
+# role 없는 nfet은 여전히 stamp됨 (equation is None만으로 monitor 간주 금지)
+def _mon_layout(role, drain_y=0.0):
+    a = fet_anchors("nfet", (0.0, drain_y), rot=180, flip=True, scale=0.64)
+    rect = {"type": "rect", "corner1": [-2.0, -1.6], "corner2": [0.6, 0.8],
+            "instance": "XMON", "cell": "victim", "model": "SG_NFET 1stk_1rx", "params": {}}
+    if role:
+        rect["role"] = role
+    return {"symbol_scale": 0.64, "nodes": {}, "elements": [
+        {"type": "nfet", "drain": [0.0, drain_y], "rot": 180, "flip": True, "instance_id": "XMON"},
+        rect,
+        {"type": "line", "from": list(a["gate"]), "to": [a["gate"][0], 0.0]},
+        {"type": "line", "from": [a["gate"][0], 0.0], "to": [0.0, 0.0]},
+        {"type": "line", "from": [0.0, 0.0], "to": [1.0, 0.0]},
+        {"type": "port", "at": [1.0, 0.0], "net": "X"},
+        {"type": "resistor", "from": [1.0, 0.0], "to": [3.0, 0.0]},
+        {"type": "line", "from": [3.0, 0.0], "to": [4.0, 0.0]},
+        {"type": "port", "at": [4.0, 0.0], "net": "Y"},
+        {"type": "line", "from": list(a["source"]), "to": [0.0, -2.0]},
+        {"type": "line", "from": [0.0, -2.0], "to": [4.0, -2.0]},
+        {"type": "line", "from": [4.0, -2.0], "to": [4.0, 0.0]},
+    ]}
+
+# nfet 접합 diode는 source→drain — Y(=source측) 주입에서 도통
+nl_act = extract_netlist(_mon_layout(None))
+r_act = assemble_and_solve(nl_act, inject="Y", ground="X", I=1.0)
+nl_mon = extract_netlist(_mon_layout("soa_monitor"))
+r_mon = assemble_and_solve(nl_mon, inject="Y", ground="X", I=1.0)
+chk("role 없는 nfet stamp됨(접합 diode 도통)", r_act["v"]["Y"] < 0.9 * r_mon["v"]["Y"],
+    "act={} mon={}".format(r_act["v"]["Y"], r_mon["v"]["Y"]))
+chk("monitor는 R만 남아 V=I·R", abs(r_mon["v"]["Y"] - 1.0) < 1e-3, str(r_mon["v"]["Y"]))
+
+# 기본 회로도: drain이 VDD rail(N2)에 연결(사용자 지시) → 전 terminal 해석 가능,
+# IO/VSS 1.33A에서 SOA FAIL (VGS=IN−VSSR=5.843V > +2.9V, worst)
+mons = evaluate_soa_monitors(nl, r)
+m0 = mons[0]
+chk("monitor 유효(전 단자 해석)", m0["valid"] is True and m0["reason"] is None,
+    str((m0["valid"], m0["reason"])))
+chk("1.33A SOA FAIL·worst=VGS", m0["passed"] is False and m0["worst_quantity"] == "VGS",
+    str((m0["passed"], m0["worst_quantity"])))
+chk("worst margin ≈ −2.943", abs(m0["worst_margin"] + 2.943) < 5e-3, str(m0["worst_margin"]))
+chk("VGD는 PASS", [c for c in m0["checks"] if c["quantity"] == "VGD"][0]["passed"], "")
+
+# unresolved terminal: drain→rail 배선을 끊은 변형 — d가 부동 → 무효 보고 (GMIN 전압 미사용)
+L12 = copy.deepcopy(DEFAULT_LAYOUT)
+L12["elements"] = [e for e in L12["elements"]
+                   if not (e.get("type") == "line" and e.get("from") == [5.1, 3.0])]
+nl12 = extract_netlist(L12)
+r12 = assemble_and_solve(nl12, inject="IO", ground="VSS", I=1.33)
+m12 = evaluate_soa_monitors(nl12, r12)[0]
+chk("drain 절단 시 unresolved 보고", m12["valid"] is False
+    and m12["reason"] == "unresolved_monitor_terminal", str((m12["valid"], m12["reason"])))
+chk("unresolved terminal=d", [u["terminal"] for u in m12["unresolved_terminals"]] == ["d"],
+    str(m12["unresolved_terminals"]))
+chk("GMIN 전압 미사용(voltage None)", m12["terminals"]["d"]["voltage"] is None, "")
+chk("unresolved는 PASS 아님", m12["passed"] is None and m12["checks"] == [], "")
+
+# SOA rule (victim_soa 실측 유도) + 경계 golden: VGS 한계 +2.9V (직전/경계/직후)
+rules = soa_rules_for("SG_NFET 1stk_1rx")
+chk("rule 4종(VDS/VGS/VGD/VGB)", [x["quantity"] for x in rules] == ["VDS", "VGS", "VGD", "VGB"]
+    and rules[0]["max"] == 3.1 and rules[1] == {"quantity": "VGS", "min": -3.3, "max": 2.9},
+    str(rules))
+for i_in, want_pass in ((2.89, True), (2.9, True), (2.95, False)):
+    r_g = assemble_and_solve(nl_mon, inject="X", ground="Y", I=i_in)
+    mg = evaluate_soa_monitors(nl_mon, r_g)[0]
+    chk("경계 golden I={} → {}".format(i_in, "PASS" if want_pass else "FAIL"),
+        mg["valid"] and mg["passed"] is want_pass,
+        str((mg["valid"], mg["passed"], mg["worst_quantity"], mg["worst_margin"])))
+r_g = assemble_and_solve(nl_mon, inject="X", ground="Y", I=2.95)
+mg = evaluate_soa_monitors(nl_mon, r_g)[0]
+chk("worst=VGS(2.9)이지 VDS(3.1) 아님", mg["worst_quantity"] == "VGS", str(mg["worst_quantity"]))
+chk("fail margin 음수", mg["worst_margin"] < 0, str(mg["worst_margin"]))
+chk("stress 전체 pair 보존", set(mg["stress"]) == {"VGS", "VGD", "VDS", "VGB", "VDB", "VSB"},
+    str(mg["stress"]))
+
+# sweep: 연결된 monitor에서 first fail·limiter, 기본 회로도에서 6종 schema 일관
+sw = sweep_scenario(nl_mon, "X", "Y", imax=4.0, n=41)
+chk("sweep first_soa_fail ≈ 3.0A", sw["first_soa_fail"] is not None
+    and abs(sw["first_soa_fail"]["current"] - 3.0) < 1e-9,
+    str(sw["first_soa_fail"]))
+chk("active_limiter=XMON:VGS", sw["active_limiter"] == "XMON:VGS", str(sw["active_limiter"]))
+chk("SOA fail ≠ solve 실패(해 저장)", all(p["converged"] for p in sw["points"])
+    and any(p["status"] == "soa_fail" for p in sw["points"]), "")
+chk("sweep 상태 단조 pass→fail", [p["status"] for p in sw["points"]]
+    == ["pass"] * 30 + ["soa_fail"] * 11, str([p["status"] for p in sw["points"][28:33]]))
+KEYS = {"force", "ground", "imax", "n", "points", "first_soa_fail", "last_converged", "active_limiter"}
+STATES = {"non_convergence", "unresolved_monitor_terminal", "soa_fail", "pass"}
+ok6 = True
+limiters = {}
+for fc, gd in RAIL_SCENARIOS:
+    s6 = sweep_scenario(nl, fc, gd, imax=1.33, n=5)
+    if set(s6) != KEYS or len(s6["points"]) != 5 \
+       or any(p["status"] not in STATES for p in s6["points"]):
+        ok6 = False
+    limiters["{}→{}".format(fc, gd)] = s6["active_limiter"]
+chk("6종 rail 시나리오 schema 일관", ok6, "")
+chk("시나리오별 limiter 구분(VGS/VGD/VDS)", limiters["IO→VSS"] == "XVictim:VGS"
+    and limiters["VDD→IO"] == "XVictim:VGD" and limiters["VDD→VSS"] == "XVictim:VDS"
+    and limiters["VSS→IO"] is None, str(limiters))
+
+# 7) 실측 model 연계 (사용자 궁극 목표): MNA measured vs series 해석해 golden
+from server.netlist import measured_context, device_voltages  # noqa: E402
+from server import model as M  # noqa: E402
+
+ctx = measured_context(2.56, 1415.232, "worst")
+rm = assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
+c1w, c2w = M.calib(M.D1, 2.56, "worst"), M.calib(M.D2, 1415.232, "worst")
+vio_series = M.series_vio(c1w, c2w, 1.33)
+chk("measured V(IO) = series 해석해", rm["converged"]
+    and abs(rm["v"]["IO"] - vio_series) < 2e-3,
+    "MNA={} series={}".format(rm["v"]["IO"], vio_series))
+chk("measured diode 강하 = VofI(D1)", abs((rm["v"]["N1"] - rm["v"]["N2"])
+                                          - M.VofI(c1w["pos"], 1.33)) < 2e-3, "")
+chk("measured clamp 강하 = VofI(D2)", abs((rm["v"]["N3"] - rm["v"]["N3B"])
+                                          - M.VofI(c2w["pos"], 1.33)) < 1e-3, "")
+
+# device_v: 저항 제외 전 device 양단 전압 (동적 그래프 원천)
+dv = device_voltages(nl, rm)
+chk("device_v 11종(저항 제외)", len(dv) == 11 and "XD_up" in dv and "XClamp" in dv
+    and "XI_ESD (IO→VSS)" in dv and not any(k.startswith("XR") for k in dv), str(sorted(dv)))
+chk("device_v XD_up = diode 강하", abs(dv["XD_up"] - (rm["v"]["N1"] - rm["v"]["N2"])) < 1e-12, "")
+
+# 실측 sweep: first-fail 전류가 물리 스케일 (IO→VSS 1.0A VGS)
+swm = sweep_scenario(nl, "IO", "VSS", imax=2.0, n=21, model_ctx=ctx)
+chk("measured sweep first fail I=1.0 VGS", swm["first_soa_fail"] is not None
+    and abs(swm["first_soa_fail"]["current"] - 1.0) < 1e-9
+    and swm["first_soa_fail"]["quantity"] == "VGS", str(swm["first_soa_fail"]))
+chk("measured sweep 전 point 수렴", all(p["converged"] for p in swm["points"]), "")
+chk("sweep point에 device_v 포함", all("device_v" in p and len(p["device_v"]) == 11
+                                       for p in swm["points"]), "")
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))

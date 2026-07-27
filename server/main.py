@@ -319,7 +319,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "N2", "role": "VDD rail — XD_up cathode / XRDD_un1 좌단"},
             {"name": "N3", "role": "VDD rail — XClamp top (victim PMOS source 인접)"},
             {"name": "N3B", "role": "XClamp bottom — XRDD_dn1로 node A 연결"},
-            {"name": "OUT", "role": "victim inverter 공통 drain (회로도상 IN 배선은 gate까지 — 모델은 diode-connected 가정 유지)"},
+            {"name": "(OUT→N2)", "role": "victim NMOS drain — 상단 port 경유 VDD rail(N2) 직결(이슈 #10 사용자 지시)로 별도 OUT 노드 삭제, monitor D 단자=N2"},
             {"name": "VSS", "role": "기준(ref) node — node A(=I·Rvss_rdl) 경유 VSS port 리턴"},
             {"name": "MVSS", "role": "Main VSS rail — VSS와 XD_b2b_m, VSS2와 XD_b2b_m2로 연결"},
         ],
@@ -337,7 +337,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "XD_up2 / XD_down2", "type": "cell: d_up/d_down (2차 보호, 미바인딩)", "nodes": "IN열–VDD rail / VSS rail–IN열", "param": "esdvpnp / esdndsx"},
             {"name": "XD_b2b_m / XD_b2b_m2", "type": "cell: d_b2b (vertical) · essvpnp ×2", "nodes": "N3B–MVSS / VSS2–MVSS", "param": "역병렬 쌍"},
             {"name": "XD_b2b", "type": "cell: d_b2b (horizontal, open) · essvpnp ×2", "nodes": "N3B연장–VSS2", "param": "비활성"},
-            {"name": "XVictim", "type": "cell: victim · SG_PFET/SG_NFET 1stk_1rx", "nodes": "IN(gate)·VDD(N2열)·VSS rail", "param": "topology=vTopo, bulk=source 접속"},
+            {"name": "XVictim", "type": "cell: victim_n · SG_NFET 1stk_1rx", "nodes": "D=N2(VDD rail)·G=IN·S/B=VSSR", "param": "SOA monitor · equation 없음 — 행렬 미기여, solve 후 terminal 전압만 관측"},
         ],
         "mna": {
             "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(N3B)", "V(OUT)"],
@@ -558,21 +558,43 @@ def schematic_library_cell(cell_id: str):
     return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
+def _model_ctx_or_err(model_mode, x1, x2, corner):
+    """model_mode 파라미터 → (model_ctx, 오류응답). measured면 D5 창·corner 검증."""
+    from server.netlist import measured_context
+    if model_mode == "placeholder":
+        return None, None
+    if model_mode != "measured":
+        return None, PlainTextResponse("model_mode must be measured|placeholder", status_code=422)
+    if corner not in ("worst", "best"):
+        return None, PlainTextResponse("corner must be worst|best", status_code=422)
+    err = _window_error(x1, x2)
+    if err:
+        return None, err
+    return measured_context(x1=x1, x2=x2, corner=corner), None
+
+
 @app.get(PREFIX + "/api/schematic/matrix")
-def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L: float = 350.0):
+def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L: float = 350.0,
+                     x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
+                     model_mode: str = "measured"):
     """회로도 → netlist → MNA 자동 변환·해석.
 
     기하 연결성에서 net 추출, instance(cell/model/params)와 결합해 조립.
-    model equation은 임의 placeholder(softplus 계열) — 구조 변환이 목적.
+    model_mode=measured(기본): d_up/d_down=Device1·clamp=Device2 실측 곡선(사용자 궁극 목표),
+    b2b는 실측 미제공이라 placeholder. model_mode=placeholder: 전부 softplus 계열.
     inject/ground = net 이름(IO/VDD/VSS/MVSS/VSS2...), open 소자는 미조립."""
     from server.schematic import load_layout
-    from server.netlist import extract_netlist, assemble_and_solve
+    from server.netlist import extract_netlist, assemble_and_solve, evaluate_soa_monitors
+    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+    if err:
+        return err
     nl = extract_netlist(load_layout()[0])  # R15: 표시 중인 회로도(custom 포함)가 원천
     try:
-        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L)
+        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L, model_ctx=ctx)
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
     names = nl["nets"]
+    monitors = evaluate_soa_monitors(nl, sol)
     devs = []
     for d in nl["devices"]:
         if d["kind"] in ("pfet", "nfet"):
@@ -587,14 +609,41 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
             "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
             "name_conflicts": nl["name_conflicts"],
             "assoc_conflicts": nl["assoc_conflicts"],
+            "monitors": monitors,
             "solution": sol}
+
+
+@app.get(PREFIX + "/api/analysis/sweep")
+def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
+                   x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
+                   model_mode: str = "measured"):
+    """6종 ordered rail 시나리오 × I=0→Imax continuation sweep + 매 point SOA 평가
+    (이슈 #10 §5 + 사용자 궁극 목표: 실측 model 연계, point마다 저항 제외 device_v).
+    상태: non_convergence / unresolved_monitor_terminal / soa_fail / pass."""
+    from server.schematic import load_layout
+    from server.netlist import extract_netlist, sweep_scenario, RAIL_SCENARIOS
+    if not (0 < imax <= 100) or not (2 <= n <= 201):
+        return PlainTextResponse("imax∈(0,100], n∈[2,201] 필요", status_code=422)
+    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+    if err:
+        return err
+    nl = extract_netlist(load_layout()[0])
+    scenarios = []
+    for force, ground in RAIL_SCENARIOS:
+        try:
+            scenarios.append(sweep_scenario(nl, force, ground, imax=imax, n=n, L=L,
+                                            model_ctx=ctx))
+        except ValueError as ex:
+            scenarios.append({"force": force, "ground": ground, "error": str(ex)})
+    return {"imax": imax, "n": n, "L": L, "x1": x1, "x2": x2, "corner": corner,
+            "model_mode": model_mode, "scenarios": scenarios}
 
 
 @app.post(PREFIX + "/api/schematic/matrix/preview")
 async def schematic_matrix_preview(request: Request, inject: str = "IO", ground: str = "VSS",
                                    i: float = 1.33, L: float = 350.0):
     """POST된 layout(저장 전)을 netlist→MNA로 해석 — 편집 중 topology 확인용 (이슈 #9 P0)."""
-    from server.netlist import extract_netlist, assemble_and_solve
+    from server.netlist import extract_netlist, assemble_and_solve, evaluate_soa_monitors
     layout = await request.json()
     try:
         nl = extract_netlist(layout)
@@ -606,7 +655,8 @@ async def schematic_matrix_preview(request: Request, inject: str = "IO", ground:
             "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],
             "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
             "name_conflicts": nl["name_conflicts"],
-            "assoc_conflicts": nl["assoc_conflicts"], "solution": sol}
+            "assoc_conflicts": nl["assoc_conflicts"],
+            "monitors": evaluate_soa_monitors(nl, sol), "solution": sol}
 
 
 @app.get(PREFIX + "/api/schematic/mapping")
