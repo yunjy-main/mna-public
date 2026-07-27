@@ -111,10 +111,11 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 rail∓0.9에서 끝나고 저항 상자는 rail±0.45까지라 rail마다 0.45 간격이 남는다.
 (D_b2b_m 상자는 내부 분기점 여백 한계로 rail∓0.6 유지.)
 
-**비활성(open) cell 표기**: 비활성화된 cell은 전체(소자·내부 배선·dot·상자·port)를
-연한 회색(`#b0b6bf`)으로 그리고 title에 "(open)"을 붙인다 — 현재 VSS↔VSS2 가로
-D_b2b가 해당. 활성 net 위의 tap dot(경계 밖)은 검정 유지. 렌더러의 `color` 키는
-line/dot/port/2단자 소자 공통.
+**비활성(open) cell 표기**: 비활성화된 cell은 전체(소자·내부 배선·dot·상자·port·
+rail 연결선)를 연한 회색(`#b0b6bf`)으로 그리고 title에 "(open)"을 붙인다 — 현재
+VSS↔VSS2 가로 D_b2b와 **I_ESD 소스 4종**이 해당. 활성 net 위의 tap dot·port dot
+(경계 밖)은 검정 유지. 렌더러의 `color` 키는 line/dot/port/ground/2단자 소자 공통.
+라이브러리(Subcircuit Set) canvas의 cell들은 참조용이므로 항상 검정.
 
 상자 밖 라벨 overflow 허용(텍스트는 규칙 대상 아님). 상자 없는 소자는 없다.
 
