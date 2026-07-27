@@ -26,8 +26,8 @@ rail 간격 **3.0** (2026-07-27 사용자 지시로 세로 간격 1.5배 — 이
 → Resd **[0.2,2.2]** → 2차 보호(D_up2/D_down2) **2.6** → victim 상자 **[3.4,5.45]**(drain 5.1)
 → RDD **[5.1,7.1]** → clamp **7.1** → b2b **[7.9,9.5]** → 도메인2 port **10.3**
 
-세로 요소: VSS↔MVSS 수직 b2b(D_b2b_m) — tap (1.2,0)/(1.2,−3), 분기 y=−0.825/−2.175,
-arm x=0.9/1.5 (Resd center 1.2와 수직 정렬).
+세로 요소: VSS↔MVSS 수직 b2b(D_b2b_m) — **clamp 열(7.1) 바로 아래**:
+tap = N3B(7.1,0) / MVSS(7.1,−3), 분기 y=−0.825/−2.175, arm x=6.8/7.4.
 
 **b2b 쌍 공통 형태 — 2-port 묶음**: 각 net에 tap 1개만 두고
 `tap → stub → 분기 → 역병렬 arm 2개 → 병합 → stub → tap` 구조로 그린다
@@ -83,7 +83,7 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 
 - 세로 diode cell: 상자 [열±0.5] × [rail+0.45, rail−0.45], port는 상/하 경계의 배선 교차점.
 - Clamp cell: 두 rail 칸을 가로지르는 [6.6,7.6]×[0.45,5.55], port (7.1,5.55)/(7.1,0.45).
-- b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (1.2,−0.525)/(1.2,−2.475),
+- b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.525)/(7.1,−2.475),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.9).
 - **victim**: 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.55) / **VSS**(하변 0.45).
   FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3), gate tie = diode-connected(OUT).
