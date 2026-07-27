@@ -15,7 +15,7 @@ endpoints를 노드에 두면 schemdraw가 몸체를 자동 중앙 배치하고,
 | IO rail | 2.0 | victim drain 행 겸용 |
 | VSS rail | 0.0 | |
 | MVSS rail | −2.0 | Main VSS — port(−3)에서 10.3까지 전폭, VSS와 수직 b2b로만 연결 |
-| ground | −2.0 | GND→VSS 소스 하단 (x=−3.8 열, MVSS와 별개 net) |
+| ground | −4.0 | ground 버스(−4.6→−3.8), GND 소스 2개의 공통 기준 |
 | b2b 분기 | ±0.7 | VSS rail 기준 대칭 (도메인2 가로 쌍) |
 
 rail 간격 2.0 고정 — 심볼 몸체 대비 리드가 균일해지는 값(저항/전류원/FET-rail 리드 0.5·0.64 스케일 전 기준).
@@ -54,12 +54,16 @@ endpoints 스팬·anchor 접점은 불변(연결 유지). 접점 dot·port open-
 
 ## R6. 전류원 (스트레스 소스)
 
-3개를 **x=−3.8 한 열**에 수직 적층, 각 스팬 2.0(몸체 등간격 y=3/1/−1):
-- IO→VDD (위, 화살표 ↑ VDD)
-- IO→VSS (중, 화살표 ↑ IO)
-- GND→VSS (아래, 화살표 ↑ VSS)
+4개, 각 스팬 2.0. 주 열 **x=−3.8**, 보조 열 **x=−4.6**(gap 0.8):
+- IO→VDD (−3.8, 2→4, 화살표 ↑ VDD)
+- IO→VSS (−3.8, 0→2, 화살표 ↑ IO)
+- GND→VSS (−4.6, −2→0, 화살표 ↑ VSS — 상단은 선으로 (−3.8,0) 합류,
+  하단은 dogleg(−4.6,−4)로 ground 버스 연결)
+- GND→MVSS (−3.8, −4→−2, 화살표 ↑ MVSS — 상단은 선으로 MVSS port(−3,−2) 연결)
 
-화살표(to 단자) = 스트레스 전류 주입 방향.
+ground 심볼은 (−3.8,−4), ground 버스 (−4.6,−4)→(−3.8,−4).
+화살표(to 단자) = 스트레스 전류 주입 방향. MVSS 행도 다른 rail과 동일하게
+`소스 열 → 선 → port → rail` 패턴을 따른다.
 
 ## R7. 포트
 
