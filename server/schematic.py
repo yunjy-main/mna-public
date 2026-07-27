@@ -15,6 +15,7 @@ built-in default).
 """
 import json
 import os
+import re as _re
 
 import schemdraw
 import schemdraw.elements as elm
@@ -190,60 +191,52 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [7.1, -2.175]},
         {"type": "line", "from": [7.1, -2.175], "to": [7.1, -3.0]},
         {"type": "dot", "at": [7.1, -3.0]},
-        {"type": "line", "from": [-4.5, -6.4], "to": [15.2, -6.4], "ls": "--", "color": "#b0b6bf"},
+        {"type": "line", "from": [-4.5, -6.4], "to": [11.0, -6.4], "ls": "--", "color": "#b0b6bf"},
         {"type": "label", "at": [-1.5, -6.85], "text": "Subcircuit Set"},
-        {"type": "line", "from": [-3.8, -7.55], "to": [-3.8, -8.05]},
+        {"type": "line", "from": [-3.8, -8.05], "to": [-3.8, -8.0]},
         {"type": "sourcei", "from": [-3.8, -9.05], "to": [-3.8, -8.05]},
         {"type": "ground", "at": [-3.8, -9.05]},
         {"type": "rect", "corner1": [-4.3, -9.55], "corner2": [-3.3, -8.0], "title": "I_ESD"},
         {"type": "port", "at": [-3.8, -8.0], "text": ""},
-        {"type": "resistor", "from": [-2.5, -8.5], "to": [-0.5, -8.5]},
-        {"type": "rect", "corner1": [-2.15, -8.95], "corner2": [-0.85, -8.05], "title": "R_rdl 0.1Ω"},
-        {"type": "port", "at": [-2.15, -8.5], "text": ""},
-        {"type": "port", "at": [-0.85, -8.5], "text": ""},
-        {"type": "resistor", "from": [0.3, -8.5], "to": [2.3, -8.5]},
-        {"type": "rect", "corner1": [0.65, -8.95], "corner2": [1.95, -8.05], "title": "Resd 500Ω"},
-        {"type": "port", "at": [0.65, -8.5], "text": ""},
-        {"type": "port", "at": [1.95, -8.5], "text": ""},
-        {"type": "resistor", "from": [3.1, -8.5], "to": [5.1, -8.5]},
-        {"type": "rect", "corner1": [3.45, -8.95], "corner2": [4.75, -8.05], "title": "RDD 0.5Ω/350µm"},
-        {"type": "port", "at": [3.45, -8.5], "text": ""},
-        {"type": "port", "at": [4.75, -8.5], "text": ""},
-        {"type": "diode", "from": [5.9, -9.5], "to": [5.9, -7.5]},
-        {"type": "rect", "corner1": [5.4, -9.1], "corner2": [6.4, -7.9], "title": "D_up (x1)"},
-        {"type": "port", "at": [5.9, -7.9], "text": ""},
-        {"type": "port", "at": [5.9, -9.1], "text": ""},
-        {"type": "diode", "from": [7.7, -9.5], "to": [7.7, -7.5], "fill": "black"},
-        {"type": "rect", "corner1": [7.2, -9.1], "corner2": [8.2, -7.9], "title": "D_down"},
-        {"type": "port", "at": [7.7, -7.9], "text": ""},
-        {"type": "port", "at": [7.7, -9.1], "text": ""},
-        {"type": "zener", "from": [9.5, -9.5], "to": [9.5, -7.5]},
-        {"type": "rect", "corner1": [9.0, -9.1], "corner2": [10.0, -7.9], "title": "Clamp (x2)"},
-        {"type": "port", "at": [9.5, -7.9], "text": ""},
-        {"type": "port", "at": [9.5, -9.1], "text": ""},
-        {"type": "line", "from": [10.65, -8.5], "to": [11.0, -8.5]},
-        {"type": "dot", "at": [11.0, -8.5]},
-        {"type": "line", "from": [11.0, -8.5], "to": [11.0, -8.2]},
-        {"type": "line", "from": [11.0, -8.5], "to": [11.0, -8.8]},
-        {"type": "diode", "from": [11.0, -8.2], "to": [11.9, -8.2]},
-        {"type": "diode", "from": [11.9, -8.8], "to": [11.0, -8.8]},
-        {"type": "line", "from": [11.9, -8.2], "to": [11.9, -8.5]},
-        {"type": "line", "from": [11.9, -8.8], "to": [11.9, -8.5]},
-        {"type": "dot", "at": [11.9, -8.5]},
-        {"type": "line", "from": [11.9, -8.5], "to": [12.25, -8.5]},
-        {"type": "rect", "corner1": [10.8, -9.15], "corner2": [12.1, -7.85], "title": "D_b2b"},
-        {"type": "port", "at": [10.8, -8.5], "text": ""},
-        {"type": "port", "at": [12.1, -8.5], "text": ""},
-        {"type": "line", "from": [12.9, -8.5], "to": [13.725, -8.5]},
-        {"type": "dot", "at": [13.725, -8.5]},
-        {"type": "rect", "corner1": [13.4, -9.85], "corner2": [14.95, -7.15], "title": "Victim"},
-        {"type": "pfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.15, "bulk": True},
-        {"type": "nfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.85, "bulk": True},
+        {"type": "resistor", "from": [-2.5, -8.5], "to": [-1.2, -8.5]},
+        {"type": "rect", "corner1": [-2.5, -8.95], "corner2": [-1.2, -8.05], "title": "R"},
+        {"type": "port", "at": [-2.5, -8.5], "text": ""},
+        {"type": "port", "at": [-1.2, -8.5], "text": ""},
+        {"type": "diode", "from": [0.1, -9.1], "to": [0.1, -7.9]},
+        {"type": "rect", "corner1": [-0.4, -9.1], "corner2": [0.6, -7.9], "title": "D_up"},
+        {"type": "port", "at": [0.1, -7.9], "text": ""},
+        {"type": "port", "at": [0.1, -9.1], "text": ""},
+        {"type": "diode", "from": [1.9, -9.1], "to": [1.9, -7.9], "fill": "black"},
+        {"type": "rect", "corner1": [1.4, -9.1], "corner2": [2.4, -7.9], "title": "D_down"},
+        {"type": "port", "at": [1.9, -7.9], "text": ""},
+        {"type": "port", "at": [1.9, -9.1], "text": ""},
+        {"type": "zener", "from": [3.7, -9.1], "to": [3.7, -7.9]},
+        {"type": "rect", "corner1": [3.2, -9.1], "corner2": [4.2, -7.9], "title": "Clamp"},
+        {"type": "port", "at": [3.7, -7.9], "text": ""},
+        {"type": "port", "at": [3.7, -9.1], "text": ""},
+        {"type": "line", "from": [5.0, -8.5], "to": [5.2, -8.5]},
+        {"type": "dot", "at": [5.2, -8.5]},
+        {"type": "line", "from": [5.2, -8.5], "to": [5.2, -8.2]},
+        {"type": "line", "from": [5.2, -8.5], "to": [5.2, -8.8]},
+        {"type": "diode", "from": [5.2, -8.2], "to": [6.1, -8.2]},
+        {"type": "diode", "from": [6.1, -8.8], "to": [5.2, -8.8]},
+        {"type": "line", "from": [6.1, -8.2], "to": [6.1, -8.5]},
+        {"type": "line", "from": [6.1, -8.8], "to": [6.1, -8.5]},
+        {"type": "dot", "at": [6.1, -8.5]},
+        {"type": "line", "from": [6.1, -8.5], "to": [6.3, -8.5]},
+        {"type": "rect", "corner1": [5.0, -9.15], "corner2": [6.3, -7.85], "title": "D_b2b"},
+        {"type": "port", "at": [5.0, -8.5], "text": ""},
+        {"type": "port", "at": [6.3, -8.5], "text": ""},
+        {"type": "line", "from": [7.1, -8.5], "to": [7.425, -8.5]},
+        {"type": "dot", "at": [7.425, -8.5]},
+        {"type": "rect", "corner1": [7.1, -9.85], "corner2": [8.65, -7.15], "title": "Victim"},
+        {"type": "pfet", "drain": [8.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -7.15, "bulk": True},
+        {"type": "nfet", "drain": [8.3, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -9.85, "bulk": True},
         {"type": "gates", "stub": False},
-        {"type": "dot", "at": [14.6, -8.5]},
-        {"type": "port", "at": [13.4, -8.5], "text": ""},
-        {"type": "port", "at": [14.6, -7.15], "text": ""},
-        {"type": "port", "at": [14.6, -9.85], "text": ""},
+        {"type": "dot", "at": [8.3, -8.5]},
+        {"type": "port", "at": [7.1, -8.5], "text": ""},
+        {"type": "port", "at": [8.3, -7.15], "text": ""},
+        {"type": "port", "at": [8.3, -9.85], "text": ""},
     ],
     "current_labels": {"i": [0.8, 2.4], "iv": [2.2, 1.95]},
 }
@@ -292,6 +285,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
     fs = layout.get("fontsize", 9)
     ss = layout.get("symbol_scale", 1.0)  # 심볼 몸체 배율 (endpoints 스팬·anchor는 불변)
     fets = {}
+    nmos_bulk_arrows = []  # NMOS bulk 화살표 반전용 (사용자 지시: NMOS는 채널 반대 방향)
 
     for e in layout.get("elements", []):
         t = e.get("type")
@@ -350,6 +344,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             if e.get("bulk"):
                 blk = q.absanchors['bulk']
                 d.add(elm.Line().at((blk.x, blk.y)).to((src.x, src.y)))
+                if t == "nfet":
+                    nmos_bulk_arrows.append((blk.x, blk.y))
             if "rail_y" in e:
                 d.add(elm.Line().at((src.x, src.y)).to((src.x, e["rail_y"])))
         elif t == "gates":
@@ -386,4 +382,24 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                                                     fontsize=fs - 1, color=CUR))
 
     data = d.get_imagedata('svg')
-    return data.decode('utf-8') if isinstance(data, bytes) else data
+    svg = data.decode('utf-8') if isinstance(data, bytes) else data
+    for bx, by in nmos_bulk_arrows:
+        svg = _flip_nmos_bulk_arrow(svg, bx, by)
+    return svg
+
+
+def _flip_nmos_bulk_arrow(svg, bx, by, S=32.4):
+    """NMOS bulk 화살촉(채널 방향)을 좌우 반전 — 자기 중심 기준 x 미러."""
+    pat = _re.compile(r'd="M ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+) L ([-\d.]+) ([-\d.]+) Z"')
+
+    def rep(m):
+        xs = [float(m.group(i)) for i in (1, 3, 5)]
+        ys = [float(m.group(i)) for i in (2, 4, 6)]
+        cx, cy = sum(xs) / 3 / S, -sum(ys) / 3 / S
+        if abs(cy - by) < 0.15 and (bx - 0.6) < cx < bx:
+            mx = sum(xs) / 3
+            nx = [2 * mx - x for x in xs]
+            return 'd="M {} {} L {} {} L {} {} Z"'.format(nx[0], ys[0], nx[1], ys[1], nx[2], ys[2])
+        return m.group(0)
+
+    return pat.sub(rep, svg)

@@ -96,6 +96,8 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 - **victim**: 상자 [3.4,5.45]×[0.9,5.1], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.1) / **VSS**(하변 0.9).
   FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3),
   **bulk 단자 표시**(`"bulk": True`) + bulk→source 직결선 (렌더러 자동, source y=drain±0.96).
+  **NMOS bulk 화살표는 채널 반대 방향**(사용자 지시 — 렌더러가 SVG 후처리로 반전,
+  PMOS는 채널 방향 유지).
   **IN 배선은 gate까지만**(gate x = drain − 1.367·symbol_scale = 4.225, tie dot) —
   gate→drain(junction) 경로는 그리지 않는다(2026-07-27 사용자 지시). drain은 별도
   OUT 노드(주석은 drain 위치). 내부 소자는 레이아웃 JSON에서 교체 가능.
@@ -127,13 +129,14 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 
 ## R11. Subcircuit Set (라이브러리 행)
 
-회로도 하단, 점선 구분선(y=−6.4, `#b0b6bf`) 아래 별도 영역(y≈−6.4~−10.6)에
-**중복 제거한 cell 세트를 가로로 나열**한다. instance가 아닌 종류 기준 9종:
-`I_ESD`(1-port 소스+ground) · `R_rdl 0.1Ω` · `Resd 500Ω` · `RDD 0.5Ω/350µm` ·
-`D_up (x1)` · `D_down`(검게 채움) · `Clamp (x2)` · `D_b2b`(역병렬 묶음) ·
-`Victim`(FET쌍+bulk, **compact 상자** [13.4,14.95]×[−9.85,−7.15] — 본 회로보다 작게).
-각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port+title)으로 그리고,
-인접 cell 간 간격은 R3(0.8)을 따른다. 새 cell 종류가 회로에 추가되면 이 행에도 추가한다.
+회로도 하단, 점선 구분선(y=−6.4, `#b0b6bf`) 아래 별도 영역(y≈−6.4~−9.85)에
+**형태 기준 중복 제거한 cell 세트를 가로로 나열**한다 — 동일 형태 심볼은 1개만
+(저항류는 파라미터만 다르므로 `R` 하나). 7종:
+`I_ESD`(1-port 소스+ground) · `R` · `D_up` · `D_down`(검게 채움) · `Clamp` ·
+`D_b2b`(역병렬 묶음) · `Victim`(FET쌍+bulk, compact [7.1,8.65]×[−9.85,−7.15]).
+각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port+title)이되,
+**상자 밖 실선 배선 금지** — 소자 endpoints를 상자 경계에 맞춰 트림한다.
+인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 행에도 추가한다.
 
 ## R12. 수정 후 검증 절차
 
