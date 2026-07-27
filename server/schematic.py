@@ -366,8 +366,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             # schemdraw .label() 자체 x오프셋 +0.10을 앵커에서 상쇄.
             OUTC = {"tl": (xa - 0.1, yb + 0.24, 'left'), "bl": (xa - 0.1, ya - 0.3, 'left'),
                     "br": (xb - 0.1, ya - 0.3, 'right'), "tr": (xb - 0.1, yb + 0.24, 'right')}
-            INC = [(xa - 0.09, yb - 0.18, 'left'), (xa - 0.09, ya + 0.12, 'left'),
-                   (xb - 0.11, ya + 0.12, 'right'), (xb - 0.11, yb - 0.18, 'right')]
+            INC = [(xa - 0.09, yb - 0.14, 'left'), (xa - 0.09, ya + 0.12, 'left'),
+                   (xb - 0.11, ya + 0.12, 'right'), (xb - 0.11, yb - 0.14, 'right')]
             if e.get("instance"):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,
