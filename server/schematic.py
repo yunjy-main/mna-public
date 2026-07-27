@@ -141,19 +141,19 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [5.1, 0.9], "text": "VSS", "lofst": [0.15, 0.225]},
         {"type": "line", "from": "N3B", "to": [7.9, 0.0]},
         {"type": "dot", "at": [7.9, 0.0]},
-        {"type": "line", "from": [7.9, 0.0], "to": [8.25, 0.0]},
-        {"type": "dot", "at": [8.25, 0.0]},
-        {"type": "line", "from": [8.25, 0.0], "to": [8.25, 0.3]},
-        {"type": "line", "from": [8.25, 0.0], "to": [8.25, -0.3]},
-        {"type": "diode", "from": [8.25, 0.3], "to": [9.15, 0.3]},
-        {"type": "diode", "from": [9.15, -0.3], "to": [8.25, -0.3]},
-        {"type": "rect", "corner1": [8.05, -0.65], "corner2": [9.35, 0.65], "title": "D_b2b"},
-        {"type": "port", "at": [8.05, 0.0], "text": ""},
-        {"type": "port", "at": [9.35, 0.0], "text": ""},
-        {"type": "line", "from": [9.15, 0.3], "to": [9.15, 0.0]},
-        {"type": "line", "from": [9.15, -0.3], "to": [9.15, 0.0]},
-        {"type": "dot", "at": [9.15, 0.0]},
-        {"type": "line", "from": [9.15, 0.0], "to": [9.5, 0.0]},
+        {"type": "line", "from": [7.9, 0.0], "to": [8.25, 0.0], "color": "#b0b6bf"},
+        {"type": "dot", "at": [8.25, 0.0], "color": "#b0b6bf"},
+        {"type": "line", "from": [8.25, 0.0], "to": [8.25, 0.3], "color": "#b0b6bf"},
+        {"type": "line", "from": [8.25, 0.0], "to": [8.25, -0.3], "color": "#b0b6bf"},
+        {"type": "diode", "from": [8.25, 0.3], "to": [9.15, 0.3], "color": "#b0b6bf"},
+        {"type": "diode", "from": [9.15, -0.3], "to": [8.25, -0.3], "color": "#b0b6bf"},
+        {"type": "rect", "corner1": [8.05, -0.65], "corner2": [9.35, 0.65], "title": "D_b2b (open)", "color": "#b0b6bf"},
+        {"type": "port", "at": [8.05, 0.0], "text": "", "color": "#b0b6bf"},
+        {"type": "port", "at": [9.35, 0.0], "text": "", "color": "#b0b6bf"},
+        {"type": "line", "from": [9.15, 0.3], "to": [9.15, 0.0], "color": "#b0b6bf"},
+        {"type": "line", "from": [9.15, -0.3], "to": [9.15, 0.0], "color": "#b0b6bf"},
+        {"type": "dot", "at": [9.15, 0.0], "color": "#b0b6bf"},
+        {"type": "line", "from": [9.15, 0.0], "to": [9.5, 0.0], "color": "#b0b6bf"},
         {"type": "dot", "at": [9.5, 0.0]},
         {"type": "line", "from": [9.5, 0.0], "to": [10.3, 0.0]},
         {"type": "port", "at": [10.3, 0.0], "text": "VSS2", "lofst": [0.65, 0.0]},
@@ -333,7 +333,10 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                 el = el.color(e["color"])
             d.add(el)
         elif t == "dot":
-            d.add(elm.Dot().at(pt(e["at"])))
+            el = elm.Dot().at(pt(e["at"]))
+            if e.get("color"):
+                el = el.color(e["color"])
+            d.add(el)
         elif t == "ground":
             d.add(elm.Ground().at(pt(e["at"])).scale(ss))
         elif t == "label":
@@ -355,6 +358,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
             cls = {"resistor": elm.Resistor, "diode": elm.Diode,
                    "zener": elm.Zener, "sourcei": elm.SourceI}[t]
             el = cls().endpoints(pt(e["from"]), pt(e["to"])).scale(ss)
+            if e.get("color"):
+                el = el.color(e["color"])
             if e.get("fill"):
                 el = el.fill(e["fill"] if isinstance(e["fill"], str) else True)
             if e.get("label"):
@@ -363,8 +368,12 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
         elif t == "port":
             x, y = pt(e["at"])
             lx, ly = e.get("lofst", [-0.75, 0])
-            d.add(elm.Dot(open=True).at((x, y)))
-            d.add(elm.Label().at((x + lx, y + ly)).label(e.get("text", ""), fontsize=fs, color='#20242a'))
+            pd = elm.Dot(open=True).at((x, y))
+            if e.get("color"):
+                pd = pd.color(e["color"])
+            d.add(pd)
+            d.add(elm.Label().at((x + lx, y + ly)).label(e.get("text", ""), fontsize=fs,
+                                                        color=e.get("color", '#20242a')))
         elif t in ("pfet", "nfet"):
             cls = elm.PFet if t == "pfet" else elm.NFet
             el = cls(bulk=True) if e.get("bulk") else cls()
