@@ -112,11 +112,15 @@
     <h2>2. 시각화</h2>
 
     <h3>2-1. Subject radar charts (바깥=위험 · 100% 점선 경계 · ghost 0/0.5/1/1.5/2A)</h3>
+    <div class="hint">non-victim (protection / 전체)</div>
     <div class="radars">
       <div id="radarInt"></div>
       <div id="radarA"></div>
-      <div id="radarB"></div>
       <div id="radarC"></div>
+    </div>
+    <div class="hint" style="margin-top:6px">victim</div>
+    <div class="radars">
+      <div id="radarB"></div>
     </div>
 
     <h3>2-2. Precomputed x1(diode) sweep: injected current 0 → Imax</h3>
@@ -129,17 +133,27 @@
     <div class="rank" id="rank"></div>
 
     <h3>2-5. Protection / victim V-I SOA map</h3>
+    <div class="hint">non-victim (protection)</div>
     <div class="g23">
-      <div id="mapV"></div>
       <div id="mapD"></div>
       <div id="mapC"></div>
     </div>
+    <div class="hint" style="margin-top:6px">victim</div>
+    <div class="g23">
+      <div id="mapV"></div>
+    </div>
 
     <h3>2-6. Iteration plots (선택 전류점)</h3>
+    <div class="hint">non-victim (device / 변수 / loss)</div>
     <div class="g23">
       <div id="itUsage"></div>
       <div id="itVars"></div>
       <div id="itLoss"></div>
+    </div>
+    <div class="hint" style="margin-top:6px">victim</div>
+    <div class="g23">
+      <div id="itUsageVic"></div>
+      <div id="itVout"></div>
     </div>
 
     <h3>Summary metrics</h3>
@@ -309,16 +323,23 @@ function renderMaps(p){
 }
 function renderIter(){
   const h=cur().history,p=DATA.settings;
-  // v4 chartUsage 1:1 — 6계열 (Victim V/I, Up V/I, Clamp V/I) + SOA boundary
-  lineChart(document.getElementById('itUsage'),{title:'Normalized SOA usage',
+  // non-victim 행: device usage (Up V/I, Clamp V/I) + SOA boundary
+  lineChart(document.getElementById('itUsage'),{title:'Device SOA usage',
     series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.purple,label:'Victim V'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.uBI),color:'#a855f7',label:'Victim I'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uVD),color:CB.blue,label:'Up V'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.sky,label:'Up I'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uVC),color:CB.green,label:'Clamp V'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:'#86c8a0',label:'Clamp I'}],
     hlines:[{y:1,label:'SOA boundary'}]});
+  // victim 행: usage + V(OUT)
+  lineChart(document.getElementById('itUsageVic'),{title:'Victim SOA usage',
+    series:[
+      {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.purple,label:'Victim V (U)'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.uBI),color:'#a855f7',label:'Victim I'}],
+    hlines:[{y:1,label:'SOA boundary'}]});
+  lineChart(document.getElementById('itVout'),{title:'Victim V(OUT)',
+    series:[{x:h.map(r=>r.it),y:h.map(r=>r.vnds),color:CB.blue,label:'V(OUT)'}],
+    hlines:[{y:cur().final.limNterm,label:'limit '+f(cur().final.limNterm,1)+'V'}]});
   // v4 chartVars 1:1 — 절대값 궤적 + min/max rule 점선 (스케일 차로 변수별 미니차트 세로 3개)
   const box=document.getElementById('itVars');
   box.innerHTML='<div></div><div></div><div></div>';
@@ -328,14 +349,12 @@ function renderIter(){
       series:[{x:h.map(r=>r.it),y:h.map(sp[1]),color:sp[4],label:sp[0]}],
       hlines:[{y:sp[2],color:sp[4],label:'min'},{y:sp[3],color:sp[4],label:'max'}]});
   });
-  // v4 chartLoss 1:1 — Vpad(V_IO)/cost/loss + Victim 한계 (V(OUT) 추가)
-  lineChart(document.getElementById('itLoss'),{title:'V_IO · V(OUT) / cost / loss',
+  // v4 chartLoss 원형 — V_IO(Vpad 대응)/cost/loss (victim 계열은 victim 행으로 분리)
+  lineChart(document.getElementById('itLoss'),{title:'V_IO / cost / loss',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.purple,label:'V_IO'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.vnds),color:CB.blue,label:'V(OUT)'},
       {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.gray,label:'cost'},
-      {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:'#111827',label:'loss'}],
-    hlines:[{y:cur().final.limNterm,label:'Victim limit '+f(cur().final.limNterm,1)+'V'}]});
+      {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:'#111827',label:'loss'}]});
 }
 function renderMetrics(fin,p){
   const chips=[['Overall',fin.passAll],['Victim',fin.passV],['Diode I',fin.passD],['Clamp I',fin.passC],['Metal',fin.passM],['Rule',fin.passRule]];
