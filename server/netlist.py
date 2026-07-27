@@ -13,9 +13,13 @@ model equation은 임의 placeholder(사용자 허용 2026-07-27):
 enabled=False 소자는 stamping 제외(배선은 유지) — 색상은 표시 전용(P0-3).
 net 이름은 layout nodes/port "net" 선언에서 온다(P0-4). reference는 scenario.ground +
 global=True ground만(P0-2). 전류원은 G에 기여하지 않으므로 시나리오는
-(inject net, ground net, I)로 지정한다. — 이슈 #9 P0 반영
+(inject net, ground net, I)로 지정한다. 소자→instance 귀속은 명시 instance_id가
+권위이고 기하는 교차 검증(P0-6, assoc_conflicts). FET pin 기하는 렌더러와 공유하는
+schematic.fet_anchors가 원천(P0-5). — 이슈 #9 P0 반영
 """
 import math
+
+from server.schematic import fet_anchors  # P0-5: 렌더러와 동일 기하 원천 (schemdraw)
 
 TOL = 0.02
 GMIN = 1e-9
@@ -62,6 +66,8 @@ def extract_netlist(layout):
         return tuple(ref)
 
     wires, devices, grounds, rects, fets = [], [], [], [], []
+    symbol_scale = layout.get("symbol_scale", 1.0)
+    tie_ys = []        # gates tie 접점의 y (렌더러가 dot을 찍는 위치 — 추출기도 등록점으로)
     name_anchors = []  # (좌표, 이름) — port "net" + nodes 선언
     for nm, nd in nodes.items():
         name_anchors.append((tuple(nd["xy"]), nm))
@@ -82,28 +88,41 @@ def extract_netlist(layout):
             a, b = pt(e["from"]), pt(e["to"])
             devices.append({"kind": t, "a": a, "b": b,
                             "mid": ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0),
-                            "open": e.get("enabled") is False})
+                            "open": e.get("enabled") is False,
+                            "instance_id": e.get("instance_id")})
         elif t == "ground":
             # global=True인 ground만 항상 reference; 나머지는 cell 내부 local return (P0-2)
             grounds.append({"at": pt(e["at"]), "global": bool(e.get("global"))})
         elif t in ("pfet", "nfet"):
-            d = pt(e["drain"])
-            sgn = 1.0 if t == "pfet" else -1.0  # 본 레이아웃 고정 방향(rot180+flip)
-            src = (d[0], d[1] + 0.96 * sgn)
-            gate = (d[0] - 0.875, d[1] + 0.48 * sgn)
+            # P0-5: 렌더러와 공유하는 fet_anchors — rot/flip/scale 어떤 조합도 동일 기하
+            anc = fet_anchors(t, pt(e["drain"]), rot=e.get("rot", 0),
+                              flip=bool(e.get("flip")), scale=symbol_scale)
+            d, src, gate = anc["drain"], anc["source"], anc["gate"]
             fets.append({"kind": t, "drain": d, "source": src, "gate": gate,
-                         "mid": ((d[0] + gate[0]) / 2.0, d[1]), "open": e.get("enabled") is False})
+                         "mid": ((d[0] + gate[0]) / 2.0, d[1]), "open": e.get("enabled") is False,
+                         "instance_id": e.get("instance_id")})
             if "rail_y" in e:
                 wires.append((src, (src[0], e["rail_y"])))
-    # gates: 같은 drain의 pfet/nfet 쌍 → gate-gate 수직 배선 (tie 점은 세그먼트 위 등록점으로 합류)
+        elif t == "gates":
+            tie = e.get("tie")
+            if tie and tie in nodes:
+                tie_ys.append(nodes[tie]["xy"][1])
+    # gates: 같은 drain의 pfet/nfet 쌍 → gate-gate 수직 배선.
+    # tie 접점은 렌더러가 (gate.x, tie_y)에 dot을 찍는 것과 동일하게 등록점으로 추가
+    # (scale에 따라 gate.x가 움직여도 tie 배선과의 접속이 유지된다 — 2026-07-28 수정)
+    tie_pts = []
     for i, f1 in enumerate(fets):
         for f2 in fets[i + 1:]:
             if f1["kind"] != f2["kind"] and _k(f1["drain"]) == _k(f2["drain"]):
                 wires.append((f1["gate"], f2["gate"]))
+                for ty in tie_ys:
+                    tie_pts.append((f1["gate"][0], ty))
     # bulk = source (렌더러의 bulk→source 직결) — 별도 net 불필요
 
-    # 등록점: 모든 배선 끝점 + 소자 pin + ground + dot
+    # 등록점: 모든 배선 끝점 + 소자 pin + ground + dot + gates tie 접점
     pts = set()
+    for p in tie_pts:
+        pts.add(_k(p))
     for a, b in wires:
         pts.add(_k(a)); pts.add(_k(b))
     for d in devices:
@@ -174,9 +193,47 @@ def extract_netlist(layout):
                 return r
         return None
 
+    def _contains(r, mid):
+        xa, ya, xb, yb = r["bb"]
+        return xa - 0.05 <= mid[0] <= xb + 0.05 and ya - 0.05 <= mid[1] <= yb + 0.05
+
+    def _fmt(mid):
+        return "({:g}, {:g})".format(round(mid[0], 3), round(mid[1], 3))
+
+    # P0-6 (이슈 #9): 소자→instance 귀속은 명시 instance_id가 권위,
+    # 기하는 교차 검증 — **자기 상자 포함 여부**로 판단(상자 겹침에 무관).
+    # instance 중복 정의는 첫 정의 우선 + 충돌 보고 (2026-07-28 확정).
+    assoc_conflicts = []
+    rect_by_name = {}
+    for r in rects:
+        if r["instance"] in rect_by_name:
+            assoc_conflicts.append("instance 중복 정의: {} (첫 정의 우선)".format(r["instance"]))
+            continue
+        rect_by_name[r["instance"]] = r
+
+    def resolve(dev):
+        iid = dev.get("instance_id")
+        if not iid:
+            return owner(dev["mid"]) or {}
+        r = rect_by_name.get(iid)
+        if r is None:
+            assoc_conflicts.append("{} @{}: instance_id '{}' 미정의 (기하 귀속 사용)"
+                                   .format(dev["kind"], _fmt(dev["mid"]), iid))
+            return owner(dev["mid"]) or {}
+        if not _contains(r, dev["mid"]):
+            geo = owner(dev["mid"])
+            if geo is None:
+                assoc_conflicts.append("{} @{}: instance_id '{}'이나 상자 밖"
+                                       .format(dev["kind"], _fmt(dev["mid"]), iid))
+            else:
+                assoc_conflicts.append("{} @{}: instance_id '{}' vs 기하 '{}'"
+                                       .format(dev["kind"], _fmt(dev["mid"]), iid,
+                                               geo["instance"]))
+        return r
+
     out_devices = []
     for d in devices:
-        r = owner(d["mid"]) or {}
+        r = resolve(d)
         out_devices.append({
             "kind": d["kind"], "open": d["open"] or r.get("open", False),
             "instance": r.get("instance"), "cell": r.get("cell"),
@@ -184,7 +241,7 @@ def extract_netlist(layout):
             "a": net(d["a"]), "b": net(d["b"]),
         })
     for f in fets:
-        r = owner(f["mid"]) or {}
+        r = resolve(f)
         out_devices.append({
             "kind": f["kind"], "open": f["open"] or r.get("open", False),
             "instance": r.get("instance"), "cell": r.get("cell"),
@@ -196,7 +253,7 @@ def extract_netlist(layout):
     local_grounds = sorted(set(net(g["at"]) for g in grounds if not g["global"]))
     return {"nets": net_names, "devices": out_devices,
             "global_ground_nets": global_grounds, "local_ground_nets": local_grounds,
-            "name_conflicts": name_conflicts,
+            "name_conflicts": name_conflicts, "assoc_conflicts": assoc_conflicts,
             "n_points": len(pts), "n_wires": len(wires)}
 
 

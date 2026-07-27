@@ -52,7 +52,10 @@ arm 스팬 = 가로 0.9 / 세로 1.35 — 꺾임(분기)이 diode 몸체 가까�
 ## R5. 심볼 크기
 
 `symbol_scale: 0.64` — resistor/diode/zener/sourcei/ground/pfet/nfet 몸체만 축소.
-endpoints 스팬·anchor 접점은 불변(연결 유지). 접점 dot·port open-dot 크기는 스케일 제외.
+2단자 소자의 endpoints 스팬(from/to)은 불변(연결 유지). 접점 dot·port open-dot
+크기는 스케일 제외. **예외 — FET pin은 scale 종속**: drain(배치 기준점)만 고정이고
+source/gate 위치는 drain 기준 offset × scale (fet_anchors가 원천, R15).
+gate tie 접속은 추출기가 tie 접점을 등록점으로 모델링하므로 scale과 무관하게 유지.
 
 **선 굵기**: `lw: 1.0` (schemdraw 기본 2의 **1/2**) — 배선·심볼·상자 등 모든 스트로크 공통.
 두 canvas(본 회로·라이브러리) 동일 적용.
@@ -211,14 +214,29 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 
 ## R15. 회로도 → 행렬 자동 변환 (netlist 추출)
 
-**회로도가 netlist의 유일한 원천이다.** server/netlist.py:
+**회로도가 netlist의 유일한 원천이다.** server/netlist.py (이슈 #9 P0 반영, 2026-07-27):
 - 연결 규칙: 배선은 축정렬 세그먼트, **등록점**(배선·소자 endpoints, dot, ground, FET anchor)이
   세그먼트 위에 있으면 그 net에 합류. 등록점 없는 교차는 미연결(표준 규약).
-- 소자↔instance 결합: 소자 중점이 들어 있는 instance 상자(cell/model/params)로 귀속.
-- open(회색) 소자·전류원은 G에 미조립. 시나리오는 (inject net, ground net, I)로 지정.
+- **net 이름 원천 = layout 선언** (P0-4): `nodes` dict(이름→xy) + port element의 `"net"` 키.
+  좌표 하드코딩 금지. 같은 net에 이름 2개면 `name_conflicts` 보고, 저장 시 422 거부.
+- **소자↔instance 귀속 = 명시 `instance_id`가 권위** (P0-6): 소자 element의
+  `"instance_id"`가 instance rect의 `instance` 이름을 참조. 기하(중점-in-상자)는
+  교차 검증 — 불일치·미정의·상자밖·instance 중복 정의는 `assoc_conflicts` 보고,
+  저장 시 422 거부. instance_id 없는 소자만 기하 귀속 fallback(library cell 등).
+- **FET pin 기하 = schematic.fet_anchors 공용** (P0-5): 렌더러와 추출기가 같은
+  schemdraw 배치(_fet_element — theta 무조건 명시로 도면 방향 상속 차단)에서 anchor를
+  읽는다(rot/flip/symbol_scale 조합 무관, offset 캐시). netlist에 FET 좌표 상수를
+  두지 않는다. gates tie 접점도 추출기가 (gate.x, tie_y) 등록점으로 모델링.
+  instance 중복 정의는 첫 정의 우선 + assoc_conflicts 보고.
+- **open 판정 = `"enabled": false`** (P0-3, 소자·instance rect 양쪽): G에 미조립.
+  색상(#b0b6bf)은 표시 전용. **reference = scenario.ground + `"global": true` ground만**
+  (P0-2): cell 내부 local ground는 return 단자로 미지수에 남는다. inject==ground,
+  inject∈reference는 422.
 - model equation은 임의 placeholder(2026-07-27 사용자 허용): softplus diode(Von 0.7),
   양방향 clamp(트리거 4V), 선형 R(params.R 또는 rdd(L)), FET=접합 diode(bulk=source).
   크기 파라미터(x1/x2) 미반영 — 실측 모델로 교체 예정.
-- API: GET /api/schematic/matrix?inject=IO&ground=VSS&i=1.33 (circuit 화면 §3.5).
-- 검증: tests/test_netlist.py — net 소속 전수 15건 + KCL/직렬 보존/대칭/수렴 9건.
+- API: GET /api/schematic/matrix?inject=IO&ground=VSS&i=1.33 (circuit 화면 §3.5),
+  POST /api/schematic/matrix/preview (저장 전 layout 해석).
+- 검증: tests/test_netlist.py — net 소속 전수 + P0 semantics(ground/enabled/이름/귀속/
+  rot×flip anchor 회귀) + KCL/직렬 보존/대칭/수렴 53건.
   레이아웃 수정 시 이 테스트가 topology 변화를 잡는다.

@@ -586,6 +586,7 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
             "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],
             "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
             "name_conflicts": nl["name_conflicts"],
+            "assoc_conflicts": nl["assoc_conflicts"],
             "solution": sol}
 
 
@@ -604,7 +605,8 @@ async def schematic_matrix_preview(request: Request, inject: str = "IO", ground:
     return {"nets": sorted(names.values()), "n_nets": len(names),
             "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],
             "local_ground_nets": [names[g] for g in nl["local_ground_nets"]],
-            "name_conflicts": nl["name_conflicts"], "solution": sol}
+            "name_conflicts": nl["name_conflicts"],
+            "assoc_conflicts": nl["assoc_conflicts"], "solution": sol}
 
 
 @app.get(PREFIX + "/api/schematic/mapping")
@@ -637,6 +639,9 @@ async def schematic_layout_save(request: Request):
         return PlainTextResponse("netlist 추출 실패: {}".format(ex), status_code=422)
     if nl["name_conflicts"]:
         return PlainTextResponse("net 이름 충돌: {}".format("; ".join(nl["name_conflicts"])),
+                                 status_code=422)
+    if nl["assoc_conflicts"]:
+        return PlainTextResponse("instance 귀속 충돌: {}".format("; ".join(nl["assoc_conflicts"])),
                                  status_code=422)
     SCH.save_layout(layout)
     return {"ok": True, "n_nets": len(nl["nets"])}
