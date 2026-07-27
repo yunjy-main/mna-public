@@ -183,9 +183,9 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 좌변과 정확히 정렬(x=xa), 안쪽 model/equation은 +0.03만.
 세로: **바깥(instance) 라벨은 외곽선과 겹치지 않게 띄운다** — 상변+0.24/하변−0.30
 (descender/cap 포함 클리어, 하단도 외곽선에 붙임). **안쪽(model/equation) 라벨은
-외곽선에 최대 밀착** — 첫 줄 상변−0.14(글자 상단이 선 0.01 아래), 좌 +0.01, 하단 슬롯 +0.12
-(하단은 descender(밑줄)가 선 아래로 침범하지 않는 최소값).
-**model↔equation 줄간격 = 글자높이+0.05** (baseline pitch 0.23).
+외곽선에 최대 밀착** — 첫 줄 baseline 상변−0.01(사용자 렌더 기준 확정), 좌 +0.01,
+하단 슬롯 +0.12(descender가 선 아래로 침범하지 않는 최소값).
+**model↔equation baseline pitch 0.18** (사용자 확정).
 (schemdraw .label()의 자체 x오프셋 +0.10은 렌더러가 앵커에서 상쇄.)
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
 라이브러리 canvas의 cell type 이름은 `title` 키 — instance와 같은 자리(밖 좌상단)에 그린다.
