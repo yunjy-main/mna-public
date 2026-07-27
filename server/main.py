@@ -69,9 +69,10 @@ VICTIM = {"ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0,
 NAMED_SPEC_KV = 1.0  # the named ESD spec level (1 kV <-> 1.33 A)
 
 
-def _victim_soa(v_out, vdd_local):
+def _victim_soa(v_out, vdd_local, vss_local=0.0):
     return VS.inverter_victim(v_out, vdd_local, v_out,  # gate = OUT (diode-connected)
-                              VICTIM["nmos"], VICTIM["pmos"], VICTIM["topology"])
+                              VICTIM["nmos"], VICTIM["pmos"], VICTIM["topology"],
+                              vss_local=vss_local)
 
 def _page(name):
     """Serve a frontend page with no-store so UI updates are never cache-stale."""
@@ -130,11 +131,13 @@ def _GofI(br, i):
 
 
 def _victim_probe_at(c1, c2, i):
-    """Inverter victim probe on the solved series path: (v_out, i_v, vdd_local)."""
+    """Inverter victim probe on the solved series path: (v_out, i_v, n3_abs, vssr)."""
+    vssr = i * M.RVSS_RDL
     vc = M.VofI(c2["pos"], i)
-    vio = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
-    vo, iv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
-    return vo, iv, vc
+    n3 = vc + vssr
+    vio = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
+    vo, iv = M.victim_probe(vio, n3, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+    return vo, iv, n3, vssr
 
 
 def _victim_cross(c1, c2, _unused=None):
@@ -142,8 +145,8 @@ def _victim_cross(c1, c2, _unused=None):
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
 
     def ok(i):
-        vo, iv, vc = _victim_probe_at(c1, c2, i)
-        return _victim_soa(vo, vc)["u"] < 1.0 and iv <= VICTIM["ifail"]
+        vo, iv, n3, vssr = _victim_probe_at(c1, c2, i)
+        return _victim_soa(vo, n3, vssr)["u"] < 1.0 and iv <= VICTIM["ifail"]
     if ok(ifail):
         return None, ifail
     lo, hi = 0.0, ifail
@@ -226,13 +229,15 @@ def models(x1: float = 2.56, x2: float = 1415.232):
         Is = [ifail * 0.999 * i / 59.0 for i in range(60)]
         vios, vnds_l, iv_l, u_l = [], [], [], []
         for i in Is:
+            vssr = i * M.RVSS_RDL
             vc = M.VofI(c2["pos"], i)
-            vio_i = i * (M.RIO + M.RVDD) + M.VofI(c1["pos"], i) + vc
-            vo, iv = M.victim_probe(vio_i, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+            n3 = vc + vssr
+            vio_i = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
+            vo, iv = M.victim_probe(vio_i, n3, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
             vios.append(vio_i)
             vnds_l.append(vo)
             iv_l.append(iv)
-            u_l.append(_victim_soa(vo, vc)["u"])
+            u_l.append(_victim_soa(vo, n3, vssr)["u"])
         icross = None
         for a, b in zip(range(59), range(1, 60)):
             if (u_l[a] - 1.0) * (u_l[b] - 1.0) <= 0 and u_l[a] != u_l[b]:
@@ -261,10 +266,12 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
     op = None
     if 0 <= i <= ifail:
         v1, v2 = M.VofI(c1["pos"], i), M.VofI(c2["pos"], i)
-        vio_v = i * (M.RIO + M.RVDD) + v1 + v2
-        vout, iv = M.victim_probe(vio_v, v2, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        vssr = i * M.RVSS_RDL
+        vio_v = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + v1 + v2
+        n3_abs = v2 + vssr
+        vout, iv = M.victim_probe(vio_v, n3_abs, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
         gD, gC = _GofI(c1["pos"], i), _GofI(c2["pos"], i)
-        gRio, gRvdd = 1 / M.RIO, 1 / M.RVDD
+        gRio, gRvdd = 1 / M.RIO_RDL, 1 / M.RVDD
         gRe = 1.0 / VICTIM["resd"]
         gJ = (1.0 / VICTIM["ronj"]) if iv > 0 else 0.0  # PMOS drain junction (on/off)
         matrix = [
@@ -275,7 +282,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             [-gRe, 0, 0, -gJ, gRe + gJ],
         ]
         op = {"i": i, "v_diode": v1, "v_clamp": v2, "v_io": vio_v,
-              "v_out": vout, "i_victim": iv,
+              "v_out": vout, "i_victim": iv, "v_vssr": vssr,
               "gD": gD, "gC": gC, "gRio": gRio, "gRvdd": gRvdd,
               "gResd": gRe, "gJ": gJ,
               "matrix": matrix, "b": [i, 0, 0, 0, 0]}
@@ -309,7 +316,9 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
         ],
         "branches": [
             {"name": "I_ESD", "type": "source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
-            {"name": "Rio", "type": "device — R (metal)", "nodes": "IO–N1", "param": "0.1Ω (≈70µm)"},
+            {"name": "Rio_rdl", "type": "device — R (RDL)", "nodes": "IO port–N1", "param": "0.1Ω"},
+            {"name": "Rvdd_rdl", "type": "device — R (RDL)", "nodes": "VDD port–N2", "param": "0.1Ω (양(+) 스트레스 무전류)"},
+            {"name": "Rvss_rdl", "type": "device — R (RDL)", "nodes": "VSS rail–VSS port", "param": "0.1Ω (리턴 경로)"},
             {"name": "D_up", "type": "device — diode (model1)", "nodes": "N1→N2", "param": "x1={}".format(x1)},
             {"name": "D_down", "type": "device — diode (model1 미러, D2)", "nodes": "VSS→N1", "param": "x1 미러 — 음(−) 스트레스 경로"},
             {"name": "Rvdd", "type": "device — R (metal)", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), L 변수(D7)"},
@@ -381,8 +390,8 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
                                           "note": "I > It2 (경로 파괴, Ifail={:.3f}A)".format(ifail)}
             else:
                 v = M.series_vio(c1, c2, i)
-                vnds, iv, vc_loc = _victim_probe_at(c1, c2, i)
-                soa = _victim_soa(vnds, vc_loc)
+                vnds, iv, n3_loc, vssr_loc = _victim_probe_at(c1, c2, i)
+                soa = _victim_soa(vnds, n3_loc, vssr_loc)
                 ok = soa["u"] < 1.0 and iv <= VICTIM["ifail"]
                 row["corners"][corner] = {"status": "PASS" if ok else "FAIL_VICTIM", "vio": v,
                                           "vnds": vnds, "iv": iv,
@@ -466,13 +475,15 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
     if 0 < i <= ifail:
         rvdd = 0.5 * L / 350.0
+        vssr = i * M.RVSS_RDL
         vd = M.VofI(c1["pos"], i)
         vc = M.VofI(c2["pos"], i)
-        vio = i * (M.RIO + rvdd) + vd + vc
-        vout, ivv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
-        n2v = vc + i * rvdd
-        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": vc, "OUT": vout,
-              "i": i, "iv": ivv}
+        n3v = vc + vssr
+        n2v = n3v + i * rvdd
+        vio = n2v + vd + i * M.RIO_RDL
+        vout, ivv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "OUT": vout,
+              "VSSR": vssr, "i": i, "iv": ivv}
     from server.schematic import build_svg
     return Response(build_svg(x1, x2, L, op), media_type="image/svg+xml",
                     headers={"Cache-Control": "no-store"})
@@ -490,21 +501,25 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
     rvdd = 0.5 * L / 350.0
-    out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "OUT": [], "IV": []}
+    out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "OUT": [],
+           "VSSR": [], "IV": []}
     n = max(2, min(401, int(n)))
     for k in range(n):
         i = ifail * k / (n - 1.0)
+        vssr = i * M.RVSS_RDL
         vd = M.VofI(c1["pos"], i) if i > 0 else 0.0
         vc = M.VofI(c2["pos"], i) if i > 0 else 0.0
-        n2v = vc + i * rvdd
-        vio = n2v + vd + i * M.RIO
-        vout, iv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        n3v = vc + vssr
+        n2v = n3v + i * rvdd
+        vio = n2v + vd + i * M.RIO_RDL
+        vout, iv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
         out["I"].append(i)
         out["IO"].append(vio)
         out["N1"].append(n2v + vd)
         out["N2"].append(n2v)
-        out["N3"].append(vc)
+        out["N3"].append(n3v)
         out["OUT"].append(vout)
+        out["VSSR"].append(vssr)
         out["IV"].append(iv)
     return out
 
@@ -548,12 +563,14 @@ async def schematic_preview(request: Request, x1: float = 2.56, x2: float = 1415
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     if 0 < i <= min(c1["e"]["ip"], c2["e"]["ip"]):
         rvdd = 0.5 * L / 350.0
+        vssr = i * M.RVSS_RDL
         vd = M.VofI(c1["pos"], i)
         vc = M.VofI(c2["pos"], i)
-        vio = i * (M.RIO + rvdd) + vd + vc
-        vout, ivv = M.victim_probe(vio, vc, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
-        n2v = vc + i * rvdd
-        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": vc, "OUT": vout, "i": i, "iv": ivv}
+        n3v = vc + vssr
+        n2v = n3v + i * rvdd
+        vio = n2v + vd + i * M.RIO_RDL
+        vout, ivv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
+        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "OUT": vout, "VSSR": vssr, "i": i, "iv": ivv}
     try:
         svg = SCH.build_svg(x1, x2, L, op, layout)
     except Exception as ex:

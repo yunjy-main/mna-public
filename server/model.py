@@ -169,12 +169,16 @@ def VofI(br, i):
     return V[lo] + f * (V[hi] - V[lo])
 
 
-# --- series path (user-fixed reference topology: IO -> Rio -> diode -> Rvdd -> clamp -> VSS)
-RIO, RVDD = 0.1, 0.5
+# --- series path: IO port -Rio_rdl-> diode tap -D_up-> rail -Rvdd-> clamp -> VSS rail
+#     -Rvss_rdl-> VSS port (RDL 3종 — 사용자 지시 2026-07-21; Rvdd_rdl은 VDD port 분기라
+#     양(+) IO->VSS 스트레스에서는 무전류, 향후 PAD->VDD/VDD->VSS 케이스용)
+RIO_RDL, RVDD_RDL, RVSS_RDL = 0.1, 0.1, 0.1
+RIO = RIO_RDL  # 하위 호환 별칭
+RVDD = 0.5
 
 
-def series_vio(c1, c2, I, rio=RIO, rvdd=RVDD):
-    return I * (rio + rvdd) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
+def series_vio(c1, c2, I, rio=RIO_RDL, rvdd=RVDD, rvss=RVSS_RDL):
+    return I * (rio + rvdd + rvss) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
 
 
 # --- victim probe: PMOS+NMOS inverter, drain node OUT reached from IO via Resd.

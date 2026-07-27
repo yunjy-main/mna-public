@@ -87,8 +87,8 @@ function VofI(br, i) {
   return V[lo] + f * (V[hi] - V[lo]);
 }
 
-const RIO = 0.1, RVDD = 0.5;
-function vio(c1, c2, I) { return I * (RIO + RVDD) + VofI(c1.pos, I) + VofI(c2.pos, I); }
+const RIO = 0.1, RVDD = 0.5, RVSS = 0.1; // Rio_rdl / Rvdd(rail) / Rvss_rdl
+function vio(c1, c2, I) { return I * (RIO + RVDD + RVSS) + VofI(c1.pos, I) + VofI(c2.pos, I); }
 
 // ---------------- golden value computation ----------------
 function computeAll() {
@@ -140,7 +140,7 @@ function computeAll() {
     const c1 = calib(D1, 2.56, 'worst'), c2 = calib(D2, 1415.232, 'worst');
     add('neg/It2-/diode/x=2.56/worst', c1.e.inn, 1e-9, 'rel');
     const I = c1.e.inn * 0.999;
-    add('neg/VIO/ref/0.999It2-', I * (RIO + RVDD) + VofI(c1.neg, I) + VofI(c2.neg, I), 1e-6, 'abs');
+    add('neg/VIO/ref/0.999It2-', I * (RIO + RVDD + RVSS) + VofI(c1.neg, I) + VofI(c2.neg, I), 1e-6, 'abs');
   }
   // 8) structural invariants
   {

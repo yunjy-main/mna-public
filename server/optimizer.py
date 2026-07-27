@@ -40,7 +40,7 @@ DEFAULTS = {
     "vRonJ": 10.0, "bILim": 0.01, "vTopo": "1stk_1rx",
     # rules (asymmetric: min = harsh, max = quasi(cap-driven))
     "x1min": 0.64, "x1max": 3.84, "x2min": 1415.232, "x2max": 2628.288,
-    "lmin": 70.0, "lmax": 1400.0, "rio": 0.1,
+    "lmin": 70.0, "lmax": 1400.0, "rio": 0.1, "rvddRdl": 0.1, "rvssRdl": 0.1,
     # initial condition
     "x1init": 2.56, "x2init": 1415.232, "linit": 350.0,
     # cost weights (normalized by max rule)
@@ -62,19 +62,21 @@ def rvdd_of(L):
 
 def evaluate(tbl, p, I, x1, x2, L, it):
     rvdd = rvdd_of(L)
+    vssr = I * p["rvssRdl"]  # VSS rail 전위 (Rvss_rdl 리턴 경로, ref=VSS port)
     vio_c, vd_c, vc_c = {}, {}, {}
     for corner in ("worst", "best"):
         vd = tbl.vofi("diode", corner, x1, I) if I > 0 else 0.0
         vc = tbl.vofi("clamp", corner, x2, I) if I > 0 else 0.0
         vd_c[corner], vc_c[corner] = vd, vc
-        vio_c[corner] = I * (p["rio"] + rvdd) + vd + vc
+        vio_c[corner] = I * (p["rio"] + rvdd + p["rvssRdl"]) + vd + vc
     vio = max(vio_c.values())  # per-metric pessimistic (D3; corner inversion)
     # victim probe + SOA (inverter drain via Resd; SG NFET/PFET, user-set topology)
     vnds, iv, soa = 0.0, 0.0, None
     for corner in ("worst", "best"):
-        vo, ivc = M.victim_probe(vio_c[corner], vc_c[corner], p["resd"], p["vVon"], p["vRonJ"])
+        n3 = vc_c[corner] + vssr  # clamp top 절대 전위
+        vo, ivc = M.victim_probe(vio_c[corner], n3, p["resd"], p["vVon"], p["vRonJ"])
         # gate = OUT (diode-connected — 사용자 지시: Resd 우측 node를 gate에도 연결)
-        s = VS.inverter_victim(vo, vc_c[corner], vo, topology=p["vTopo"])
+        s = VS.inverter_victim(vo, n3, vo, topology=p["vTopo"], vss_local=vssr)
         if soa is None or s["u"] > soa["u"]:
             soa = s
         vnds, iv = max(vnds, vo), max(iv, ivc)
@@ -194,11 +196,13 @@ def ipass_of(tbl, p, x1, x2, L):
     rvdd = rvdd_of(L)
 
     def victim_ok(i):
+        vssr = i * p["rvssRdl"]
         for c in ("worst", "best"):
             vc = tbl.vofi("clamp", c, x2, i)
-            vio = i * (p["rio"] + rvdd) + tbl.vofi("diode", c, x1, i) + vc
-            vo, iv = M.victim_probe(vio, vc, p["resd"], p["vVon"], p["vRonJ"])
-            s = VS.inverter_victim(vo, vc, vo, topology=p["vTopo"])
+            vio = i * (p["rio"] + rvdd + p["rvssRdl"]) + tbl.vofi("diode", c, x1, i) + vc
+            n3 = vc + vssr
+            vo, iv = M.victim_probe(vio, n3, p["resd"], p["vVon"], p["vRonJ"])
+            s = VS.inverter_victim(vo, n3, vo, topology=p["vTopo"], vss_local=vssr)
             if s["u"] >= 1.0 or iv > p["bILim"]:
                 return False
         return True

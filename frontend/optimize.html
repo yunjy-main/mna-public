@@ -86,7 +86,9 @@
     <details><summary>모델 임시값 override — 자산 미확정/회로 상수 (기본값 = 서버 자산과 동일, 확정 시 모델로 이관)</summary>
       <div class="hint" style="margin-top:4px">회로 상수 (사용자 확정 topology — circuit 화면 참조)</div>
       <div class="in">
-        <div><label>Rio (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
+        <div><label>Rio_rdl (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
+        <div><label>Rvdd_rdl (Ω, VDD port)</label><input id="rvddRdl" type="number" step="any" value="0.1"></div>
+        <div><label>Rvss_rdl (Ω, VSS 리턴)</label><input id="rvssRdl" type="number" step="any" value="0.1"></div>
         <div><label>Resd (Ω)</label><input id="resd" type="number" step="any" value="500"></div>
       </div>
       <div class="hint" style="margin-top:4px">victim 모델 파라미터 (측정 자산 미확정분)</div>
@@ -210,7 +212,7 @@ victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topol
 const CB={blue:MNA.C.s[0],orange:MNA.C.worst2,green:MNA.C.s[1],purple:MNA.C.s[2],sky:MNA.C.best2,gray:MNA.C.gray,red:MNA.C.fail,gold:MNA.C.gold};
 let DATA=null;
 
-const P=['x1init','x2init','linit','rio','imax','warmStart','vTopo','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
+const P=['x1init','x2init','linit','rio','rvddRdl','rvssRdl','imax','warmStart','vTopo','resd','vVon','vRonJ','bILim','x1min','x1max','x2min','x2max','lmin','lmax','wA','wC','wL','muSOA','muRule','lr','iters','logEvery','npts','rVLim','iEM','pJoule','resLim','capK1','capLim1','leakK1','leakLim1','capK2','capLim2','leakK2','leakLim2'];
 const f=MNA.f, pct=MNA.pct;
 const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
@@ -223,7 +225,8 @@ function updateEquations(){
 `V_d   = V_diode(I; x1)        · model1 측정 보정(β), worst/best corner
 V_c   = V_clamp(I; x2)        · model2 측정 보정(scale)
 Rvdd  = 0.5Ω · L/350µm        · R device (L 변수, W 고정)
-V_IO  = I·(Rio + Rvdd) + V_d + V_c
+V_N3  = V_c + I·Rvss_rdl       · clamp 하단 = VSS 리턴 RDL 전위
+V_IO  = I·(Rio_rdl + Rvdd + Rvss_rdl) + V_d + V_c
 
 victim (inverter, IO ─Resd→ OUT, gate=OUT diode-connected):
 V(OUT) = (Rj·V_IO + Resd·(V_N3 + Von)) / (Rj + Resd)   · PMOS 접합 도통 시
@@ -274,7 +277,7 @@ function loadSchematic(){
       document.getElementById('schem0').innerHTML=svg;
       // 주석 text 요소 스캔 (tspan 유지로 위치 보존)
       ANN={};
-      const pats={IO:/^IO /,N2:/^N2 /,N3:/^N3 /,OUT:/^OUT /,i:/^I=/,iv:/^I_v=/};
+      const pats={IO:/^IO /,N2:/^N2 /,N3:/^N3 /,OUT:/^OUT /,VSSR:/^VSSR /,i:/^I=/,iv:/^I_v=/};
       [...document.querySelectorAll('#schem0 text')].forEach(t=>{
         const c=t.textContent;
         for(const k in pats) if(pats[k].test(c)) ANN[k]=t.querySelector('tspan')||t;
@@ -290,7 +293,7 @@ function updateSchemAnn(I){
   const t=SCHEM_TBL,n=t.I.length;
   const set=(k,txt)=>{if(ANN[k])ANN[k].textContent=txt;};
   if(I>t.ifail+1e-9){ // 경로 파괴 영역: 소자 It2 초과
-    ['IO','N2','N3','OUT'].forEach(k=>set(k,k+' —'));
+    ['IO','N2','N3','OUT','VSSR'].forEach(k=>set(k,k+' —'));
     set('i','I='+(+I).toFixed(2)+'A (>Ifail)');set('iv','I_v=—');
     return;
   }
@@ -300,6 +303,7 @@ function updateSchemAnn(I){
   set('N2','N2 '+ip(t.N2).toFixed(2)+'V');
   set('N3','N3 '+ip(t.N3).toFixed(2)+'V');
   set('OUT','OUT '+ip(t.OUT).toFixed(2)+'V');
+  if(t.VSSR) set('VSSR','VSSR '+ip(t.VSSR).toFixed(2)+'V');
   set('i','I='+(+I).toFixed(2)+'A');
   set('iv','I_v='+(1000*ip(t.IV)).toFixed(2)+'mA');
 }

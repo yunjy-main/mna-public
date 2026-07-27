@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from server.model import (  # noqa: E402
-    N, D1, D2, RIO, RVDD, branch, calib, corr, series_vio, sv, VofI,
+    N, D1, D2, RIO, RVDD, RVSS_RDL, branch, calib, corr, series_vio, sv, VofI,
 )
 
 
@@ -68,7 +68,7 @@ def compute_all():
     c1, c2 = calib(D1, 2.56, "worst"), calib(D2, 1415.232, "worst")
     add("neg/It2-/diode/x=2.56/worst", c1["e"]["inn"], 1e-9, "rel")
     I = c1["e"]["inn"] * 0.999
-    add("neg/VIO/ref/0.999It2-", I * (RIO + RVDD) + VofI(c1["neg"], I) + VofI(c2["neg"], I), 1e-6, "abs")
+    add("neg/VIO/ref/0.999It2-", I * (RIO + RVDD + RVSS_RDL) + VofI(c1["neg"], I) + VofI(c2["neg"], I), 1e-6, "abs")
 
     all_g = c1["pos"]["G"] + c1["neg"]["G"] + c2["pos"]["G"] + c2["neg"]["G"]
     add("invariant/allG_positive", 1 if all(v > 0 for v in all_g) else 0, 0, "exact")

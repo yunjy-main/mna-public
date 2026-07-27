@@ -47,14 +47,15 @@ def eval_fet(dev_class, topology, vds_stack, vg, vs, vd, vb):
 
 
 def inverter_victim(v_out, vdd_local, vg=0.0,
-                    nmos="SG_NFET", pmos="SG_PFET", topology="1stk_1rx"):
+                    nmos="SG_NFET", pmos="SG_PFET", topology="1stk_1rx",
+                    vss_local=0.0):
     """Apply the victim SOA to the inverter (common drain OUT, IO -Resd-> OUT).
 
-    ESD condition (unpowered): shared input gate at vg (default 0 = VSS),
-    NMOS S=B=VSS(0), PMOS S=B=VDD_local. Terminal stress: NMOS VDS = V_OUT,
-    PMOS VDS = V_OUT - VDD_local.
+    ESD condition (unpowered): shared input gate at vg, NMOS S=B=VSS_local
+    (Rvss_rdl로 인해 0이 아닐 수 있음), PMOS S=B=VDD_local.
+    Terminal stress: NMOS VDS = V_OUT - VSS_local, PMOS VDS = V_OUT - VDD_local.
     """
-    n = eval_fet(nmos, topology, v_out, vg, 0.0, v_out, 0.0)
+    n = eval_fet(nmos, topology, v_out - vss_local, vg, vss_local, v_out, vss_local)
     p = eval_fet(pmos, topology, v_out - vdd_local, vg, vdd_local, v_out, vdd_local)
     checks = [
         ("NMOS terminal", n["u_term"]), ("NMOS ox inv", n["u_inv"]), ("NMOS ox acc", n["u_acc"]),
