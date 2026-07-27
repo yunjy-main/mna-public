@@ -32,6 +32,17 @@
     <h2>1. 회로도 (schemdraw, 동작점 주석 포함)</h2>
     <div id="schem" style="max-width:880px"></div>
     <div class="cap">파란 주석 = node 전압, 청록 = 전류. 교차선은 접점(dot) 없으면 미연결. R 계열(Rio/Rvdd/Resd)도 device.</div>
+    <details>
+      <summary>회로도 레이아웃 편집 (JSON) <span class="hint" id="layoutState"></span></summary>
+      <textarea id="layoutTxt" style="width:100%;height:230px;font:11px Consolas,monospace;margin-top:4px"></textarea>
+      <div style="margin-top:4px;display:flex;gap:6px;align-items:center">
+        <button id="prevBtn">미리보기</button>
+        <button id="saveBtn">저장</button>
+        <button id="resetBtn">기본값 복원</button>
+        <span class="hint">nodes(좌표 xy·라벨 ofst)와 elements(line·dot·ground·sourcei·resistor·diode·zener·label·pfet·nfet·gates) 편집. 좌표는 [x,y] 또는 node 이름. 라벨에 {x1} {x2} {L} {rvdd} 치환 가능.</span>
+      </div>
+      <div class="err" id="layoutErr"></div>
+    </details>
   </div>
 
   <div class="card">
@@ -87,6 +98,39 @@ function load(){
 }
 document.getElementById('loadBtn').addEventListener('click', load);
 load();
+
+// ---- 레이아웃 편집 ----
+function qs(){return 'x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
+  +'&i='+encodeURIComponent(iop.value)+'&L='+encodeURIComponent(lop.value)+'&corner='+corner.value;}
+function loadLayout(){
+  fetch('api/schematic/layout').then(r=>r.json()).then(d=>{
+    document.getElementById('layoutTxt').value=JSON.stringify(d.layout,null,1);
+    document.getElementById('layoutState').textContent=d.custom?'(사용자 수정본 사용 중)':'(기본값)';
+  });
+}
+function layoutBody(){
+  const err=document.getElementById('layoutErr'); err.textContent='';
+  try{return JSON.parse(document.getElementById('layoutTxt').value);}
+  catch(e){err.textContent='JSON 파싱 오류: '+e.message; return null;}
+}
+document.getElementById('prevBtn').addEventListener('click',()=>{
+  const b=layoutBody(); if(!b) return;
+  fetch('api/schematic/preview?'+qs(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
+    .then(svg=>{document.getElementById('schem').innerHTML=svg;})
+    .catch(e=>{document.getElementById('layoutErr').textContent=String(e.message||e);});
+});
+document.getElementById('saveBtn').addEventListener('click',()=>{
+  const b=layoutBody(); if(!b) return;
+  fetch('api/schematic/layout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
+    .then(()=>{loadLayout(); load();})
+    .catch(e=>{document.getElementById('layoutErr').textContent=String(e.message||e);});
+});
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  fetch('api/schematic/layout',{method:'DELETE'}).then(()=>{loadLayout(); load();});
+});
+loadLayout();
 </script>
 </body>
 </html>
