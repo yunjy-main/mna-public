@@ -49,11 +49,13 @@ def meta():
 @app.get(PREFIX + "/api/regression")
 def regression():
     outputs, code = [], 0
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")  # 콘솔 cp949에서 테스트 출력 인코딩 고정
     for script in ("regression.py", "founding_benchmarks.py", "test_calibtable.py",
                    "test_victim_probe.py", "test_victim_soa.py", "test_netlist.py"):
         p = subprocess.run(
             [sys.executable, os.path.join(ROOT, "tests", script)],
-            capture_output=True, text=True, cwd=ROOT, timeout=300,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=ROOT, timeout=300, env=env,
         )
         outputs.append("[{}] {}".format(script, (p.stdout + p.stderr).strip()))
         code = code or p.returncode

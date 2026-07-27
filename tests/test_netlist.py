@@ -417,5 +417,5 @@ if fails:
     for f in fails:
         print("  -", f)
     sys.exit(1)
-print("PASS: schematic→netlist→MNA ({}건 — net 추출·P0 semantics·검증 발견 회귀·해석)"
+print("PASS: schematic→netlist→MNA ({}건: net 추출·P0 semantics·검증 발견 회귀·해석·실측 연계)"
       .format(n_checks[0]))
