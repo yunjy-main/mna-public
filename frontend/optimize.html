@@ -48,29 +48,23 @@
       <a href="spec">ESD Spec</a> <a href="meta">Meta/개체</a>
       <a href="ref/docs/victim_soa_model.html">victim SOA 문서</a> <a href="hub">전체 화면 목록</a>
     </div>
-    <h3>설계 초기조건 / 스트레스</h3>
+    <h3>설계 초기조건 / 스트레스 / 시나리오</h3>
     <div class="in">
       <div><label>초기 x1 (diode)</label><input id="x1init" type="number" step="any" value="2.56"></div>
       <div><label>초기 x2 (clamp)</label><input id="x2init" type="number" step="any" value="1415.232"></div>
       <div><label>초기 L (µm, Rvdd)</label><input id="linit" type="number" step="any" value="350"></div>
-      <div><label>Rio (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
       <div><label>sweep Imax (A)</label><input id="imax" type="number" step="any" value="2.0"></div>
-      <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
-    </div>
-    <h3>SOA / Rule (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
-    <div class="in">
-      <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
       <div><label>victim gate V_IN (V)</label><input id="vgIn" type="number" step="any" value="0.0"></div>
-      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.01"></div>
+      <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
+    </div>
+    <h3>Rule 실험 (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
+    <div class="in">
       <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
       <div><label>x1 max (준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
       <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
       <div><label>x2 max (준-rule)</label><input id="x2max" type="number" step="any" value="2628.288"></div>
       <div><label>L min (µm, 공정)</label><input id="lmin" type="number" step="any" value="70"></div>
       <div><label>L max (µm, EM/Joule)</label><input id="lmax" type="number" step="any" value="1400"></div>
-      <div><label>Resd (Ω)</label><input id="resd" type="number" step="any" value="500"></div>
-      <div><label>접합 Von (V)</label><input id="vVon" type="number" step="any" value="0.7"></div>
-      <div><label>접합 Ron (Ω)</label><input id="vRonJ" type="number" step="any" value="10"></div>
     </div>
     <h3>Cost</h3>
     <div class="in">
@@ -78,7 +72,7 @@
       <div><label>wC (x2 area)</label><input id="wC" type="number" step="any" value="1.0"></div>
       <div><label>wL (routing)</label><input id="wL" type="number" step="any" value="0.0"></div>
     </div>
-    <details><summary>수치 최적화 / metal SOA / cap·leak 계수</summary>
+    <details><summary>수치 최적화</summary>
       <div class="in" style="margin-top:6px">
         <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
         <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
@@ -86,10 +80,30 @@
         <div><label>iterations</label><input id="iters" type="number" step="1" value="300"></div>
         <div><label>log every</label><input id="logEvery" type="number" step="1" value="25"></div>
         <div><label>sweep points</label><input id="npts" type="number" step="1" value="41"></div>
-        <div><label>metal Vdrop lim (V)</label><input id="rVLim" type="number" step="any" value="1.0"></div>
-        <div><label>metal EM lim (A)</label><input id="iEM" type="number" step="any" value="4.0"></div>
-        <div><label>metal Joule lim (W)</label><input id="pJoule" type="number" step="any" value="2.0"></div>
+        <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
+      </div>
+    </details>
+    <details><summary>모델 임시값 override — 자산 미확정/회로 상수 (기본값 = 서버 자산과 동일, 확정 시 모델로 이관)</summary>
+      <div class="hint" style="margin-top:4px">회로 상수 (사용자 확정 topology — circuit 화면 참조)</div>
+      <div class="in">
+        <div><label>Rio (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
+        <div><label>Resd (Ω)</label><input id="resd" type="number" step="any" value="500"></div>
+      </div>
+      <div class="hint" style="margin-top:4px">victim 모델 파라미터 (측정 자산 미확정분)</div>
+      <div class="in">
+        <div><label>접합 Von (V)</label><input id="vVon" type="number" step="any" value="0.7"></div>
+        <div><label>접합 Ron (Ω)</label><input id="vRonJ" type="number" step="any" value="10"></div>
+        <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.01"></div>
+      </div>
+      <div class="hint" style="margin-top:4px">metal(R device) SOA 한계</div>
+      <div class="in">
+        <div><label>Vdrop lim (V)</label><input id="rVLim" type="number" step="any" value="1.0"></div>
+        <div><label>EM lim (A)</label><input id="iEM" type="number" step="any" value="4.0"></div>
+        <div><label>Joule lim (W)</label><input id="pJoule" type="number" step="any" value="2.0"></div>
         <div><label>resource lim</label><input id="resLim" type="number" step="any" value="4.0"></div>
+      </div>
+      <div class="hint" style="margin-top:4px">cap / leakage 계수 (디바이스 모델 자산 미확정분)</div>
+      <div class="in">
         <div><label>cap k1</label><input id="capK1" type="number" step="any" value="1.0"></div>
         <div><label>cap lim1</label><input id="capLim1" type="number" step="any" value="8.0"></div>
         <div><label>leak k1</label><input id="leakK1" type="number" step="any" value="0.1"></div>
