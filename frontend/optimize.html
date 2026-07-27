@@ -3,58 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>mna — Optimizer (v4-parity)</title>
+<title>mna — PAD-to-VSS Optimizer (main)</title>
 <link rel="stylesheet" href="static/style.css">
 <script src="static/charts.js"></script>
 <style>
-  /* optimize 전용 */
+  /* optimize 전용 (v4 구조) */
   .kv{font-size:12px;color:var(--muted);white-space:pre-line}
-  .scrub{display:flex;gap:10px;align-items:center;margin:8px 0}
+  .scrub{display:flex;gap:8px;align-items:center;margin:6px 0}
   .scrub input[type=range]{flex:1}
-  .scrub input[type=number]{width:90px}
+  .scrub input[type=number]{width:84px}
   table th,table td{text-align:right;white-space:nowrap}
   td:first-child,th:first-child{text-align:left}
-  .rank .bar{height:8px}
-  .status{font-size:12px;color:var(--muted);margin-left:10px}
+  .rank .bar{height:7px}
+  .status{font-size:12px;color:var(--muted);margin-left:8px}
+  .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  @media(max-width:900px){.metric-grid{grid-template-columns:repeat(2,1fr)}}
+  .metric{border:1px solid var(--line);border-radius:4px;padding:4px 8px;background:#f8fafb}
+  .metric .name{font-size:10px;color:var(--muted)}
+  .metric .value{font:700 12px Consolas,monospace;margin-top:1px}
+  .short{font-size:11px}
+  .short a{margin-right:8px}
 </style>
 </head>
 <body>
 <header data-app="mna-esd-solver">
-  <h1>PAD-to-VSS Optimizer — 측정기반 모델 + Adam sweep (v4 패리티)</h1>
+  <h1>PAD-to-VSS Optimizer</h1><span class="sub">측정기반 모델 + Adam sweep — 원형: pad_to_vss_mna_backprop_interactive.html</span>
   <a href="./">← mna 홈</a>
 </header>
 <main>
+  <!-- ================= 1. 설정값 입력 (v4 입력부 → 새 구현/바로가기 대체) ================= -->
   <div class="card">
-    <h2>1. 입력</h2>
+    <h2>1. 설정값 입력</h2>
+    <div class="short cap" style="margin:0 0 6px">
+      device 모델·SOA는 측정 자산으로 대체됨 — 바로가기:
+      <a href="models">Device/Victim/SOA</a> <a href="circuit">Circuit/MNA</a>
+      <a href="spec">ESD Spec</a> <a href="meta">Meta/개체</a>
+      <a href="ref/docs/victim_soa_model.html">victim SOA 문서</a>
+    </div>
     <h3>설계 초기조건 / 스트레스</h3>
     <div class="in">
       <div><label>초기 x1 (diode)</label><input id="x1init" type="number" step="any" value="2.56"></div>
       <div><label>초기 x2 (clamp)</label><input id="x2init" type="number" step="any" value="1415.232"></div>
       <div><label>초기 L (µm, Rvdd)</label><input id="linit" type="number" step="any" value="350"></div>
-      <div><label>Rio (Ω, 고정)</label><input id="rio" type="number" step="any" value="0.1"></div>
+      <div><label>Rio (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
       <div><label>sweep Imax (A)</label><input id="imax" type="number" step="any" value="2.0"></div>
       <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
     </div>
-    <h3>Victim: PMOS+NMOS inverter (IO ─Resd→ 공통 drain OUT) / Rule (비대칭: min=가혹 FAIL, max=준-rule)</h3>
+    <h3>SOA / Rule (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
     <div class="in">
-      <div><label>victim topology (SG NFET/PFET)</label><select id="vTopo"><option value="1stk_1rx">1stk 1rx</option><option value="2stk_2rx">2stk 2rx</option><option value="2stk_1rx">2stk 1rx</option></select></div>
+      <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
       <div><label>victim gate V_IN (V)</label><input id="vgIn" type="number" step="any" value="0.0"></div>
+      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.01"></div>
+      <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
+      <div><label>x1 max (준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
+      <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
+      <div><label>x2 max (준-rule)</label><input id="x2max" type="number" step="any" value="2628.288"></div>
+      <div><label>L min (µm, 공정)</label><input id="lmin" type="number" step="any" value="70"></div>
+      <div><label>L max (µm, EM/Joule)</label><input id="lmax" type="number" step="any" value="1400"></div>
       <div><label>Resd (Ω)</label><input id="resd" type="number" step="any" value="500"></div>
       <div><label>접합 Von (V)</label><input id="vVon" type="number" step="any" value="0.7"></div>
       <div><label>접합 Ron (Ω)</label><input id="vRonJ" type="number" step="any" value="10"></div>
-      <div><label>victim Ifail (A)</label><input id="bILim" type="number" step="any" value="0.01"></div>
-      <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
-      <div><label>x1 max (cap 준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
-      <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
-      <div><label>x2 max (cap 준-rule)</label><input id="x2max" type="number" step="any" value="2628.288"></div>
-      <div><label>L min (µm, 공정)</label><input id="lmin" type="number" step="any" value="70"></div>
-      <div><label>L max (µm, EM/Joule)</label><input id="lmax" type="number" step="any" value="1400"></div>
-      <div><label>cost wA</label><input id="wA" type="number" step="any" value="1.0"></div>
-      <div><label>cost wC</label><input id="wC" type="number" step="any" value="1.0"></div>
-      <div><label>cost wL</label><input id="wL" type="number" step="any" value="0.0"></div>
+    </div>
+    <h3>Cost</h3>
+    <div class="in">
+      <div><label>wA (x1 area)</label><input id="wA" type="number" step="any" value="1.0"></div>
+      <div><label>wC (x2 area)</label><input id="wC" type="number" step="any" value="1.0"></div>
+      <div><label>wL (routing)</label><input id="wL" type="number" step="any" value="0.0"></div>
     </div>
     <details><summary>수치 최적화 / metal SOA / cap·leak 계수</summary>
-      <div class="in" style="margin-top:8px">
+      <div class="in" style="margin-top:6px">
         <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
         <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
         <div><label>learning rate</label><input id="lr" type="number" step="any" value="0.03"></div>
@@ -65,9 +82,9 @@
         <div><label>metal EM lim (A)</label><input id="iEM" type="number" step="any" value="4.0"></div>
         <div><label>metal Joule lim (W)</label><input id="pJoule" type="number" step="any" value="2.0"></div>
         <div><label>resource lim</label><input id="resLim" type="number" step="any" value="4.0"></div>
-        <div><label>cap k1/lim1</label><input id="capK1" type="number" step="any" value="1.0"></div>
+        <div><label>cap k1</label><input id="capK1" type="number" step="any" value="1.0"></div>
         <div><label>cap lim1</label><input id="capLim1" type="number" step="any" value="8.0"></div>
-        <div><label>leak k1/lim1</label><input id="leakK1" type="number" step="any" value="0.1"></div>
+        <div><label>leak k1</label><input id="leakK1" type="number" step="any" value="0.1"></div>
         <div><label>leak lim1</label><input id="leakLim1" type="number" step="any" value="1.0"></div>
         <div><label>cap k2</label><input id="capK2" type="number" step="any" value="0.002"></div>
         <div><label>cap lim2</label><input id="capLim2" type="number" step="any" value="8.0"></div>
@@ -75,70 +92,80 @@
         <div><label>leak lim2</label><input id="leakLim2" type="number" step="any" value="1.0"></div>
       </div>
     </details>
-    <div style="margin-top:10px">
-      <button id="startBtn">Start — 0→Imax sweep 최적화</button>
+    <div style="margin-top:8px">
+      <button id="startBtn">Precompute 0 → Imax sweep</button>
+      <button id="resetBtn" style="background:#fff;color:var(--c-accent)">Reset</button>
       <span class="status" id="status">Ready.</span>
     </div>
     <div class="err" id="err"></div>
-  </div>
-
-  <div class="card" id="resultCard" hidden>
-    <h2>2. Current scrubber + Summary</h2>
     <div class="scrub">
-      <span class="kv">I =</span>
+      <span class="kv" id="currentScrubLabel">Injected current: 1.30 A</span>
       <input id="islider" type="range" min="0" max="40" step="1" value="26">
       <input id="ival" type="number" step="0.05" value="1.30"> A
     </div>
-    <div class="chips" id="chips"></div>
-    <div class="kv" id="summary"></div>
   </div>
 
-  <div class="card" id="radarCard" hidden>
-    <h2>3. Radar (바깥=위험, 100% 점선 경계, 200% 스케일 · ghost: 0/0.5/1/1.5/2A)</h2>
-    <div class="grid-5">
+  <!-- ================= 2. 시각화 ================= -->
+  <div class="card" id="vizCard" hidden>
+    <h2>2. 시각화</h2>
+
+    <h3>2-1. Subject radar charts (바깥=위험 · 100% 점선 경계 · ghost 0/0.5/1/1.5/2A)</h3>
+    <div class="grid-4">
       <div id="radarInt"></div>
       <div id="radarA"></div>
       <div id="radarB"></div>
       <div id="radarC"></div>
-      <div id="radarR"></div>
     </div>
-  </div>
 
-  <div class="card" id="sweepCard" hidden>
-    <h2>4. 최종 설계값 vs current sweep</h2>
+    <h3>2-2. Precomputed x1(diode) sweep: injected current 0 → Imax</h3>
     <div id="sweepChart"></div>
-  </div>
 
-  <div class="card" id="gaugeCard" hidden>
-    <h2>5. Constraint gauges</h2>
+    <h3>2-3. Final constraint position gauges</h3>
     <div class="grid-3" id="gauges"></div>
-  </div>
 
-  <div class="card" id="rankCard" hidden>
-    <h2>6. Constraint tightness ranking</h2>
+    <h3>2-4. Constraint tightness ranking</h3>
     <div class="rank" id="rank"></div>
-  </div>
 
-  <div class="card" id="mapCard" hidden>
-    <h2>7. V-I SOA maps (궤적 = sweep 최적해)</h2>
+    <h3>2-5. Protection / victim V-I SOA map</h3>
     <div class="grid-3">
       <div id="mapV"></div>
       <div id="mapD"></div>
       <div id="mapC"></div>
     </div>
-  </div>
 
-  <div class="card" id="iterCard" hidden>
-    <h2>8. Iteration plots (선택 전류점)</h2>
+    <h3>2-6. Iteration plots (선택 전류점)</h3>
     <div class="grid-3">
       <div id="itUsage"></div>
       <div id="itVars"></div>
       <div id="itLoss"></div>
     </div>
+
+    <h3>Summary metrics</h3>
+    <div class="chips" id="chips"></div>
+    <div class="metric-grid" id="metrics"></div>
   </div>
 
+  <!-- ================= 3. MNA / loss definition ================= -->
+  <div class="card">
+    <h2>3. MNA / loss definition</h2>
+    <div class="grid-2">
+      <pre id="mnaEq"></pre>
+      <pre id="lossEq"></pre>
+    </div>
+  </div>
+
+  <!-- ================= 4. Table notes ================= -->
+  <div class="card">
+    <h2>4. Table notes</h2>
+    <div class="cap">최신 iteration이 가장 위에 표시됩니다. Radar와 gauge는 최종 iteration 기준입니다.
+x1/x2/L window rule은 projection이 아니라 violation penalty와 hard pass/fail 판정으로 처리됩니다(창립 rule 비대칭: min=가혹 FAIL, max=준-rule).
+position = (값 − min) / (max − min) · SOA usage = stress/limit, 100% = boundary, >100% = fail.
+victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topology 선택형. corner는 worst/best 양쪽 비관값(D3).</div>
+  </div>
+
+  <!-- ================= 5. Iteration table ================= -->
   <div class="card" id="tableCard" hidden>
-    <h2>9. Iteration table (최신이 위)</h2>
+    <h2>5. Iteration table</h2>
     <div class="tw"><table id="itTable"></table></div>
   </div>
 </main>
@@ -151,44 +178,64 @@ const P=['x1init','x2init','linit','rio','imax','warmStart','vTopo','vgIn','resd
 const f=MNA.f, pct=MNA.pct;
 const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
-// ---------- data plumbing ----------
-function collect(){const q={};P.forEach(k=>q[k]=document.getElementById(k).value);return q;}
+function val(id){return document.getElementById(id).value;}
+function collect(){const q={};P.forEach(k=>q[k]=val(k));return q;}
+
+// ---------- 3. MNA / loss definition (v4 updateEquations 대응) ----------
+function updateEquations(){
+  document.getElementById('mnaEq').textContent =
+`V_d   = V_diode(I; x1)        · model1 측정 보정(β), worst/best corner
+V_c   = V_clamp(I; x2)        · model2 측정 보정(scale)
+Rvdd  = 0.5Ω · L/350µm        · R device (L 변수, W 고정)
+V_IO  = I·(Rio + Rvdd) + V_d + V_c
+
+victim (inverter, IO ─Resd→ OUT):
+V(OUT) = (Rj·V_IO + Resd·(V_N3 + Von)) / (Rj + Resd)   · PMOS 접합 도통 시
+I_v    = (V_IO − V(OUT)) / Resd`;
+  document.getElementById('lossEq').textContent =
+`Rules (비대칭):
+x1 ≥ ${val('x1min')} (min=가혹 FAIL) · x1 ≤ ${val('x1max')} (준-rule)
+x2 ≥ ${val('x2min')} · x2 ≤ ${val('x2max')}
+${val('lmin')} ≤ L ≤ ${val('lmax')} µm (공정/EM 기원)
+
+SOA (usage < 1):
+victim U(SG NFET/PFET ${val('vTopo')}), I_v ≤ ${val('bILim')} A
+diode I ≤ It2+(x1) · clamp I ≤ It2+(x2)
+metal Vdrop/EM/Joule/resource
+
+Loss = Cost + μSOA·Σ softplus(usage−1) + μRule·Σ softplus(rule 위반)`;
+}
+
+// ---------- start / fetch ----------
 function start(){
   const btn=document.getElementById('startBtn'),st=document.getElementById('status'),err=document.getElementById('err');
-  btn.disabled=true;st.textContent='서버에서 sweep 최적화 중… (테이블 기반, 수 초)';err.textContent='';
-  const q=new URLSearchParams(collect()).toString();
-  fetch('api/optimize?'+q).then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+  btn.disabled=true;st.textContent='0→Imax sweep 최적화 중… (테이블 기반, 수 초)';err.textContent='';
+  fetch('api/optimize?'+new URLSearchParams(collect()).toString())
+  .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
   .then(d=>{DATA=d;
-    const n=d.sweep.length;const sl=document.getElementById('islider');
-    sl.max=n-1;sl.value=Math.min(n-1,Math.round((n-1)*1.33/d.settings.imax));
-    ['resultCard','radarCard','sweepCard','gaugeCard','rankCard','mapCard','iterCard','tableCard']
-      .forEach(id=>document.getElementById(id).hidden=false);
-    st.textContent='완료 — '+n+'개 전류점.';renderAll();
+    const n=d.sweep.length,sl=document.getElementById('islider');
+    sl.max=n-1;sl.value=Math.min(n-1,Math.round((n-1)*1.3/d.settings.imax));
+    document.getElementById('vizCard').hidden=false;
+    document.getElementById('tableCard').hidden=false;
+    st.textContent='완료 — '+n+'개 전류점 캐시.';renderAll();
   }).catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
   .finally(()=>{btn.disabled=false;});
 }
-function cur(){const k=+document.getElementById('islider').value;return DATA.sweep[k];}
+function cur(){return DATA.sweep[+document.getElementById('islider').value];}
 
+// ---------- renderers ----------
 function renderAll(){
   const e=cur(),fin=e.final,p=DATA.settings;
   document.getElementById('ival').value=e.I.toFixed(2);
-  // chips + summary
-  const chips=[['Overall',fin.passAll],['Victim',fin.passV],['Diode I',fin.passD],['Clamp I',fin.passC],['Metal',fin.passM],['Rule',fin.passRule]];
-  document.getElementById('chips').innerHTML=chips.map(c=>'<span class="chip '+(c[1]?'ok':'bad')+'">'+c[0]+' '+(c[1]?'PASS':'FAIL')+'</span>').join('')
-    +(fin.tier?'<span class="chip '+(fin.tier==='minimum'?'mid':'ok')+'">'+fin.tier+' (M='+f(fin.M,2)+')</span>':(fin.M!==null?'<span class="chip bad">M='+f(fin.M,2)+'</span>':''));
-  document.getElementById('summary').textContent=
-    '최적해: x1='+f(fin.x1)+', x2='+f(fin.x2,1)+', L='+f(fin.L,1)+'µm (Rvdd='+f(fin.R)+'Ω)'
-    +'\nV_IO='+f(fin.vio)+'V (worst '+f(fin.vio_w)+' / best '+f(fin.vio_b)+') = diode '+f(fin.vd)+' + clamp '+f(fin.vc)+' + R'
-    +'\nvictim: V(OUT)='+f(fin.vnds)+'V · SOA U='+pct(fin.uV)+' (지배: '+fin.vWorst+', SG 1stk_1rx) · I_victim='+f(1000*fin.iv,2)+'mA'
-    +'\nIpass='+f(fin.ipass)+'A (경로한계 '+f(fin.ifail)+'A) ≈ HBM '+f(fin.ipass/1.33,2)+'kV · cost='+f(fin.cost)+' · loss='+f(fin.loss);
-  renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);renderMaps(p);renderIter();renderTable();
+  document.getElementById('currentScrubLabel').textContent='Injected current: '+e.I.toFixed(2)+' A';
+  renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
+  renderMaps(p);renderIter();renderMetrics(fin,p);renderTable();
 }
-function ghostSets(ax){ // ghosts at 0/0.5/1/1.5/2A
-  const gs=[];const p=DATA.settings;
+function ghostSets(ax){
+  const gs=[],p=DATA.settings;
   for(const gi of [0,0.5,1.0,1.5,2.0]){
     if(gi>p.imax)continue;
-    const k=Math.round(gi/p.imax*(DATA.sweep.length-1));
-    gs.push({vals:ax(DATA.sweep[k].final)});
+    gs.push({vals:ax(DATA.sweep[Math.round(gi/p.imax*(DATA.sweep.length-1))].final)});
   }
   return gs;
 }
@@ -197,110 +244,127 @@ function renderRadars(fin){
   const axA=r=>[r.x1pos,r.uVD,r.uID,r.uCap1,r.uLeak1];
   const axB=r=>[r.uV,r.uBI,r.vio/(r.limNterm||3.1)];
   const axC=r=>[r.x2pos,r.uVC,r.uIC,r.uCap2,r.uLeak2];
-  const axR=r=>[r.lpos,r.uRV,r.uEM,r.uPJ,r.uRes];
   radar(document.getElementById('radarInt'),'Integrated',['x1','x2','L','Vic V','Vic I','D I','C I','Joule'],axInt(fin),ghostSets(axInt));
   radar(document.getElementById('radarA'),'A: up diode',['pos','V SOA','I SOA','Cap','Leak'],axA(fin),ghostSets(axA));
   radar(document.getElementById('radarB'),'B: victim',['V SOA','I SOA','PAD'],axB(fin),ghostSets(axB));
   radar(document.getElementById('radarC'),'C: clamp',['pos','V SOA','I SOA','Cap','Leak'],axC(fin),ghostSets(axC));
-  radar(document.getElementById('radarR'),'R: metal(L)',['pos','Vdrop','EM','Joule','Res'],axR(fin),ghostSets(axR));
 }
-function renderSweep(){
+function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAIL 점 + 현재 marker
   const s=DATA.sweep,p=DATA.settings,e=cur();
-  lineChart(document.getElementById('sweepChart'),{w:1180,h:210,
-    series:[
-      {x:s.map(q=>q.I),y:s.map(q=>q.final.x1pos),color:CB.blue,label:'x1 pos'},
-      {x:s.map(q=>q.I),y:s.map(q=>q.final.x2pos),color:CB.orange,label:'x2 pos'},
-      {x:s.map(q=>q.I),y:s.map(q=>q.final.lpos),color:CB.green,label:'L pos'}],
-    hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4',label:'window'}],
-    points:s.map(q=>({x:q.I,y:q.final.x1pos,r:2.2,color:q.final.passAll?CB.green:CB.red}))
-      .concat([{x:e.I,y:e.final.x1pos,r:5,color:CB.blue}]),
-    vlines:[{x:e.I}]});
+  lineChart(document.getElementById('sweepChart'),{w:1180,h:200,
+    series:[{x:s.map(q=>q.I),y:s.map(q=>q.final.x1),color:CB.blue,label:'x1 final'}],
+    hlines:[{y:p.x1min,color:CB.gray,label:'x1 min rule'},{y:p.x1max,color:CB.gray,label:'x1 max'}],
+    points:s.map(q=>({x:q.I,y:q.final.x1,r:2.2,color:q.final.passAll?MNA.C.pass:MNA.C.fail}))
+      .concat([{x:e.I,y:e.final.x1,r:5,color:CB.blue}]),
+    vlines:[{x:e.I}],xlabel:'I (A)'});
 }
 function renderGauges(fin,p){
   const g=document.getElementById('gauges');g.innerHTML='<div></div><div></div><div></div>';
-  const cols=g.children;
-  gauge(cols[0],'x1 window (min=rule/max=준rule)',fin.x1pos,1,'window');
-  gauge(cols[0],'x2 window',fin.x2pos,1,'window');
-  gauge(cols[0],'L window (min=공정/max=EM)',fin.lpos,1,'window');
-  gauge(cols[1],'Victim SOA U ('+fin.vWorst+')',fin.uV,1);
-  gauge(cols[1],'  · NMOS term '+f(fin.vnds,2)+'/'+f(fin.limNterm,1)+'V',fin.uVNt,1);
-  gauge(cols[1],'  · NMOS oxide',fin.uVNo,1);
-  gauge(cols[1],'  · PMOS term/oxide',Math.max(fin.uVPt,fin.uVPo),1);
-  gauge(cols[1],'Victim I ('+f(1000*fin.iv,1)+'mA/'+f(1000*p.bILim,0)+'mA)',fin.uBI,1);
-  gauge(cols[1],'Diode I (It2='+f(fin.it2d,2)+'A)',fin.uID,1);
-  gauge(cols[1],'Clamp I (It2='+f(fin.it2c,2)+'A)',fin.uIC,1);
-  gauge(cols[2],'Metal Vdrop',fin.uRV,1);
-  gauge(cols[2],'Metal EM',fin.uEM,1);
-  gauge(cols[2],'Metal Joule',fin.uPJ,1);
-  gauge(cols[2],'Metal resource',fin.uRes,1);
+  const c=g.children;
+  gauge(c[0],'x1 window (min=rule/max=준rule)',fin.x1pos,1,'window');
+  gauge(c[0],'x2 window',fin.x2pos,1,'window');
+  gauge(c[0],'L window (min=공정/max=EM)',fin.lpos,1,'window');
+  gauge(c[1],'Victim SOA U ('+fin.vWorst+')',fin.uV,1);
+  gauge(c[1],'  · NMOS term '+f(fin.vnds,2)+'/'+f(fin.limNterm,1)+'V',fin.uVNt,1);
+  gauge(c[1],'  · NMOS oxide',fin.uVNo,1);
+  gauge(c[1],'  · PMOS term/oxide',Math.max(fin.uVPt,fin.uVPo),1);
+  gauge(c[1],'Victim I ('+f(1000*fin.iv,1)+'mA/'+f(1000*p.bILim,0)+'mA)',fin.uBI,1);
+  gauge(c[2],'Diode I (It2='+f(fin.it2d,2)+'A)',fin.uID,1);
+  gauge(c[2],'Clamp I (It2='+f(fin.it2c,2)+'A)',fin.uIC,1);
+  gauge(c[2],'Metal Vdrop',fin.uRV,1);
+  gauge(c[2],'Metal EM',fin.uEM,1);
+  gauge(c[2],'Metal Joule',fin.uPJ,1);
+  gauge(c[2],'Metal resource',fin.uRes,1);
 }
 function renderRank(fin){
-  const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],['Clamp I',fin.uIC],['Clamp V',fin.uVC],
-    ['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],['Metal res',fin.uRes],
-    ['x1 pos',fin.x1pos],['x2 pos',fin.x2pos],['L pos',fin.lpos]].sort((a,b)=>b[1]-a[1]);
+  const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],
+    ['Clamp I',fin.uIC],['Clamp V',fin.uVC],['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],
+    ['Metal res',fin.uRes],['x1 pos',fin.x1pos],['x2 pos',fin.x2pos],['L pos',fin.lpos]].sort((a,b)=>b[1]-a[1]);
   document.getElementById('rank').innerHTML=items.map(it=>{
     const bad=it[1]>1||it[1]<0;
-    return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'+(bad?'#b3261e':'#0a7d38')+'">'+pct(it[1])+'</span></div>'
-      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'+(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:#b3261e"></i></div></div>';
+    return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'+(bad?MNA.C.fail:MNA.C.pass)+'">'+pct(it[1])+'</span></div>'
+      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'+(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:'+CB.red+'"></i></div></div>';
   }).join('');
 }
 function renderMaps(p){
   const s=DATA.sweep,e=cur(),fin=e.final;
-  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) drain 스트레스 vs I',
+  lineChart(document.getElementById('mapV'),{title:'Victim: V(OUT) vs I',
     series:[{x:s.map(q=>q.final.vnds),y:s.map(q=>q.I),color:CB.blue,label:'V(OUT) 궤적'},
             {x:s.map(q=>q.final.vio),y:s.map(q=>q.I),color:CB.gray,label:'V_IO (참고)'}],
-    hlines:[],vlines:[{x:fin.limNterm,color:CB.red}],
-    points:[{x:fin.vnds,y:e.I,r:5,color:fin.passV?CB.green:CB.red}]});
+    vlines:[{x:fin.limNterm,color:CB.red}],
+    points:[{x:fin.vnds,y:e.I,r:5,color:fin.passV?MNA.C.pass:MNA.C.fail}]});
   lineChart(document.getElementById('mapD'),{title:'Up diode: V vs I (endpoint=Vt2,It2)',
     series:[{x:s.map(q=>q.final.vd),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
     hlines:[{y:fin.it2d,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2d,color:CB.red}],
-    points:[{x:fin.vd,y:e.I,r:5,color:fin.passD?CB.green:CB.red},{x:fin.vt2d,y:fin.it2d,r:3.5,color:CB.gold}]});
+    points:[{x:fin.vd,y:e.I,r:5,color:fin.passD?MNA.C.pass:MNA.C.fail},{x:fin.vt2d,y:fin.it2d,r:3.5,color:CB.gold}]});
   lineChart(document.getElementById('mapC'),{title:'Clamp: V vs I (endpoint=Vt2,It2)',
     series:[{x:s.map(q=>q.final.vc),y:s.map(q=>q.I),color:CB.blue,label:'궤적'}],
     hlines:[{y:fin.it2c,color:CB.red,label:'It2'}],vlines:[{x:fin.vt2c,color:CB.red}],
-    points:[{x:fin.vc,y:e.I,r:5,color:fin.passC?CB.green:CB.red},{x:fin.vt2c,y:fin.it2c,r:3.5,color:CB.gold}]});
+    points:[{x:fin.vc,y:e.I,r:5,color:fin.passC?MNA.C.pass:MNA.C.fail},{x:fin.vt2c,y:fin.it2c,r:3.5,color:CB.gold}]});
 }
 function renderIter(){
   const h=cur().history;
-  lineChart(document.getElementById('itUsage'),{title:'SOA usage vs iteration',
+  lineChart(document.getElementById('itUsage'),{title:'Normalized SOA usage',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.uV),color:CB.blue,label:'Victim SOA U'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uID),color:CB.orange,label:'Diode I'},
       {x:h.map(r=>r.it),y:h.map(r=>r.uIC),color:CB.green,label:'Clamp I'}],
     hlines:[{y:1,label:'100%'}]});
-  lineChart(document.getElementById('itVars'),{title:'변수 궤적 (window 정규화)',
+  lineChart(document.getElementById('itVars'),{title:'x1/x2/L trajectory (window 정규화)',
     series:[
       {x:h.map(r=>r.it),y:h.map(r=>r.x1pos),color:CB.blue,label:'x1'},
       {x:h.map(r=>r.it),y:h.map(r=>r.x2pos),color:CB.orange,label:'x2'},
       {x:h.map(r=>r.it),y:h.map(r=>r.lpos),color:CB.green,label:'L'}],
     hlines:[{y:0,color:'#c6ccd4'},{y:1,color:'#c6ccd4'}]});
-  lineChart(document.getElementById('itLoss'),{title:'V_IO / cost / loss',
+  lineChart(document.getElementById('itLoss'),{title:'V_IO / V(OUT) / cost / loss',
     series:[
-      {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.blue,label:'V_IO'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.vio),color:CB.gray,label:'V_IO'},
+      {x:h.map(r=>r.it),y:h.map(r=>r.vnds),color:CB.blue,label:'V(OUT)'},
       {x:h.map(r=>r.it),y:h.map(r=>r.cost),color:CB.green,label:'cost'},
       {x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.orange,label:'loss'}],
     hlines:[{y:cur().final.limNterm,label:'NMOS term limit'}]});
 }
+function renderMetrics(fin,p){
+  const chips=[['Overall',fin.passAll],['Victim',fin.passV],['Diode I',fin.passD],['Clamp I',fin.passC],['Metal',fin.passM],['Rule',fin.passRule]];
+  document.getElementById('chips').innerHTML=chips.map(c=>'<span class="chip '+(c[1]?'ok':'bad')+'">'+c[0]+' '+(c[1]?'PASS':'FAIL')+'</span>').join('')
+    +(fin.tier?'<span class="chip '+(fin.tier==='minimum'?'mid':'ok')+'">'+fin.tier+' (M='+f(fin.M,2)+')</span>':(fin.M!==null?'<span class="chip bad">M='+f(fin.M,2)+'</span>':''));
+  const m=[
+    ['Final x1 / x2', f(fin.x1)+' / '+f(fin.x2,1)],
+    ['Final L (Rvdd)', f(fin.L,1)+'µm ('+f(fin.R)+'Ω)'],
+    ['V_IO (worst/best)', f(fin.vio_w)+' / '+f(fin.vio_b)+' V'],
+    ['V(OUT) · I_v', f(fin.vnds)+' V · '+f(1000*fin.iv,2)+' mA'],
+    ['Ipass (첫 FAIL 전류)', f(fin.ipass)+' A ≈ HBM '+f(fin.ipass/1.33,2)+' kV'],
+    ['경로한계 Ifail', f(fin.ifail)+' A'],
+    ['Cost', f(fin.cost)],
+    ['Total loss', f(fin.loss)],
+  ];
+  document.getElementById('metrics').innerHTML=m.map(x=>'<div class="metric"><div class="name">'+x[0]+'</div><div class="value">'+x[1]+'</div></div>').join('');
+}
 function renderTable(){
   const h=cur().history.slice().reverse();
-  const cols=['it','x1','x2','L','R','vio','vnds','uV','uID','uIC','uBI','cost','soaPen','rulePen','loss','passAll'];
+  const cols=['it','x1','x2','L','R','x1pos','x2pos','lpos','vio','vnds','iv','vd','vc','uV','uID','uIC','uBI','cost','soaPen','rulePen','loss','passAll'];
   document.getElementById('itTable').innerHTML=
-    '<tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>'
+    '<tr>'+cols.map(c=>'<th>'+({vio:'V_IO',vnds:'V(OUT)',iv:'I_v'}[c]||c)+'</th>').join('')+'</tr>'
     +h.map(r=>'<tr>'+cols.map(c=>{
       const v=r[c];
-      if(typeof v==='boolean')return '<td style="color:'+(v?'#0a7d38':'#b3261e')+'">'+(v?'PASS':'FAIL')+'</td>';
+      if(typeof v==='boolean')return '<td style="color:'+(v?MNA.C.pass:MNA.C.fail)+'">'+(v?'PASS':'FAIL')+'</td>';
       if(c==='it')return '<td>'+v+'</td>';
+      if(c==='iv')return '<td>'+f(1000*v,2)+'m</td>';
       return '<td>'+f(v,c==='x2'||c==='L'?1:3)+'</td>';
     }).join('')+'</tr>').join('');
 }
 
+// ---------- wiring ----------
 document.getElementById('startBtn').addEventListener('click',start);
+document.getElementById('resetBtn').addEventListener('click',()=>location.reload());
 document.getElementById('islider').addEventListener('input',()=>{if(DATA)renderAll();});
 document.getElementById('ival').addEventListener('change',e=>{
   if(!DATA)return;const p=DATA.settings,n=DATA.sweep.length;
-  const k=Math.max(0,Math.min(n-1,Math.round(+e.target.value/p.imax*(n-1))));
-  document.getElementById('islider').value=k;renderAll();
+  document.getElementById('islider').value=Math.max(0,Math.min(n-1,Math.round(+e.target.value/p.imax*(n-1))));
+  renderAll();
 });
+P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
+updateEquations();
 </script>
 </body>
 </html>
