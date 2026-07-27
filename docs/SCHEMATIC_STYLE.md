@@ -143,7 +143,8 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 목록 JSON(id/name/**models**)을 준다. HTML(#schemLib)은 flex-wrap 그리드로 cell div를
 나열하고 **각 canvas 아래에 사용 가능한 process model list**를 표기한다.
 현재 model list: D_up=esdvpnp·esdvpnp_rg / D_down=esdndsx·esdndsx_rg·esdnwsx /
-R=rmres / D_b2b=essvpnp ×2 (나머지는 미지정 — 추후 추가).
+R=rmres·metal / Clamp=nfet_clamp / D_b2b=essvpnp ×2 (나머지는 미지정 — 추후 추가).
+Resd 제외 저항(RDL 3·RDD 2)은 동일 model **metal**에 저항값만 달리 쓴 instance.
 형태 기준 중복 제거 cell 12종:
 `I_ESD`(1-port 소스+ground) · `GND`(1-port, I_ESD와 동일 크기) · `R` ·
 `short`(2-port 직결) · `open`(2-port 미연결, R와 동일 크기) ·
@@ -168,7 +169,7 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
-| **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx; 저항: rdl_metal/dd_metal/series_res) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
+| **model** | 내부 심볼의 실제 모델 이름 (model1, model2, SG_PFET/SG_NFET 1stk_1rx; 저항: Resd 외 전부 **metal** 공통·값만 상이, Resd=series_res(가안)) | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | **fs−3(6pt)**, MUT |
 
 **회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
