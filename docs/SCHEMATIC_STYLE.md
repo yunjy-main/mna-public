@@ -92,8 +92,10 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 - b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.6)/(7.1,−2.4),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.65).
 - **victim**: 상자 [3.4,5.45]×[0.9,5.1], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.1) / **VSS**(하변 0.9).
-  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3), gate tie = diode-connected(OUT).
-  내부 소자는 레이아웃 JSON에서 교체 가능(inverter ↔ 단일 NMOS/PMOS).
+  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3).
+  **IN 배선은 gate까지만**(gate x = drain − 1.367·symbol_scale = 4.225, tie dot) —
+  gate→drain(junction) 경로는 그리지 않는다(2026-07-27 사용자 지시). drain은 별도
+  OUT 노드(주석은 drain 위치). 내부 소자는 레이아웃 JSON에서 교체 가능.
   상자는 FET 심볼 기준 좌우 대칭(±0.35).
 
 - 전류원 cell: 1-port (R6) — 상자 내부에 소스+전용 ground.

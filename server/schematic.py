@@ -35,7 +35,7 @@ DEFAULT_LAYOUT = {
         "N2": {"xy": [-0.2, 6.0], "ofst": [-1.3, 0.525]},
         "N3": {"xy": [7.1, 6.0], "ofst": [0.3, -1.17]},
         "N3B": {"xy": [7.1, 0.0], "ofst": [0.3, 0.525]},
-        "OUT": {"xy": [2.2, 3.0], "ofst": [0.0, 0.75]},
+        "OUT": {"xy": [5.1, 3.0], "ofst": [0.3, 0.45]},
         "VSSR": {"xy": [0.9, 0.0], "ofst": [-0.6, 0.525]},
     },
     "elements": [
@@ -127,7 +127,7 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [2.6, 3.0]},
         {"type": "dot", "at": [2.6, 6.0]},
         {"type": "dot", "at": [2.6, 0.0]},
-        {"type": "line", "from": [2.6, 3.0], "to": [5.1, 3.0]},
+        {"type": "line", "from": [2.6, 3.0], "to": [4.225, 3.0]},
         {"type": "rect", "corner1": [3.4, 0.9], "corner2": [5.45, 5.1], "title": "Victim"},
         {"type": "pfet", "drain": [5.1, 3.0], "label": "PMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 6.0},
         {"type": "nfet", "drain": [5.1, 3.0], "label": "NMOS", "loc": "right", "rot": 180, "flip": True, "rail_y": 0.0},
@@ -220,11 +220,12 @@ DEFAULT_LAYOUT = {
         {"type": "rect", "corner1": [10.8, -9.15], "corner2": [12.1, -7.85], "title": "D_b2b"},
         {"type": "port", "at": [10.8, -8.5], "text": ""},
         {"type": "port", "at": [12.1, -8.5], "text": ""},
-        {"type": "line", "from": [12.9, -8.5], "to": [14.6, -8.5]},
+        {"type": "line", "from": [12.9, -8.5], "to": [13.725, -8.5]},
+        {"type": "dot", "at": [13.725, -8.5]},
         {"type": "rect", "corner1": [12.9, -10.6], "corner2": [14.95, -6.4], "title": "Victim"},
         {"type": "pfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -6.4},
         {"type": "nfet", "drain": [14.6, -8.5], "label": "", "loc": "right", "rot": 180, "flip": True, "rail_y": -10.6},
-        {"type": "gates", "text": ""},
+        {"type": "gates", "stub": False},
         {"type": "dot", "at": [14.6, -8.5]},
         {"type": "port", "at": [12.9, -8.5], "text": ""},
         {"type": "port", "at": [14.6, -6.4], "text": ""},
@@ -344,7 +345,7 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                     # gate tie를 tie 노드 배선과 접점(dot)으로 연결 (diode-connected)
                     ty = nodes[tie]["xy"][1]
                     d.add(elm.Dot().at((g1.x, ty)))
-                else:
+                elif e.get("stub", True):
                     # 외부 입력 스텁
                     sy = g2.y
                     d.add(elm.Line().at((g2.x, sy)).to((g2.x - 0.6, sy)))
