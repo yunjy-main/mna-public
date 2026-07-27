@@ -126,8 +126,8 @@
     <h3>2-2. Precomputed x1(diode) sweep: injected current 0 → Imax</h3>
     <div id="sweepChart"></div>
 
-    <h3>2-3. Final constraint position gauges</h3>
-    <div class="grid-3" id="gauges"></div>
+    <h3>2-3. Final constraint position gauges (좌: non-victim · 우: victim, type별 그룹)</h3>
+    <div class="grid-2" id="gauges"></div>
 
     <h3>2-4. Constraint tightness ranking</h3>
     <div class="rank" id="rank"></div>
@@ -280,22 +280,35 @@ function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAI
     vlines:[{x:e.I}],xlabel:'I (A)'});
 }
 function renderGauges(fin,p){
-  const g=document.getElementById('gauges');g.innerHTML='<div></div><div></div><div></div>';
-  const c=g.children,e=cur();
-  // v4 9종 1:1 (값/min·max 라벨 형식) + 강화 회로 추가분(victim oxide·metal)
-  gauge(c[0],'x1 size window',fin.x1pos,1,'window',{valueText:'x1='+f(fin.x1),minLabel:'min '+p.x1min,maxLabel:'max '+p.x1max,pass:fin.x1>=p.x1min&&fin.x1<=p.x1max});
-  gauge(c[0],'x2 size window',fin.x2pos,1,'window',{valueText:'x2='+f(fin.x2,1),minLabel:'min '+p.x2min,maxLabel:'max '+p.x2max,pass:fin.x2>=p.x2min&&fin.x2<=p.x2max});
-  gauge(c[0],'L (Rvdd) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
-  gauge(c[1],'Victim voltage SOA ('+fin.vWorst+')',fin.uV,1,undefined,{valueText:f(fin.vnds)+' / '+f(fin.limNterm,1)+' V',maxLabel:'U=100% at limit'});
-  gauge(c[1],'Victim current SOA',fin.uBI,1,undefined,{valueText:f(1000*fin.iv,2)+' / '+f(1000*p.bILim,0)+' mA'});
-  gauge(c[1],'  · NMOS terminal',fin.uVNt,1);
-  gauge(c[1],'  · NMOS oxide',fin.uVNo,1);
-  gauge(c[1],'  · PMOS term/oxide',Math.max(fin.uVPt,fin.uVPo),1);
-  gauge(c[2],'Up diode voltage SOA',fin.uVD,1,undefined,{valueText:f(fin.vd)+' / '+f(fin.vt2d)+' V',maxLabel:'Vt2 '+f(fin.vt2d,2)});
-  gauge(c[2],'Up diode current SOA',fin.uID,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2d,2)+' A',maxLabel:'It2 '+f(fin.it2d,2)});
-  gauge(c[2],'Clamp voltage SOA',fin.uVC,1,undefined,{valueText:f(fin.vc)+' / '+f(fin.vt2c)+' V',maxLabel:'Vt2 '+f(fin.vt2c,2)});
-  gauge(c[2],'Clamp current SOA',fin.uIC,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2c,2)+' A',maxLabel:'It2 '+f(fin.it2c,2)});
-  gauge(c[2],'Metal Vdrop · EM · Joule · res',Math.max(fin.uRV,fin.uEM,fin.uPJ,fin.uRes),1,undefined,{pass:fin.passM});
+  const g=document.getElementById('gauges');g.innerHTML='<div></div><div></div>';
+  const L=g.children[0],R=g.children[1],e=cur();
+  const grp=(col,t)=>col.insertAdjacentHTML('beforeend','<div class="hint" style="margin-top:5px;font-weight:700">'+t+'</div>');
+  // ---- 좌: non-victim (type별 그룹) ----
+  grp(L,'Rule / 설계변수');
+  gauge(L,'x1 size window',fin.x1pos,1,'window',{valueText:'x1='+f(fin.x1),minLabel:'min '+p.x1min,maxLabel:'max '+p.x1max,pass:fin.x1>=p.x1min&&fin.x1<=p.x1max});
+  gauge(L,'x2 size window',fin.x2pos,1,'window',{valueText:'x2='+f(fin.x2,1),minLabel:'min '+p.x2min,maxLabel:'max '+p.x2max,pass:fin.x2>=p.x2min&&fin.x2<=p.x2max});
+  gauge(L,'L (Rvdd) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
+  grp(L,'Up diode (model1)');
+  gauge(L,'voltage SOA',fin.uVD,1,undefined,{valueText:f(fin.vd)+' / '+f(fin.vt2d)+' V',maxLabel:'Vt2 '+f(fin.vt2d,2)});
+  gauge(L,'current SOA',fin.uID,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2d,2)+' A',maxLabel:'It2 '+f(fin.it2d,2)});
+  grp(L,'Clamp (model2)');
+  gauge(L,'voltage SOA',fin.uVC,1,undefined,{valueText:f(fin.vc)+' / '+f(fin.vt2c)+' V',maxLabel:'Vt2 '+f(fin.vt2c,2)});
+  gauge(L,'current SOA',fin.uIC,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2c,2)+' A',maxLabel:'It2 '+f(fin.it2c,2)});
+  grp(L,'Metal (R device)');
+  gauge(L,'V drop',fin.uRV,1);
+  gauge(L,'EM current',fin.uEM,1);
+  gauge(L,'Joule heating',fin.uPJ,1);
+  gauge(L,'Routing resource',fin.uRes,1);
+  // ---- 우: victim (type별 그룹) ----
+  grp(R,'Victim 종합 (inverter)');
+  gauge(R,'voltage SOA — U overall ('+fin.vWorst+')',fin.uV,1,undefined,{valueText:f(fin.vnds)+' / '+f(fin.limNterm,1)+' V',maxLabel:'U=100% at limit'});
+  gauge(R,'current SOA (I_v)',fin.uBI,1,undefined,{valueText:f(1000*fin.iv,2)+' / '+f(1000*p.bILim,0)+' mA'});
+  grp(R,'NMOS (SG '+p.vTopo+')');
+  gauge(R,'terminal',fin.uVNt,1);
+  gauge(R,'gate oxide',fin.uVNo,1);
+  grp(R,'PMOS (SG '+p.vTopo+')');
+  gauge(R,'terminal',fin.uVPt,1);
+  gauge(R,'gate oxide',fin.uVPo,1);
 }
 function renderRank(fin){
   const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],
