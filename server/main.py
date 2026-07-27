@@ -643,13 +643,19 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
 
 @app.post(PREFIX + "/api/schematic/matrix/preview")
 async def schematic_matrix_preview(request: Request, inject: str = "IO", ground: str = "VSS",
-                                   i: float = 1.33, L: float = 350.0):
-    """POST된 layout(저장 전)을 netlist→MNA로 해석 — 편집 중 topology 확인용 (이슈 #9 P0)."""
+                                   i: float = 1.33, L: float = 350.0,
+                                   x1: float = 2.56, x2: float = 1415.232,
+                                   corner: str = "worst", model_mode: str = "measured"):
+    """POST된 layout(저장 전)을 netlist→MNA로 해석 — 편집 중 topology 확인용 (이슈 #9 P0).
+    matrix와 동일하게 model_mode=measured 기본 (주어진 schematic+model → 동적 조립)."""
     from server.netlist import extract_netlist, assemble_and_solve, evaluate_soa_monitors
+    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+    if err:
+        return err
     layout = await request.json()
     try:
         nl = extract_netlist(layout)
-        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L)
+        sol = assemble_and_solve(nl, inject=inject, ground=ground, I=i, L=L, model_ctx=ctx)
     except (ValueError, KeyError, TypeError) as ex:
         return PlainTextResponse("netlist/solve 실패: {}".format(ex), status_code=422)
     names = nl["nets"]
