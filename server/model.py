@@ -169,16 +169,21 @@ def VofI(br, i):
     return V[lo] + f * (V[hi] - V[lo])
 
 
-# --- series path: IO port -Rio_rdl-> diode tap -D_up-> rail -Rvdd-> clamp -> VSS rail
-#     -Rvss_rdl-> VSS port (RDL 3종 — 사용자 지시 2026-07-21; Rvdd_rdl은 VDD port 분기라
-#     양(+) IO->VSS 스트레스에서는 무전류, 향후 PAD->VDD/VDD->VSS 케이스용)
+# --- series path: IO port -Rio_rdl-> diode tap -D_up-> rail -RDD_un1-> clamp top
+#     -clamp-> clamp bottom -RDD_dn1-> VSS rail(node A) -Rvss_rdl-> VSS port.
+#   RDL 3종(고정 0.1Ω, 사용자 지시 2026-07-21): Rio_rdl, Rvdd_rdl(VDD port 분기 — 양(+)
+#     IO->VSS 스트레스 무전류), Rvss_rdl.
+#   DD(device-to-device) 금속 2종(0.5Ω/350µm 규칙, L 변수·공유 — D7; 사용자 지시 2026-07-27):
+#     RDD_un1 = up diode ↔ nmos clamp 1stk (VDD rail), RDD_dn1 = down diode ↔ nmos clamp 1stk
+#     (VSS rail). 양(+) 스트레스에서 둘 다 주 경로에 직렬.
 RIO_RDL, RVDD_RDL, RVSS_RDL = 0.1, 0.1, 0.1
 RIO = RIO_RDL  # 하위 호환 별칭
-RVDD = 0.5
+RDD_UN1 = 0.5  # up diode ↔ clamp 금속 (구 Rvdd; L=350 기준값, L 변수는 optimizer.rvdd_of)
+RDD_DN1 = 0.5  # down diode ↔ clamp 금속 (동일 규칙·공유 L)
 
 
-def series_vio(c1, c2, I, rio=RIO_RDL, rvdd=RVDD, rvss=RVSS_RDL):
-    return I * (rio + rvdd + rvss) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
+def series_vio(c1, c2, I, rio=RIO_RDL, rdd_un1=RDD_UN1, rdd_dn1=RDD_DN1, rvss=RVSS_RDL):
+    return I * (rio + rdd_un1 + rdd_dn1 + rvss) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
 
 
 # --- victim probe: PMOS+NMOS inverter, drain node OUT reached from IO via Resd.

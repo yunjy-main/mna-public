@@ -25,11 +25,11 @@ Phase 3(gradient)·Phase 4(MNA) 구현의 검증 앵커.
 1. **포팅 충실도** — 측정 7개 split의 ± branch endpoint 재현 (rel < 1e-9)
 2. **SOA envelope** — worst It2+ 7건 (해석식, rel < 1e-12)
 3. **캘리브레이션 핀** — diode β±(x), clamp scale+(x), min(dI/dV) (rel < 1e-6)
-4. **기준 구성 직렬 경로** — x1=2.56, x2=1415.232, Rio=0.1Ω, Rvdd=0.5Ω:
+4. **기준 구성 직렬 경로** — x1=2.56, x2=1415.232, Rio_rdl=0.1Ω, RDD_un1=RDD_dn1=0.5Ω, Rvss_rdl=0.1Ω:
    Ifail, V_IO(0.5/1.0/1.33A) worst + V_IO(1.33A) best (**corner 역전 증인**: best > worst)
 5. **검증점** — V_IO(2A; x1=2.56, x2=2021.76, worst) = 5.431V (x2 규약 명시 핀)
 6. **해석 최소 크기** — 2A worst 생존 x1_min = 2.5116
-7. **음의 스트레스** — diode It2−(2.56) = −51.46mA, 기준 구성 V_IO ≈ −8.32V
+7. **음의 스트레스** — diode It2−(2.56) = −51.46mA, 기준 구성 V_IO ≈ −8.35V
 8. **구조 불변량** — 전체 G > 0 (단조성), I0(0) = 0
 
 ## 수치 규약

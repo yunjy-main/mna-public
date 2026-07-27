@@ -13,7 +13,7 @@
 - **issue #2**: 측정기반 two-device 모델 — diode(x1 0.64~3.84)/clamp(x2 1415~2628)의
   bidirectional Softplus I-V + 보정(β 이분법/scale) + SOA power-law envelope 8종(worst/best).
 - **현재 상태**: Python FastAPI 서비스(/apps/mna, port 8807), 직렬 경로
-  IO→Rio 0.1Ω→diode→Rvdd 0.5Ω→clamp→VSS, 회귀 골든 50건 + 창립 벤치마크 20건,
+  IO→Rio_rdl 0.1Ω→diode→RDD_un1 0.5Ω→clamp→RDD_dn1 0.5Ω→Rvss_rdl 0.1Ω→VSS, 회귀 골든 50건 + 창립 벤치마크 20건,
   화면 4종(models/circuit/spec/meta).
 
 ## 1. 확정 결정 (D1~D9 + 창립 스펙)

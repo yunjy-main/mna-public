@@ -131,11 +131,12 @@ def _GofI(br, i):
 
 
 def _victim_probe_at(c1, c2, i):
-    """Inverter victim probe on the solved series path: (v_out, i_v, n3_abs, vssr)."""
+    """Inverter victim probe on the solved series path: (v_out, i_v, n3_abs, vssr).
+    n3 = clamp top (victim PMOS ref) = Vclamp + node A + RDD_dn1 강하; vssr = node A (NMOS ref)."""
     vssr = i * M.RVSS_RDL
     vc = M.VofI(c2["pos"], i)
-    n3 = vc + vssr
-    vio = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
+    n3 = vc + vssr + i * M.RDD_DN1
+    vio = i * (M.RIO_RDL + M.RDD_UN1 + M.RDD_DN1 + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
     vo, iv = M.victim_probe(vio, n3, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
     return vo, iv, n3, vssr
 
@@ -187,7 +188,8 @@ def models(x1: float = 2.56, x2: float = 1415.232):
         return err
 
     out = {"x1": x1, "x2": x2, "victim": dict(VICTIM),
-           "rio": M.RIO, "rvdd": M.RVDD, "devices": {}, "soa": {}, "path": {}}
+           "rio": M.RIO, "rdd_un1": M.RDD_UN1, "rdd_dn1": M.RDD_DN1,
+           "devices": {}, "soa": {}, "path": {}}
     out["victim"]["limN_term"] = VS.TERMINAL_VFAIL[VICTIM["nmos"]][VICTIM["topology"]]
     out["victim"]["limP_term"] = VS.TERMINAL_VFAIL[VICTIM["pmos"]][VICTIM["topology"]]
     cals = {}
@@ -231,8 +233,8 @@ def models(x1: float = 2.56, x2: float = 1415.232):
         for i in Is:
             vssr = i * M.RVSS_RDL
             vc = M.VofI(c2["pos"], i)
-            n3 = vc + vssr
-            vio_i = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
+            n3 = vc + vssr + i * M.RDD_DN1
+            vio_i = i * (M.RIO_RDL + M.RDD_UN1 + M.RDD_DN1 + M.RVSS_RDL) + M.VofI(c1["pos"], i) + vc
             vo, iv = M.victim_probe(vio_i, n3, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
             vios.append(vio_i)
             vnds_l.append(vo)
@@ -266,71 +268,78 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
     op = None
     if 0 <= i <= ifail:
         v1, v2 = M.VofI(c1["pos"], i), M.VofI(c2["pos"], i)
-        vssr = i * M.RVSS_RDL
-        vio_v = i * (M.RIO_RDL + M.RVDD + M.RVSS_RDL) + v1 + v2
-        n3_abs = v2 + vssr
+        rdd = 0.5 * 350.0 / 350.0  # 기준 L=350 → RDD_un1 = RDD_dn1 = 0.5Ω (표시용)
+        vssr = i * M.RVSS_RDL             # VSS rail node A (victim NMOS ref)
+        n3b = vssr + i * M.RDD_DN1        # clamp bottom = node A + RDD_dn1 강하
+        n3_abs = v2 + n3b                 # clamp top (victim PMOS source)
+        vio_v = i * (M.RIO_RDL + M.RDD_UN1 + M.RDD_DN1 + M.RVSS_RDL) + v1 + v2
         vout, iv = M.victim_probe(vio_v, n3_abs, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
         gD, gC = _GofI(c1["pos"], i), _GofI(c2["pos"], i)
-        gRio, gRvdd = 1 / M.RIO_RDL, 1 / M.RVDD
+        gRio, gRun1, gRdn1 = 1 / M.RIO_RDL, 1 / M.RDD_UN1, 1 / M.RDD_DN1
         gRe = 1.0 / VICTIM["resd"]
         gJ = (1.0 / VICTIM["ronj"]) if iv > 0 else 0.0  # PMOS drain junction (on/off)
+        # unknowns: V(IO) V(N1) V(N2) V(N3=clamp top) V(N3B=clamp bottom) V(OUT); ref=VSS
         matrix = [
-            [gRio + gRe, -gRio, 0, 0, -gRe],
-            [-gRio, gRio + gD, -gD, 0, 0],
-            [0, -gD, gD + gRvdd, -gRvdd, 0],
-            [0, 0, -gRvdd, gRvdd + gC + gJ, -gJ],
-            [-gRe, 0, 0, -gJ, gRe + gJ],
+            [gRio + gRe, -gRio, 0, 0, 0, -gRe],
+            [-gRio, gRio + gD, -gD, 0, 0, 0],
+            [0, -gD, gD + gRun1, -gRun1, 0, 0],
+            [0, 0, -gRun1, gRun1 + gC + gJ, -gC, -gJ],
+            [0, 0, 0, -gC, gC + gRdn1, 0],
+            [-gRe, 0, 0, -gJ, 0, gRe + gJ],
         ]
         op = {"i": i, "v_diode": v1, "v_clamp": v2, "v_io": vio_v,
-              "v_out": vout, "i_victim": iv, "v_vssr": vssr,
-              "gD": gD, "gC": gC, "gRio": gRio, "gRvdd": gRvdd,
+              "v_out": vout, "i_victim": iv, "v_vssr": vssr, "v_n3b": n3b,
+              "gD": gD, "gC": gC, "gRio": gRio, "gRun1": gRun1, "gRdn1": gRdn1,
               "gResd": gRe, "gJ": gJ,
-              "matrix": matrix, "b": [i, 0, 0, 0, 0]}
+              "matrix": matrix, "b": [i, 0, 0, 0, 0, 0]}
     ascii_lines = [
-        " VDD ○────────○ N2 ────────/\\/\\/\\ Rvdd 0.5Ω(≈350µm) ──────── ○ N3 ─────────○ VDD",
+        " VDD ○────────○ N2 ──────/\\/\\/\\ RDD_un1 0.5Ω(≈350µm) ─────── ○ N3 ─────────○ VDD",
         "              ▲                                               │        ┌────┴─┐",
         "           D_up(x1)                                       Clamp(x2)    │ PMOS │ (source→VDD)",
         "              │                                               │        └──┬───┘ drain",
-        "  IO ○──/\\/\\ Rio 0.1Ω ──○ N1                                  │           │",
+        "  IO ○──/\\/\\ Rio_rdl 0.1Ω ──○ N1                              ○ N3B        │",
         "   │          │                                               │   OUT ○───┤ ← Resd 500Ω ─── IO",
-        "  (I_ESD ↑)   ▼                                               │        ┌──┴───┐ drain",
-        "           D_down(x1 미러, D2)                                 │        │ NMOS │ (source→VSS)",
-        "              │                                               │        └──┬───┘",
-        " VSS ○────────○─────────────────────────────────────────────○─────────────○ VSS (ref)",
+        "  (I_ESD ↑)   ▼                                       RDD_dn1 0.5Ω        ┌──┴───┐ drain",
+        "           D_down(x1 미러, D2)                                 │        │ NMOS │ (source→VSS rail)",
+        "              │                                       node A ○─┘        └──┬───┘",
+        " VSS ○──/\\/\\ Rvss_rdl 0.1Ω ──○───────────────────────────────┴─────────────○ VSS (ref)",
         "",
         " victim = PMOS+NMOS inverter: IO ─Resd(500Ω)→ OUT(공통 drain). NMOS drain 스트레스 = V(OUT).",
-        " 양(+) 스트레스: IO→D_up→VDD rail→Clamp→VSS 가 주 경로, OUT은 PMOS drain 접합 순방향으로 완화.",
+        " 양(+) 스트레스: IO→Rio_rdl→D_up→RDD_un1→Clamp→RDD_dn1→Rvss_rdl→VSS 가 주 경로,",
+        "                 OUT은 PMOS drain 접합 순방향으로 완화. clamp top(N3)=Vclamp+I·(RDD_dn1+Rvss_rdl).",
         " 음(−) 스트레스: IO→D_down 경로 (모델은 model1 미러 — D2).",
-        " 금속 규칙: 0.5Ω / 350µm (L만 설계변수, W 고정 — D7)",
+        " DD 금속(device-to-device) 규칙: 0.5Ω / 350µm, RDD_un1·RDD_dn1 공유 L (L만 설계변수, W 고정 — D7)",
     ]
     return {
         "ascii": ascii_lines,
         "x1": x1, "x2": x2, "corner": corner,
         "nodes": [
             {"name": "IO", "role": "PAD — stress 주입 node (current source)"},
-            {"name": "N1", "role": "Rio 뒤 diode tap (D_up anode / D_down cathode)"},
-            {"name": "N2", "role": "VDD rail — D_up cathode tap"},
-            {"name": "N3", "role": "VDD rail — Clamp tap (victim PMOS source 인접)"},
+            {"name": "N1", "role": "Rio_rdl 뒤 diode tap (D_up anode / D_down cathode)"},
+            {"name": "N2", "role": "VDD rail — D_up cathode / RDD_un1 좌단"},
+            {"name": "N3", "role": "VDD rail — Clamp top (victim PMOS source 인접)"},
+            {"name": "N3B", "role": "VSS rail — Clamp bottom (RDD_dn1 → node A)"},
             {"name": "OUT", "role": "victim inverter 공통 drain (IO에서 Resd 경유)"},
-            {"name": "VSS", "role": "기준(ref) node — MNA 미지수에서 제외"},
+            {"name": "VSS", "role": "기준(ref) node — MNA 미지수에서 제외 (node A ≈ VSS, Rvss_rdl 리턴)"},
         ],
         "branches": [
             {"name": "I_ESD", "type": "source", "nodes": "IO→VSS", "param": "spec 전류 (1kV↔1.33A)"},
             {"name": "Rio_rdl", "type": "device — R (RDL)", "nodes": "IO port–N1", "param": "0.1Ω"},
             {"name": "Rvdd_rdl", "type": "device — R (RDL)", "nodes": "VDD port–N2", "param": "0.1Ω (양(+) 스트레스 무전류)"},
-            {"name": "Rvss_rdl", "type": "device — R (RDL)", "nodes": "VSS rail–VSS port", "param": "0.1Ω (리턴 경로)"},
+            {"name": "Rvss_rdl", "type": "device — R (RDL)", "nodes": "node A–VSS port", "param": "0.1Ω (리턴 경로)"},
             {"name": "D_up", "type": "device — diode (model1)", "nodes": "N1→N2", "param": "x1={}".format(x1)},
             {"name": "D_down", "type": "device — diode (model1 미러, D2)", "nodes": "VSS→N1", "param": "x1 미러 — 음(−) 스트레스 경로"},
-            {"name": "Rvdd", "type": "device — R (metal)", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), L 변수(D7)"},
-            {"name": "Clamp", "type": "device — clamp (model2)", "nodes": "N3–VSS", "param": "x2={}".format(x2)},
+            {"name": "RDD_un1", "type": "device — R (DD 금속)", "nodes": "N2–N3", "param": "0.5Ω (≈350µm), up diode↔clamp, L 변수(D7)"},
+            {"name": "RDD_dn1", "type": "device — R (DD 금속)", "nodes": "N3B–node A", "param": "0.5Ω (≈350µm), down diode↔clamp, 공유 L(D7)"},
+            {"name": "Clamp", "type": "device — clamp (model2)", "nodes": "N3–N3B", "param": "x2={}".format(x2)},
             {"name": "Resd", "type": "device — R (ESD 직렬)", "nodes": "IO–OUT", "param": "500Ω (victim 보호)"},
             {"name": "PMOS drain 접합", "type": "device — FET 접합 (victim)", "nodes": "OUT→N3", "param": "Von 0.7 + Ron 10Ω, 양(+) 스트레스 시 순방향"},
             {"name": "NMOS drain 접합", "type": "device — FET (victim, SG 1stk_1rx SOA)", "nodes": "OUT→VSS", "param": "terminal 3.1V · oxide inv/acc 2.9/3.3V"},
             {"name": "Gate tie", "type": "wire", "nodes": "OUT–G(PMOS·NMOS)", "param": "diode-connected — V_G = V(OUT), oxide 검사 기준"},
         ],
         "mna": {
-            "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(OUT)"],
-            "ref": "VSS", "size": "5×5", "nnz": "17 / 25",
+            "unknowns": ["V(IO)", "V(N1)", "V(N2)", "V(N3)", "V(N3B)", "V(OUT)"],
+            "ref": "VSS", "size": "6×6", "nnz": "18 / 36",
             "form": "G(v)·Δv = −F(v)  (Newton 일반형, Phase 4)",
             "solve_mode": "현재: 주 경로는 전류구동 1D 역산, victim은 지배경로 근사 post-process probe "
                           "(Resd 500Ω ≫ 경로 저항이라 victim 전류 mA급 — 주 경로 교란 없음)",
@@ -347,7 +356,7 @@ def spec(x1: float = 2.56, x2: float = 1415.232):
     if err:
         return err
     out = {"a_per_kv": A_PER_KV, "victim": dict(VICTIM), "x1": x1, "x2": x2,
-           "rio": M.RIO, "rvdd": M.RVDD,
+           "rio": M.RIO, "rdd_un1": M.RDD_UN1, "rdd_dn1": M.RDD_DN1,
            "tiers": {"minimum": 1.0, "recommended": 1.2, "robust": 1.5},
            "levels": [], "summary": {}}
     cs, ipass = {}, {}
@@ -407,9 +416,9 @@ def entities():
     """Entity catalog (20 items) with implementation status and where to see each one."""
     IMPL, PART, PLAN = "구현", "부분", "계획"
     items = [
-        (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증. R 계열(Rio/Rvdd/Resd)도 device로 취급(사용자 규정) — #3이 R-device 담당"),
+        (1, "DeviceModel", IMPL, "server/model.py · 화면: models", "diode/clamp Softplus+보정, 골든 50건이 직접 검증. R 계열(Rio_rdl/RDD_un1/RDD_dn1/Resd)도 device로 취급(사용자 규정) — #3이 R-device 담당"),
         (2, "SOAEnvelope & CornerPolicy", PART, "server/model.py · 화면: models §3, spec", "envelope 8종+양 corner(D3)+±50% 창(D5)+3단계 해(M=1.0/1.2/1.5, 창립 스펙); curve-endpoint 규약 문서화 예정"),
-        (3, "MetalModel (R-device)", PART, "화면: circuit, optimize", "R 계열도 device(사용자 규정): Rio·Rvdd(metal, 0.5Ω/350µm·L 변수)·Resd(ESD 직렬 500Ω). EM/Joule/자원 SOA 보유"),
+        (3, "MetalModel (R-device)", PART, "화면: circuit, optimize", "R 계열도 device(사용자 규정): Rio_rdl·RDD_un1/RDD_dn1(DD 금속, 0.5Ω/350µm·공유 L 변수)·Rvss_rdl·Resd(ESD 직렬 500Ω). EM/Joule/자원 SOA 보유"),
         (4, "VictimModel", IMPL, "server/victim_soa.py · docs/victim_soa_model.html · 화면: circuit, models §2, spec, optimize", "inverter(IO─Resd 500Ω→OUT) + 측정 SOA: SG NFET/PFET 1stk_1rx(터미널 3.1/3.3V, oxide inv/acc 2.9/3.3·3.3/3.8V), 부호 있는 VGS/VGD/VGB 검사, Uoverall=max. 음(−) 스트레스 대칭은 잔여"),
         (5, "CalibrationPipeline", PART, "server/calibtable.py · assets/calib_table.json", "β/scale·V(I) 사전계산 테이블(48격자×2corner, rel<5e-3) 구현; anchor 절차 코드화 잔여"),
         (6, "Netlist/Topology", PART, "화면: circuit", "강화 토폴로지: VDD/IO/VSS 레일 + up/down diode + clamp + victim inverter(노드 5+ref, MNA 5×5); 일반화는 Phase 5"),
@@ -435,7 +444,7 @@ def entities():
         "decisions": "D1 로컬작업+push · D2 down diode=model1 미러 · D3 corner 양쪽 · D4 Python+HTML · "
                      "D5 ±50% 창 · D6 원시데이터 없음 · D7 L만 변수 · D8 최소 UI · D9 1kV↔1.33A · "
                      "창립: rule 비대칭 · 3단계 해(M 1.0/1.2/1.5) · Top Cell port SOA · 2단계 loss · ground 명시 · "
-                     "R 계열(Rio/Rvdd/Resd)도 device",
+                     "R 계열(Rio_rdl/RDD_un1/RDD_dn1/Rvss_rdl/Resd)도 device",
         "entities": [{"id": i, "name": n, "status": s, "where": w, "note": t}
                      for i, n, s, w, t in items],
     }
@@ -474,15 +483,17 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
     if 0 < i <= ifail:
-        rvdd = 0.5 * L / 350.0
-        vssr = i * M.RVSS_RDL
+        rvdd = 0.5 * L / 350.0        # RDD_un1
+        rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
+        vssr = i * M.RVSS_RDL         # node A (victim NMOS ref)
         vd = M.VofI(c1["pos"], i)
         vc = M.VofI(c2["pos"], i)
-        n3v = vc + vssr
+        n3b = vssr + i * rdd_dn1      # clamp bottom
+        n3v = vc + n3b                # clamp top (victim PMOS source)
         n2v = n3v + i * rvdd
         vio = n2v + vd + i * M.RIO_RDL
         vout, ivv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
-        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "OUT": vout,
+        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "N3B": n3b, "OUT": vout,
               "VSSR": vssr, "i": i, "iv": ivv}
     from server.schematic import build_svg
     return Response(build_svg(x1, x2, L, op), media_type="image/svg+xml",
@@ -500,16 +511,18 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         return PlainTextResponse("corner must be worst|best", status_code=422)
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
-    rvdd = 0.5 * L / 350.0
-    out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "OUT": [],
-           "VSSR": [], "IV": []}
+    rvdd = 0.5 * L / 350.0        # RDD_un1
+    rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
+    out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "N3B": [],
+           "OUT": [], "VSSR": [], "IV": []}
     n = max(2, min(401, int(n)))
     for k in range(n):
         i = ifail * k / (n - 1.0)
-        vssr = i * M.RVSS_RDL
+        vssr = i * M.RVSS_RDL         # node A
         vd = M.VofI(c1["pos"], i) if i > 0 else 0.0
         vc = M.VofI(c2["pos"], i) if i > 0 else 0.0
-        n3v = vc + vssr
+        n3b = vssr + i * rdd_dn1      # clamp bottom
+        n3v = vc + n3b                # clamp top
         n2v = n3v + i * rvdd
         vio = n2v + vd + i * M.RIO_RDL
         vout, iv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
@@ -518,6 +531,7 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         out["N1"].append(n2v + vd)
         out["N2"].append(n2v)
         out["N3"].append(n3v)
+        out["N3B"].append(n3b)
         out["OUT"].append(vout)
         out["VSSR"].append(vssr)
         out["IV"].append(iv)
@@ -562,15 +576,18 @@ async def schematic_preview(request: Request, x1: float = 2.56, x2: float = 1415
     op = None
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     if 0 < i <= min(c1["e"]["ip"], c2["e"]["ip"]):
-        rvdd = 0.5 * L / 350.0
-        vssr = i * M.RVSS_RDL
+        rvdd = 0.5 * L / 350.0        # RDD_un1
+        rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
+        vssr = i * M.RVSS_RDL         # node A
         vd = M.VofI(c1["pos"], i)
         vc = M.VofI(c2["pos"], i)
-        n3v = vc + vssr
+        n3b = vssr + i * rdd_dn1      # clamp bottom
+        n3v = vc + n3b                # clamp top
         n2v = n3v + i * rvdd
         vio = n2v + vd + i * M.RIO_RDL
         vout, ivv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
-        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "OUT": vout, "VSSR": vssr, "i": i, "iv": ivv}
+        op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "N3B": n3b, "OUT": vout,
+              "VSSR": vssr, "i": i, "iv": ivv}
     try:
         svg = SCH.build_svg(x1, x2, L, op, layout)
     except Exception as ex:

@@ -10,7 +10,7 @@
 //
 // Conventions pinned by decisions D1-D9 (see repo docs / session notes):
 //   grid N=4000; SOA corners evaluated BOTH worst and best (D3);
-//   reference config x1=2.56 (diode), x2=1415.232 (clamp), Rio=0.1, Rvdd=0.5 (user-fixed);
+//   reference config x1=2.56 (diode), x2=1415.232 (clamp), Rio_rdl=0.1, RDD_un1=RDD_dn1=0.5, Rvss_rdl=0.1;
 //   metal rule 0.5 ohm / 350 um, L-only design variable (D7);
 //   HBM conversion I ~ V/1.5k (D9).
 'use strict';
@@ -87,8 +87,8 @@ function VofI(br, i) {
   return V[lo] + f * (V[hi] - V[lo]);
 }
 
-const RIO = 0.1, RVDD = 0.5, RVSS = 0.1; // Rio_rdl / Rvdd(rail) / Rvss_rdl
-function vio(c1, c2, I) { return I * (RIO + RVDD + RVSS) + VofI(c1.pos, I) + VofI(c2.pos, I); }
+const RIO = 0.1, RDD_UN1 = 0.5, RDD_DN1 = 0.5, RVSS = 0.1; // Rio_rdl / RDD_un1 / RDD_dn1 / Rvss_rdl
+function vio(c1, c2, I) { return I * (RIO + RDD_UN1 + RDD_DN1 + RVSS) + VofI(c1.pos, I) + VofI(c2.pos, I); }
 
 // ---------------- golden value computation ----------------
 function computeAll() {
@@ -140,7 +140,7 @@ function computeAll() {
     const c1 = calib(D1, 2.56, 'worst'), c2 = calib(D2, 1415.232, 'worst');
     add('neg/It2-/diode/x=2.56/worst', c1.e.inn, 1e-9, 'rel');
     const I = c1.e.inn * 0.999;
-    add('neg/VIO/ref/0.999It2-', I * (RIO + RVDD + RVSS) + VofI(c1.neg, I) + VofI(c2.neg, I), 1e-6, 'abs');
+    add('neg/VIO/ref/0.999It2-', I * (RIO + RDD_UN1 + RDD_DN1 + RVSS) + VofI(c1.neg, I) + VofI(c2.neg, I), 1e-6, 'abs');
   }
   // 8) structural invariants
   {

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Sweep optimizer over the precomputed calibration table (v4-parity milestone).
 
-Design variables (log-parameterized Adam): x1 (diode), x2 (clamp), L (Rvdd
-metal length, D7: W fixed, R = 0.5 * L / 350um). Loss follows v4's structure
+Design variables (log-parameterized Adam): x1 (diode), x2 (clamp), L (device-to-
+device 금속 길이 — RDD_un1·RDD_dn1 공유, D7: W fixed, R = 0.5 * L / 350um each).
+Loss follows v4's structure
 (cost + softplus penalties + separate hard PASS/FAIL) but with:
   - measured nonlinear models via the table (V(I; x), C1-extended beyond It2)
   - current-SOA usage I/It2(x) with nonzero gradient (dIt2/dx = p*It2/x)
@@ -61,19 +62,20 @@ def rvdd_of(L):
 
 
 def evaluate(tbl, p, I, x1, x2, L, it):
-    rvdd = rvdd_of(L)
-    vssr = I * p["rvssRdl"]  # VSS rail 전위 (Rvss_rdl 리턴 경로, ref=VSS port)
+    rvdd = rvdd_of(L)          # RDD_un1 (up diode↔clamp 금속)
+    rdd_dn1 = rvdd             # RDD_dn1 (down diode↔clamp 금속) — 동일 규칙·공유 L (D7)
+    vssr = I * p["rvssRdl"]  # VSS rail node A 전위 (Rvss_rdl 리턴; victim NMOS ref, ref=VSS port)
     vio_c, vd_c, vc_c = {}, {}, {}
     for corner in ("worst", "best"):
         vd = tbl.vofi("diode", corner, x1, I) if I > 0 else 0.0
         vc = tbl.vofi("clamp", corner, x2, I) if I > 0 else 0.0
         vd_c[corner], vc_c[corner] = vd, vc
-        vio_c[corner] = I * (p["rio"] + rvdd + p["rvssRdl"]) + vd + vc
+        vio_c[corner] = I * (p["rio"] + rvdd + rdd_dn1 + p["rvssRdl"]) + vd + vc
     vio = max(vio_c.values())  # per-metric pessimistic (D3; corner inversion)
     # victim probe + SOA (inverter drain via Resd; SG NFET/PFET, user-set topology)
     vnds, iv, soa = 0.0, 0.0, None
     for corner in ("worst", "best"):
-        n3 = vc_c[corner] + vssr  # clamp top 절대 전위
+        n3 = vc_c[corner] + vssr + I * rdd_dn1  # clamp top = vc + node A + RDD_dn1 강하
         vo, ivc = M.victim_probe(vio_c[corner], n3, p["resd"], p["vVon"], p["vRonJ"])
         # gate = OUT (diode-connected — 사용자 지시: Resd 우측 node를 gate에도 연결)
         s = VS.inverter_victim(vo, n3, vo, topology=p["vTopo"], vss_local=vssr)
@@ -118,7 +120,7 @@ def evaluate(tbl, p, I, x1, x2, L, it):
     pass_rule = (x1 >= p["x1min"] and x1 <= p["x1max"] and x2 >= p["x2min"]
                  and x2 <= p["x2max"] and L >= p["lmin"] and L <= p["lmax"])
     return {
-        "it": it, "x1": x1, "x2": x2, "L": L, "R": rvdd,
+        "it": it, "x1": x1, "x2": x2, "L": L, "R": rvdd, "Rdn": rdd_dn1,
         "vio": vio, "vio_w": vio_c["worst"], "vio_b": vio_c["best"],
         "vd": vd_c["worst"], "vc": vc_c["worst"], "vnds": vnds, "iv": iv,
         "vWorst": soa["worst"] if I > 0 else "-",
@@ -193,14 +195,15 @@ def run_point(tbl, p, I, y0):
 def ipass_of(tbl, p, x1, x2, L):
     """First-fail current for a fixed design (victim SOA/current or device It2)."""
     ifail = min(tbl.it2("diode", "worst", x1), tbl.it2("clamp", "worst", x2))
-    rvdd = rvdd_of(L)
+    rvdd = rvdd_of(L)          # RDD_un1
+    rdd_dn1 = rvdd             # RDD_dn1 (동일 규칙·공유 L)
 
     def victim_ok(i):
         vssr = i * p["rvssRdl"]
         for c in ("worst", "best"):
             vc = tbl.vofi("clamp", c, x2, i)
-            vio = i * (p["rio"] + rvdd + p["rvssRdl"]) + tbl.vofi("diode", c, x1, i) + vc
-            n3 = vc + vssr
+            vio = i * (p["rio"] + rvdd + rdd_dn1 + p["rvssRdl"]) + tbl.vofi("diode", c, x1, i) + vc
+            n3 = vc + vssr + i * rdd_dn1
             vo, iv = M.victim_probe(vio, n3, p["resd"], p["vVon"], p["vRonJ"])
             s = VS.inverter_victim(vo, n3, vo, topology=p["vTopo"], vss_local=vssr)
             if s["u"] >= 1.0 or iv > p["bILim"]:

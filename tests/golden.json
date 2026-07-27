@@ -244,31 +244,31 @@
   },
   {
    "key": "ref/VIO/worst/I=0.5",
-   "value": 2.455973884817598,
+   "value": 2.705973884817598,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/worst/I=1",
-   "value": 3.3718280031776935,
+   "value": 3.8718280031776944,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/worst/I=1.33",
-   "value": 3.984023458737263,
+   "value": 4.649023458737263,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/best/I=1.33",
-   "value": 4.245071591135817,
+   "value": 4.910071591135817,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "series/VIO/x1=2.56/x2=2021.76/worst/I=2.0",
-   "value": 5.630534728654537,
+   "value": 6.6305347286545375,
    "tol": 1e-06,
    "kind": "abs"
   },
@@ -286,7 +286,7 @@
   },
   {
    "key": "neg/VIO/ref/0.999It2-",
-   "value": -8.323404585430906,
+   "value": -8.349110453830905,
    "tol": 1e-06,
    "kind": "abs"
   },
