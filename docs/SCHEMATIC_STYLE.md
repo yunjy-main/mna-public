@@ -54,6 +54,9 @@ arm 스팬 = 가로 0.9 / 세로 1.35 — 꺾임(분기)이 diode 몸체 가까�
 `symbol_scale: 0.64` — resistor/diode/zener/sourcei/ground/pfet/nfet 몸체만 축소.
 endpoints 스팬·anchor 접점은 불변(연결 유지). 접점 dot·port open-dot 크기는 스케일 제외.
 
+**선 굵기**: `lw: 1.0` (schemdraw 기본 2의 **1/2**) — 배선·심볼·상자 등 모든 스트로크 공통.
+두 canvas(본 회로·라이브러리) 동일 적용.
+
 ## R6. 전류원 (스트레스 소스)
 
 4개 모두 **x=−3.8 단일 열**, 각 소스는 **주입 rail 바로 아래에 매달린 독립 유닛**:
@@ -160,5 +163,8 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | fs−2, MUT |
 
 현재 배치: RDL 3종 instance=bl(노드 주석 회피), I_ESD 3종=br(왼쪽 빈 공간), 나머지 tl.
+**외곽선 비겹침 오프셋**: instance 밖 tl/tr = 상변+0.22, bl/br = 하변−0.52;
+model/equation 안쪽 = 상변−0.42(위) · 하변+0.2(아래), 좌우 ±0.14 — 라벨 텍스트가
+상자 스트로크에 닿지 않게 좌상단 기준으로 배치.
 렌더러 rect 키: `instance`/`instance_loc`/`model`(문자열|리스트)/`model_loc`/`equation`.
 라이브러리 canvas의 cell type 이름은 `title` 키로 유지(별개 층).

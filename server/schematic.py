@@ -317,7 +317,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
         return s
 
     d = schemdraw.Drawing(backend='svg')
-    d.config(unit=layout.get("unit", 2), fontsize=layout.get("fontsize", 9))
+    d.config(unit=layout.get("unit", 2), fontsize=layout.get("fontsize", 9),
+             lw=layout.get("lw", 1.0))  # 선 굵기 1/2 (기본 2)
     fs = layout.get("fontsize", 9)
     ss = layout.get("symbol_scale", 1.0)  # 심볼 몸체 배율 (endpoints 스팬·anchor는 불변)
     fets = {}
@@ -359,10 +360,11 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
                                                                    color=col, halign='left'))
             # 라벨 3계층 (SCHEMATIC_STYLE.md): instance=상자 밖, model/equation=상자 안.
             # 코너 우선순위는 반시계 tl→bl→br→tr.
-            OUTC = {"tl": (xa + 0.05, yb + 0.15, 'left'), "bl": (xa + 0.05, ya - 0.45, 'left'),
-                    "br": (xb - 0.05, ya - 0.45, 'right'), "tr": (xb - 0.05, yb + 0.15, 'right')}
-            INC = [(xa + 0.12, yb - 0.34, 'left'), (xa + 0.12, ya + 0.16, 'left'),
-                   (xb - 0.12, ya + 0.16, 'right'), (xb - 0.12, yb - 0.34, 'right')]
+            # 라벨은 외곽선 스트로크와 겹치지 않게 여유 오프셋 (좌상단 기준)
+            OUTC = {"tl": (xa + 0.05, yb + 0.22, 'left'), "bl": (xa + 0.05, ya - 0.52, 'left'),
+                    "br": (xb - 0.05, ya - 0.52, 'right'), "tr": (xb - 0.05, yb + 0.22, 'right')}
+            INC = [(xa + 0.14, yb - 0.42, 'left'), (xa + 0.14, ya + 0.2, 'left'),
+                   (xb - 0.14, ya + 0.2, 'right'), (xb - 0.14, yb - 0.42, 'right')]
             if e.get("instance"):
                 lx, ly, ha = OUTC[e.get("instance_loc", "tl")]
                 d.add(elm.Label().at((lx, ly)).label(txt(e["instance"]), fontsize=fs - 1,
