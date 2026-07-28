@@ -442,6 +442,23 @@ chk("device_i KCL(2A 분담)", abs(pi["XD_up"] + pi["XD_up2"] - 2.0) < 2e-3,
     str((pi["XD_up"], pi["XD_up2"])))
 chk("device_i monitor/전류원 None", pi["XVictim"] is None and pi["XI_ESD (IO→VSS)"] is None, "")
 
+# capacitance spec (사용자 지시 2026-07-28): model.CAP 물리 생성 모델, EM 제외
+from server.netlist import device_caps  # noqa: E402
+
+caps = device_caps(nl, 2.56, 1415.232)
+chk("cap: 기준 diode C0=250fF", abs(caps["XD_up"]["c0"] - 250e-15) < 1e-18,
+    str(caps["XD_up"]))
+chk("cap: 기준 clamp C0=2.1pF", abs(caps["XClamp"]["c0"] - 2.1e-12) < 1e-15, "")
+chk("cap: secondary 면적 1/10 → C/10", abs(caps["XD_up2"]["c0"] - 25e-15) < 1e-18,
+    str(caps["XD_up2"]["c0"]))
+chk("cap: b2b=D1 cap 공유", abs(caps["XD_b2b_m"]["c0"] - caps["XD_up"]["c0"]) < 1e-20, "")
+chk("cap: 전류원/monitor None", caps["XI_ESD (IO→VSS)"] is None and caps["XVictim"] is None, "")
+c_rev = M.cap_of(M.D1, 2.56, -5.0)   # 역바이어스 감소
+c_fwd = M.cap_of(M.D1, 2.56, 0.5)    # 순방향 증가 (FC 상한)
+chk("cap: C-V 단조(역감소·순증가)", c_rev < 250e-15 < c_fwd
+    and abs(M.cap_of(M.D1, 2.56, 5.0) - M.cap_of(M.D1, 2.56, 0.375)) < 1e-20,
+    "rev={} fwd={}".format(c_rev, c_fwd))
+
 # 양극 sweep (사용자 지시 2026-07-28): I=-2→+2, 0에서 두 갈래 continuation
 swb = sweep_scenario(nl, "IO", "VSS", imax=2.0, n=41, imin=-2.0, model_ctx=ctx)
 bI = [p["I"] for p in swb["points"]]

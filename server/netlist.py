@@ -568,6 +568,26 @@ def soa_rules_for(model):
     ]
 
 
+def device_caps(nl, x1=2.56, x2=1415.232):
+    """저항 제외 device별 capacitance spec — model.CAP의 size 스케일 평가.
+    {c0: V=0 값[F], vbi, mj, fc, size} (frontend가 C(V)를 재현할 수 있게 계수 포함).
+    diode류(d_up/d_down/d_b2b)=D1 cap, clamp=D2 cap, 그 외(전류원·monitor)=None.
+    EM은 spec 제외(사용자 지시 2026-07-28)."""
+    from server import model as M
+    out = {}
+    for key, d in device_keys(nl):
+        cell = d.get("cell")
+        dev = M.D1 if cell in ("d_up", "d_down", "d_b2b") else (M.D2 if cell == "clamp" else None)
+        if dev is None:
+            out[key] = None
+            continue
+        x = _size_of(d, x1, x2)
+        p = M.CAP[dev["id"]]
+        out[key] = {"c0": M.cap_of(dev, x, 0.0), "vbi": p["vbi"], "mj": p["mj"],
+                    "fc": p["fc"], "size": x}
+    return out
+
+
 def device_curves(nl, x1=2.56, x2=1415.232, corner="worst", npts=41):
     """저항 제외 device별 실측 특성곡선 {V,I} — I-V 차트의 참조선(궤적 vs 특성 대비).
     element 좌표계(clamp는 미러). 실측 데이터 없는 소자=None. (모델,size)별 캐시."""

@@ -57,6 +57,27 @@ D2 = {
     "range": (1415.232, 2628.288),
 }
 
+# ---- Capacitance spec (2026-07-28, 사용자 지시: radar 축용 spec equation) ----
+# 실측 미제공 → 물리 기반 생성 모델(접합 C-V):
+#     C(x, V) = C0 · (x/x0) / (1 − min(V, FC·Vbi)/Vbi)^mj
+#   V = anode−cathode(순방향 양), 역방향(V<0)에서 감소, 순방향은 SPICE FC=0.5
+#   관례로 Vbi/2 상한(발산 방지). 면적 선형 스케일(C ∝ x — I-V par와 동일 철학).
+#   diode(D1): 기준 x=2.56에서 C0=250 fF (IO ESD diode급 zero-bias).
+#   clamp(D2): drain 접합+gate 오버랩 ∝ W — 기준 x=1415.232에서 C0=2.1 pF.
+# EM은 spec 대상에서 제외(사용자 지시). 실측 C 데이터가 오면 이 표만 교체.
+CAP = {
+    "diode": {"c0": 250e-15, "x0": 2.56, "vbi": 0.75, "mj": 0.45, "fc": 0.5},
+    "clamp": {"c0": 2.1e-12, "x0": 1415.232, "vbi": 0.80, "mj": 0.40, "fc": 0.5},
+}
+
+
+def cap_of(dev, x, v=0.0):
+    """접합 capacitance C(x, V) [F] — dev는 D1/D2, x=size, v=양단 전압(순방향 양)."""
+    p = CAP[dev["id"]]
+    veff = min(v, p["fc"] * p["vbi"])
+    return p["c0"] * (x / p["x0"]) / (1.0 - veff / p["vbi"]) ** p["mj"]
+
+
 # D5: extrapolation window = measured split min/max +-50%
 EXTRAP = 0.5
 
