@@ -616,30 +616,46 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
             "solution": sol}
 
 
+# sweep 진행률 (단일 사용자 표시용 — 0.01A 고해상도 sweep의 실시간 %)
+_SWEEP_PROG = {"done": 0, "total": 0}
+
+
+@app.get(PREFIX + "/api/analysis/sweep/progress")
+def analysis_sweep_progress():
+    t = _SWEEP_PROG["total"]
+    return {"done": _SWEEP_PROG["done"], "total": t,
+            "pct": (100.0 * _SWEEP_PROG["done"] / t) if t else 0.0}
+
+
 @app.get(PREFIX + "/api/analysis/sweep")
 def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
                    x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
                    model_mode: str = "measured", imin: float = 0.0,
-                   cap_lim_pf: float = None, hbm_kv: float = None):
+                   cap_lim_pf: float = None, hbm_kv: float = None, slim: int = 0):
     """6종 ordered rail 시나리오 × I=imin→Imax continuation sweep + 매 point SOA 평가
     (이슈 #10 §5 + 사용자 궁극 목표: 실측 model 연계, point마다 저항 제외 device_v).
     imin<0이면 양극 sweep(0에서 바깥쪽 두 갈래 continuation).
     상태: non_convergence / unresolved_monitor_terminal / soa_fail / pass."""
     from server.schematic import load_layout
     from server.netlist import extract_netlist, sweep_scenario, RAIL_SCENARIOS
-    if not (0 < imax <= 100) or not (2 <= n <= 201) or not (-100 <= imin < imax):
-        return PlainTextResponse("imax∈(0,100], n∈[2,201], imin∈[-100,imax) 필요", status_code=422)
+    if not (0 < imax <= 100) or not (2 <= n <= 801) or not (-100 <= imin < imax):
+        return PlainTextResponse("imax∈(0,100], n∈[2,801], imin∈[-100,imax) 필요", status_code=422)
     from server.netlist import (device_keys, soa_endpoints, soa_rules_for, device_curves,
                                 device_caps, size_expr_of, free_params)
     ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
     if err:
         return err
     nl = extract_netlist(load_layout()[0])
+    _SWEEP_PROG["done"], _SWEEP_PROG["total"] = 0, n * len(RAIL_SCENARIOS)
+
+    def _tick():
+        _SWEEP_PROG["done"] += 1
     scenarios = []
     for force, ground in RAIL_SCENARIOS:
         try:
             scenarios.append(sweep_scenario(nl, force, ground, imax=imax, n=n, L=L,
-                                            model_ctx=ctx, imin=imin))
+                                            model_ctx=ctx, imin=imin,
+                                            progress_cb=_tick, slim=bool(slim)))
         except ValueError as ex:
             scenarios.append({"force": force, "ground": ground, "error": str(ex)})
     # 소자 리스트 = frontend 시각화의 단일 원천 (key는 device_v/device_i와 동일)

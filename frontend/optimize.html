@@ -307,9 +307,11 @@ function val(id){const el=document.getElementById(id);return el?el.value:'';}
 // 레거시 코드 호환을 위해 알려진 이름은 기존 id를 재사용한다.
 const PARAM_ID={x1:'x1init',x2:'x2init',L:'linit'};
 const PARAM_DEFAULTS={x1:2.56,x2:1415.232,L:350};
+const PARAM_OVERRIDE={};  // 카드 내 input이 canonical 생성 전 편집될 때의 저장소
 function pv(name){
   const el=document.getElementById(PARAM_ID[name]||('param_'+name));
   if(el&&el.value!=='') return el.value;
+  if(PARAM_OVERRIDE[name]!==undefined) return String(PARAM_OVERRIDE[name]);
   if(SS&&SS.params){const p=SS.params.find(q=>q.name===name);if(p)return String(p.default);}
   return String(PARAM_DEFAULTS[name]!==undefined?PARAM_DEFAULTS[name]:1);
 }
@@ -333,13 +335,20 @@ function loadDeviceCards(){
         const isOpen=els.some(e=>e.open);
         let prm=Object.entries(d0.params||{}).map(([k,v])=>k+'='+v).join(' · ')||'—';
         let extra='';
-        if(d0.kind==='resistor'){  // 저항: 바인딩 → 현재값
+        if(d0.kind==='resistor'){  // 저항: 바인딩 → 현재값 (자유 파라미터 L은 input)
           const R=(d0.params||{}).R;
-          if(R==='rdd(L)') extra+='<div>R = rdd(L) → '+f(0.5*(+pv('L'))/350,3)+'Ω</div>';
+          if(R==='rdd(L)') extra+='<div>R = rdd(L) → '+f(0.5*(+pv('L'))/350,3)
+            +'Ω · L = <input class="cardParam" data-param="L" type="number" step="any" value="'
+            +pv('L')+'" style="width:62px">µm</div>';
           else if(R!==undefined) extra+='<div>R = '+R+'Ω</div>';
         }
-        if(ss&&ss.size_expr) extra+='<div>size = '+ss.size_expr
-          +(ss.soa?(' → '+f(ss.soa.size,4)):'')+'</div>';
+        if(ss&&ss.size_expr){
+          const pure=!ss.size_expr.includes('/');  // 순수 바인딩(x1/x2)만 자유도 — input
+          extra+='<div>size = '+ss.size_expr+' → '
+            +(pure?('<input class="cardParam" data-param="'+ss.size_expr
+              +'" type="number" step="any" value="'+pv(ss.size_expr)+'" style="width:76px">')
+              :(ss.soa?f(ss.soa.size,4)+' (파생)':''))+'</div>';
+        }
         if(ss&&ss.soa) extra+='<div>SOA vp '+f(ss.soa.vp,2)+'V·ip '+f(ss.soa.ip,2)
           +'A / vn '+f(ss.soa.vn,2)+'V·inn '+f(ss.soa.inn,3)+'A</div>';
         if(ss&&ss.cap) extra+='<div>C0 = '+f(ss.cap.c0*1e15,0)+'fF'
@@ -355,6 +364,15 @@ function loadDeviceCards(){
           +'<div>pins: '+els.map(e=>e.pins).join(' | ')+'</div>'
           +'<div>params: '+prm+'</div>'+extra;
         box.appendChild(card);
+      });
+      box.querySelectorAll('input.cardParam').forEach(inp=>{
+        inp.addEventListener('change',()=>{
+          const nm=inp.dataset.param;
+          PARAM_OVERRIDE[nm]=inp.value;
+          const cn=document.getElementById(PARAM_ID[nm]||('param_'+nm));
+          if(cn){cn.value=inp.value;cn.dispatchEvent(new Event('change'));}
+          else{loadSchematic();loadSchemSweep();}
+        });
       });
     })
     .catch(e=>{box.textContent='오류: '+(e.message||e);});
@@ -681,15 +699,34 @@ dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
   }).join('');
 }});
 
+let SS_POLL=null, SS_SEQ=0;  // single-flight — 연속 변경 시 최신 sweep만 유효
 function loadSchemSweep(){
   const info=document.getElementById('ssInfo');
-  info.textContent='sweep 중…';
-  const q='imax='+encodeURIComponent(val('imax'))+'&imin=-'+encodeURIComponent(val('imax'))
-    +'&n=81&x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
+  const seq=++SS_SEQ;
+  info.textContent='sweep 시작…';
+  const im=+val('imax')||2.0;
+  const nPts=Math.round(im*2/0.01)+1;  // 0.01A 단위 — spec 전류(1.33A)가 격자에 정확히 놓임 (사용자 지시)
+  const q='imax='+encodeURIComponent(im)+'&imin=-'+encodeURIComponent(im)
+    +'&n='+nPts+'&slim=1&x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
     +'&L='+encodeURIComponent(pv('L'))+'&corner='+encodeURIComponent(val('ssCorner'))
     +'&cap_lim_pf='+encodeURIComponent(val('specCapLim'))+'&hbm_kv='+encodeURIComponent(val('specHbm'));
+  // 실시간 진행률 (서버 progress 엔드포인트 폴링 — 사용자 지시)
+  if(SS_POLL) clearInterval(SS_POLL);
+  let ssDone=false;  // in-flight progress 응답이 최종 요약을 덮어쓰지 않도록
+  SS_POLL=setInterval(()=>{
+    fetch('api/analysis/sweep/progress').then(r=>r.json()).then(pp=>{
+      if(!ssDone&&seq===SS_SEQ&&pp.total) info.textContent='sweep '+pp.pct.toFixed(0)+'% ('
+        +pp.done+'/'+pp.total+' pts · 0.01A 단위)…';
+    }).catch(()=>{});
+  },400);
   fetch('api/analysis/sweep?'+q)
-    .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+    .then(async r=>{
+      if(!r.ok){throw new Error(await r.text());}
+      const d=await r.json();
+      if(seq!==SS_SEQ) throw new Error('__superseded__');  // 더 새 sweep이 있음 — 무시
+      ssDone=true; clearInterval(SS_POLL); SS_POLL=null;
+      return d;
+    })
     .then(d=>{
       SS=d; DV.devs=d.devices||[];   // 소자 리스트 = schematic 추출과 1:1 (단일 원천)
       renderParamInputs();  // 자유 파라미터 입력 동적 생성 (schematic 발견분)
@@ -708,7 +745,11 @@ function loadSchemSweep(){
       info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
         +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
         +' · corner='+d.corner+' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
-    }).catch(e=>{info.textContent='오류: '+(e.message||e);});
+    }).catch(e=>{
+      if((e.message||'')==='__superseded__') return;  // 더 새 sweep이 대체 — 조용히 무시
+      if(seq===SS_SEQ&&SS_POLL){clearInterval(SS_POLL);SS_POLL=null;}
+      if(seq===SS_SEQ) info.textContent='오류: '+(e.message||e);
+    });
 }
 
 function renderAll(){
@@ -1057,6 +1098,8 @@ document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 // 하단 overlay 슬라이더: 마스터 전류 조작 — 최적화 로드 시 islider까지,
 // 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.
 let IOVL_LOCK=false, IOVL_RAF=0;
+// 부팅: Device instances 카드 렌더 → 자동 sweep (사용자 지시 2026-07-28)
+loadDeviceCards();
 loadSchemSweep();
 document.body.style.paddingBottom='76px'; // 2행 overlay에 본문이 가리지 않게
 // overlay optimizer 슬라이더 — 실행 전 비활성(상시 배치, CLS 없음), rAF 스로틀

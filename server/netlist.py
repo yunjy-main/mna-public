@@ -812,13 +812,16 @@ def device_currents(nl, sol, model_ctx=None):
     return out
 
 
-def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, imin=0.0):
+def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, imin=0.0,
+                   progress_cb=None, slim=False):
     """I=imin→imax continuation sweep + 매 point SOA 평가 (points는 I 오름차순).
 
     imin<0(양극 sweep, 사용자 지시 2026-07-28)이면 0에서 바깥쪽으로 양/음 두 갈래
     warm-start 후 병합 — 극성 반전점에서의 cold start를 피한다.
     point 상태 4종: non_convergence / unresolved_monitor_terminal / soa_fail / pass.
-    SOA fail은 solve 실패가 아니다 — 해는 유효하게 저장하고 metadata만 기록."""
+    SOA fail은 solve 실패가 아니다 — 해는 유효하게 저장하고 metadata만 기록.
+    progress_cb: point 1개 완료마다 호출(실시간 진행률). slim: 고해상도(0.01A) sweep의
+    응답 경량화 — 미사용 node 전압 v 생략 + device 값 5자리 반올림."""
     grid = [imin + (imax - imin) * k / float(n - 1) if n > 1 else imax for k in range(n)]
 
     def solve_point(i, v0):
@@ -833,15 +836,22 @@ def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, i
             status = "soa_fail"
         else:
             status = "pass"
-        point = {"I": i, "status": status, "converged": sol["converged"],
-                 "residual": sol["residual"], "v": sol["v"],
-                 "device_v": device_voltages(nl, sol),
-                 "device_i": device_currents(nl, sol, model_ctx=model_ctx),
+        rd = (lambda x: (None if x is None else round(x, 5))) if slim else (lambda x: x)
+        point = {"I": round(i, 6), "status": status, "converged": sol["converged"],
+                 "residual": sol["residual"],
+                 "device_v": {k: rd(v) for k, v in device_voltages(nl, sol).items()},
+                 "device_i": {k: rd(v) for k, v in
+                              device_currents(nl, sol, model_ctx=model_ctx).items()},
                  "monitors": [{"instance": m["instance"], "valid": m["valid"],
                                "reason": m["reason"], "passed": m["passed"],
-                               "stress": m["stress"],
+                               "stress": ({k: rd(v) for k, v in m["stress"].items()}
+                                          if m["stress"] else m["stress"]),
                                "worst_quantity": m["worst_quantity"],
                                "worst_margin": m["worst_margin"]} for m in mons]}
+        if not slim:
+            point["v"] = sol["v"]
+        if progress_cb:
+            progress_cb()
         return point, sol, mons
 
     def branch(currents):  # 0 근처→바깥 순서로 continuation, (points, first_fail, last_conv)
