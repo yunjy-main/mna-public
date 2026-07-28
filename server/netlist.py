@@ -568,12 +568,18 @@ def soa_rules_for(model):
     ]
 
 
+IO_VIEW_NETS = ("IO", "N1", "IN")  # pad에서 바라본 노드 섬 (Rio_rdl·Resd 경유 lumped view)
+
+
 def device_caps(nl, x1=2.56, x2=1415.232):
     """저항 제외 device별 capacitance spec — model.CAP의 size 스케일 평가.
-    {c0: V=0 값[F], vbi, mj, fc, size} (frontend가 C(V)를 재현할 수 있게 계수 포함).
+    {c0: V=0 값[F], vbi, mj, fc, size, on_io} — on_io=pad에서 보이는 소자
+    (IO/N1/IN에 pin이 닿음). capLim 판정은 on_io 소자들의 합(모델 계층 IO_CAP_LIM).
     diode류(d_up/d_down/d_b2b)=D1 cap, clamp=D2 cap, 그 외(전류원·monitor)=None.
     EM은 spec 제외(사용자 지시 2026-07-28)."""
     from server import model as M
+    names = nl["nets"]
+    io_ids = set(i for i, nm in names.items() if nm in IO_VIEW_NETS)
     out = {}
     for key, d in device_keys(nl):
         cell = d.get("cell")
@@ -581,10 +587,12 @@ def device_caps(nl, x1=2.56, x2=1415.232):
         if dev is None:
             out[key] = None
             continue
+        pins = ([d["a"], d["b"]] if "a" in d else list((d.get("terminals") or {}).values()))
         x = _size_of(d, x1, x2)
         p = M.CAP[dev["id"]]
         out[key] = {"c0": M.cap_of(dev, x, 0.0), "vbi": p["vbi"], "mj": p["mj"],
-                    "fc": p["fc"], "size": x}
+                    "fc": p["fc"], "size": x,
+                    "on_io": any(pin in io_ids for pin in pins)}
     return out
 
 

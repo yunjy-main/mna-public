@@ -62,7 +62,7 @@ def regression():
     return {"exit": code, "output": "\n".join(outputs)}
 
 
-A_PER_KV = 1.33  # user-fixed spec rule (D9 revised): ESD 1 kV <-> 1.33 A
+A_PER_KV = M.A_PER_KV  # 원천은 model.py (D9: ESD 1 kV <-> 1.33 A)
 # victim = PMOS+NMOS inverter, drain node via Resd from IO (user-fixed topology).
 # SOA from docs/victim_soa_model.html — user-selected SG NFET + SG PFET, 1stk_1rx.
 VICTIM = {"ifail": 0.01, "resd": 500.0, "von": 0.7, "ronj": 10.0,
@@ -654,8 +654,13 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
+    io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
     return {"imax": imax, "imin": imin, "n": n, "L": L, "x1": x1, "x2": x2,
             "corner": corner, "model_mode": model_mode, "devices": devices,
+            "cap_lim": M.IO_CAP_LIM, "io_cap_total": io_cap_total,
+            "esd_spec": {"a_per_kv": M.A_PER_KV,
+                         "levels": [{"kv": kv, "amp": M.hbm_current(kv)}
+                                    for kv in M.HBM_LEVELS_KV]},
             "monitor_rules": monitor_rules, "scenarios": scenarios}
 
 

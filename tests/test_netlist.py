@@ -453,6 +453,14 @@ chk("cap: secondary 면적 1/10 → C/10", abs(caps["XD_up2"]["c0"] - 25e-15) < 
     str(caps["XD_up2"]["c0"]))
 chk("cap: b2b=D1 cap 공유", abs(caps["XD_b2b_m"]["c0"] - caps["XD_up"]["c0"]) < 1e-20, "")
 chk("cap: 전류원/monitor None", caps["XI_ESD (IO→VSS)"] is None and caps["XVictim"] is None, "")
+on_io = sorted(k for k, c in caps.items() if c and c["on_io"])
+chk("cap: IO에서 보이는 소자 4종", on_io == ["XD_down", "XD_down2", "XD_up", "XD_up2"],
+    str(on_io))
+io_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
+chk("cap: IO 합산 550fF ≤ capLim 5pF (usage 11%)", abs(io_total - 550e-15) < 1e-18
+    and io_total < M.IO_CAP_LIM, str(io_total))
+chk("I_esd spec: HBM 1kV=1.33A, 2kV=2.66A (D9)", abs(M.hbm_current(1) - 1.33) < 1e-12
+    and abs(M.hbm_current(2) - 2.66) < 1e-12 and 2.0 in M.HBM_LEVELS_KV, "")
 c_rev = M.cap_of(M.D1, 2.56, -5.0)   # 역바이어스 감소
 c_fwd = M.cap_of(M.D1, 2.56, 0.5)    # 순방향 증가 (FC 상한)
 chk("cap: C-V 단조(역감소·순증가)", c_rev < 250e-15 < c_fwd

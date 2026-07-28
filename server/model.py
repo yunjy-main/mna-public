@@ -70,6 +70,22 @@ CAP = {
     "clamp": {"c0": 2.1e-12, "x0": 1415.232, "vbi": 0.80, "mj": 0.40, "fc": 0.5},
 }
 
+# capLim: IO pad에서 바라본 총 capacitance 예산 (사용자 정의 2026-07-28 —
+# "일반적인 GPIO에서 요구하는 IO단에서 바라본 spec, 작을수록 좋음").
+# 관례: 범용 GPIO Cio max ≈ 5 pF (여유형 10 pF, 엄격형 3 pF; 고속 pad 0.5~1.5 pF).
+# 판정은 소자 개별이 아니라 IO에 매달린 소자들의 합 ≤ IO_CAP_LIM.
+IO_CAP_LIM = 5e-12
+
+# I_ESD spec: HBM 레벨 ↔ 요구 전류 (사용자 지시 2026-07-28; 환산은 D9: 1 kV ↔ 1.33 A).
+# 관례 레벨(JS-001 class 계열): 0.5 / 1 / 2 / 4 kV — 설계는 해당 전류까지 생존해야 한다.
+A_PER_KV = 1.33
+HBM_LEVELS_KV = (0.5, 1.0, 2.0, 4.0)
+
+
+def hbm_current(kv):
+    """HBM 레벨(kV) → 요구 주입 전류 [A] (D9 환산)."""
+    return A_PER_KV * float(kv)
+
 
 def cap_of(dev, x, v=0.0):
     """접합 capacitance C(x, V) [F] — dev는 D1/D2, x=size, v=양단 전압(순방향 양)."""
