@@ -115,7 +115,7 @@
       <a href="ref/docs/victim_soa_model.html">victim SOA 문서</a> <a href="hub">전체 화면 목록</a>
     </div>
     <h3>설계변수 — 탐색 창·고정<span class="info" title="schematic 자유 파라미터 레지스트리에서 동적 생성(§1 입력과 같은 원천).&#10;자물쇠 = optimizer 변경 권한: 잠금 시 gradient 마스크(FD·update 생략) — 값은 §1 승계·회로 반영 유지. 고정된 변수의 탐색 창은 미연계라 비활성(활성=연계 원칙).&#10;창은 비대칭 rule: min=가혹 FAIL(급경사)·max=준-rule(완경사).&#10;기본: L 고정(layout이 결정하는 물리량).">ⓘ</span></h3>
-    <div id="optVars"></div>
+    <div id="optVarRows"></div>
     <h3>Cost</h3>
     <div class="in">
       <div><label>wA (x1 area)</label><input id="wA" type="number" step="any" value="1.0"></div>
@@ -404,7 +404,7 @@ function renderParamInputs(){
 }
 // §3 설계변수 행 — 같은 레지스트리(SS.params)에서 동적 생성: 자물쇠 + 탐색 창(min~max)
 function renderOptVarRows(){
-  const vb=document.getElementById('optVars');
+  const vb=document.getElementById('optVarRows');
   if(!vb||!SS||!SS.params) return;
   vb.innerHTML='';
   SS.params.forEach(q=>{
