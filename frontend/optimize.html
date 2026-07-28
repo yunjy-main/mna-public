@@ -53,6 +53,10 @@
       <summary class="cap" style="cursor:pointer">Subcircuit Set (중복 없는 cell 세트) — 펼치기</summary>
       <div id="schemLib" style="max-width:860px"></div>
     </details>
+    <details open style="margin-top:6px;border-top:1px dashed #b0b6bf;padding-top:4px">
+      <summary class="cap" style="cursor:pointer">Device instances<span class="info" title="schematic에서 추출한 전 소자(저항·open 포함)를 instance 단위 카드로 동적 나열 — instance/kind/cell/role, model, pins(net), params(바인딩→현재값), SOA endpoint(size 반영), C0. 회로도·파라미터 변경 시 자동 갱신.">ⓘ</span></summary>
+      <div id="devCards" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
+    </details>
   </div>
 
   <!-- ================= 2-0. Schematic device 시각화 (소자 리스트 단일 원천, renderer 패턴) ================= -->
@@ -308,6 +312,52 @@ function pv(name){
   if(el&&el.value!=='') return el.value;
   if(SS&&SS.params){const p=SS.params.find(q=>q.name===name);if(p)return String(p.default);}
   return String(PARAM_DEFAULTS[name]!==undefined?PARAM_DEFAULTS[name]:1);
+}
+// §0 Device instances 카드 — schematic 전 소자(저항·open 포함, 사용자 지시 2026-07-28).
+// 원천: matrix API 전 소자 목록(pins 포함) + sweep 소자 리스트(SOA/cap/바인딩) 병합.
+function loadDeviceCards(){
+  const box=document.getElementById('devCards');
+  if(!box) return;
+  const q='x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
+    +'&L='+encodeURIComponent(pv('L'))+'&corner='+encodeURIComponent(val('ssCorner')||'worst');
+  fetch('api/schematic/matrix?i=1.33&'+q)
+    .then(r=>r.ok?r.json():null)
+    .then(mx=>{
+      if(!mx){box.textContent='device 목록 로드 실패';return;}
+      box.innerHTML='';
+      const groups={};  // instance 단위 그룹 (b2b 쌍 = 한 카드에 element 2개)
+      (mx.devices||[]).forEach(dv=>{const k=dv.instance||dv.kind;(groups[k]=groups[k]||[]).push(dv);});
+      Object.keys(groups).forEach(inst=>{
+        const els=groups[inst], d0=els[0];
+        const ss=((SS&&SS.devices)||[]).find(x=>x.instance===inst);
+        const isOpen=els.some(e=>e.open);
+        let prm=Object.entries(d0.params||{}).map(([k,v])=>k+'='+v).join(' · ')||'—';
+        let extra='';
+        if(d0.kind==='resistor'){  // 저항: 바인딩 → 현재값
+          const R=(d0.params||{}).R;
+          if(R==='rdd(L)') extra+='<div>R = rdd(L) → '+f(0.5*(+pv('L'))/350,3)+'Ω</div>';
+          else if(R!==undefined) extra+='<div>R = '+R+'Ω</div>';
+        }
+        if(ss&&ss.size_expr) extra+='<div>size = '+ss.size_expr
+          +(ss.soa?(' → '+f(ss.soa.size,4)):'')+'</div>';
+        if(ss&&ss.soa) extra+='<div>SOA vp '+f(ss.soa.vp,2)+'V·ip '+f(ss.soa.ip,2)
+          +'A / vn '+f(ss.soa.vn,2)+'V·inn '+f(ss.soa.inn,3)+'A</div>';
+        if(ss&&ss.cap) extra+='<div>C0 = '+f(ss.cap.c0*1e15,0)+'fF'
+          +(ss.cap.on_io?' (IO 예산)':' (rail)')+'</div>';
+        const card=document.createElement('div');
+        card.style.cssText='border:1px solid '+(isOpen?'#d8dde3':'#c6ccd4')
+          +';border-radius:3px;padding:4px 7px;font-size:var(--fs-tiny);min-width:215px'
+          +(isOpen?';color:#8a94a0':'');
+        card.innerHTML='<b style="font-size:var(--fs-small)">'+inst+'</b>'
+          +' <span style="color:#8a94a0">'+d0.kind+(els.length>1?'×'+els.length:'')
+          +' · cell '+(d0.cell||'—')+(d0.role?' · '+d0.role:'')+(isOpen?' · open(미조립)':'')+'</span>'
+          +'<div>model: '+(d0.model||'—')+'</div>'
+          +'<div>pins: '+els.map(e=>e.pins).join(' | ')+'</div>'
+          +'<div>params: '+prm+'</div>'+extra;
+        box.appendChild(card);
+      });
+    })
+    .catch(e=>{box.textContent='오류: '+(e.message||e);});
 }
 function renderParamInputs(){
   const box=document.getElementById('ssParams');
@@ -643,6 +693,7 @@ function loadSchemSweep(){
     .then(d=>{
       SS=d; DV.devs=d.devices||[];   // 소자 리스트 = schematic 추출과 1:1 (단일 원천)
       renderParamInputs();  // 자유 파라미터 입력 동적 생성 (schematic 발견분)
+      loadDeviceCards();    // §0 device instance 카드 (전 소자, 저항·open 포함)
       const sel=document.getElementById('ssScn'), prev=sel.value;
       sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
       if(prev && +prev<d.scenarios.length) sel.value=prev;
