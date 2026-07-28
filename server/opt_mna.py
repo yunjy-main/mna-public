@@ -112,7 +112,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     f0, us0 = evaluate(z)
     initial = summarize(z, us0)
     initial["loss"] = f0
-    best_f, best_z, best_us = f0, list(z), us0
+    best_f, best_z, best_us, best_it = f0, list(z), us0, 0
     mom = [0.0] * 3
     vel = [0.0] * 3
     b1, b2, eps_ = 0.9, 0.999, 1e-9
@@ -137,7 +137,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             z[i] = min(1.2, max(-0.2, z[i] - lr * mh / (math.sqrt(vh) + eps_)))
         f_new, us_new = evaluate(z)
         if f_new < best_f:
-            best_f, best_z, best_us = f_new, list(z), us_new
+            best_f, best_z, best_us, best_it = f_new, list(z), us_new, it
         s = summarize(z, us_new)
         history.append({"it": it, "loss": f_new, "x1": s["x1"], "x2": s["x2"],
                         "L": s["L"], "worst": s["worst"], "usages": _round_us(us_new)})
@@ -148,5 +148,6 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     final = summarize(best_z, us_final)
     final["loss"] = best_f
     return {"initial": initial, "final": final, "history": history,
+            "best_it": best_it,  # 최적해 iteration — 마지막 step이 아닐 수 있음(Adam 관성)
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
             "force": force, "ground": ground, "corner": corner, "iters": iters}

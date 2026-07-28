@@ -91,7 +91,7 @@
 
   <!-- ================= 2. Optimizer 경계 — 초기조건 승계 + Spec + 시작 ================= -->
   <div class="card" id="optBoundaryCard">
-    <h2>2. Optimizer 시작 — 초기조건·Spec<span class="info" title="위(§1 MNA solving)에서 누적된 상태를 초기조건으로 승계: 설계값(x1/x2/L)·corner·시나리오·스크럽 forcing current I₀.&#10;여기에 spec(HBM 레벨·capLim)을 입력하고 Optimizing 시작을 누르면 그 초기조건과 spec 하에서 loss 최적화가 실행된다(위→아래 순차 흐름).">ⓘ</span></h2>
+    <h2>2. Optimizer 초기조건·Spec<span class="info" title="위(§1 MNA solving)에서 누적된 상태를 초기조건으로 승계: 설계값(x1/x2/L)·corner·시나리오·스크럽 forcing current I₀ + spec(HBM 레벨·capLim) 입력.&#10;아래로 §3 설정을 거쳐 §4에서 Optimizing이 실행된다(위→아래 순차 흐름).">ⓘ</span></h2>
     <div class="hint" id="initCond">승계된 초기조건: — (§1에서 sweep 후 표시)</div>
     <div class="in" style="margin-top:4px">
       <div><label>HBM 레벨 (요구 전류)</label>
@@ -103,26 +103,6 @@
         </select></div>
       <div><label>IO capLim (pF)</label><input id="specCapLim" type="number" step="any" value="5"></div>
       <div><label>spec 판정 (§1 MNA 기준)</label><span class="hint" id="specStat">—</span></div>
-    </div>
-    <div style="margin-top:8px">
-      <button id="startBtn">Optimizing 시작 (MNA loss)</button>
-      <button id="legacyBtn" style="background:#fff;color:var(--c-accent)">analytic 참고 실행(§4)</button>
-      <button id="resetBtn" style="background:#fff;color:var(--c-accent)">Reset</button>
-      <span class="status" id="status">Ready.</span>
-    </div>
-    <div class="err" id="err"></div>
-    <div id="optResult" hidden style="margin-top:6px">
-      <div class="hint" id="optSummary"></div>
-      <div style="margin:6px 0 4px">
-        <label class="hint">optimizer iteration = <b id="optItLab">—</b><span class="info" title="최적화 궤적 스크럽 — 아래 radar·차트 marker가 이 iteration의 설계 상태를 따라간다 (current 슬라이더의 최적화판).">ⓘ</span></label>
-        <input id="optIdx" class="iscrub" type="range" min="0" max="30" value="30" style="width:100%;--zero:0%">
-      </div>
-      <div class="g23" style="margin-top:4px">
-        <div id="optLoss"></div><div id="optVars"></div><div id="optWorst"></div>
-      </div>
-      <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
-      <div class="radars" id="optRadar"></div>
-      <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
     </div>
   </div>
 
@@ -201,9 +181,36 @@
   </div>
 
 
+  <!-- ================= 4. Optimizing 실행·결과 (MNA loss) ================= -->
+  <div class="card" id="optRunCard">
+    <h2>4. Optimizing 실행·결과<span class="info" title="§2 초기조건·spec + §3 설정 하에서 MNA-loss 최적화 실행.&#10;결과 요약의 '최적'은 궤적 중 loss 최소(best) iteration을 정밀(N=4000) 재평가한 값 — 슬라이더 마지막 지점이 아닐 수 있다(Adam 관성). ★=best.">ⓘ</span></h2>
+    <div style="margin-top:8px">
+      <button id="startBtn">Optimizing 시작 (MNA loss)</button>
+      <button id="legacyBtn" style="background:#fff;color:var(--c-accent)">analytic 참고 실행(§5)</button>
+      <button id="resetBtn" style="background:#fff;color:var(--c-accent)">Reset</button>
+      <span class="status" id="status">Ready.</span>
+    </div>
+    <div class="err" id="err"></div>
+    <div id="optResult" hidden style="margin-top:6px">
+      <div class="hint" id="optSummary"></div>
+      <div style="margin:6px 0 4px">
+        <label class="hint">optimizer iteration = <b id="optItLab">—</b><span class="info" title="최적화 궤적 스크럽 — 아래 radar·차트 marker가 이 iteration의 설계 상태를 따라간다 (current 슬라이더의 최적화판).">ⓘ</span></label>
+        <input id="optIdx" class="iscrub" type="range" min="0" max="30" value="30" style="width:100%;--zero:0%">
+      </div>
+      <div class="g23" style="margin-top:4px">
+        <div id="optLoss"></div><div id="optVars"></div><div id="optWorst"></div>
+      </div>
+      <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
+      <div class="radars" id="optRadar"></div>
+      <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선(usage/loss 감소)=녹색, 악화=적색.">ⓘ</span></h3>
+      <div class="tw"><table id="optDiff"></table></div>
+      <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
+    </div>
+  </div>
+
   <!-- ================= 2. 시각화 ================= -->
   <div class="card" id="vizCard" hidden>
-    <h2>4. Optimizer 결과</h2>
+    <h2>5. Optimizer 결과 (analytic 참고)</h2>
     <div class="scrub">
       <span class="kv" id="currentScrubLabel">Injected current: 1.30 A</span>
       <input id="islider" class="iscrub" type="range" min="0" max="40" step="1" value="26" style="--zero:0%">
@@ -244,7 +251,7 @@
 
   <!-- ================= 3. MNA / loss definition ================= -->
   <div class="card">
-    <h2>5. MNA / loss definition</h2>
+    <h2>6. MNA / loss definition</h2>
     <div class="grid-2">
       <pre id="mnaEq"></pre>
       <pre id="lossEq"></pre>
@@ -253,7 +260,7 @@
 
   <!-- ================= 4. Table notes ================= -->
   <div class="card">
-    <h2>6. Table notes</h2>
+    <h2>7. Table notes</h2>
     <div class="cap">최신 iteration이 가장 위에 표시됩니다. Radar와 gauge는 최종 iteration 기준입니다.
 x1/x2/L window rule은 projection이 아니라 violation penalty와 hard pass/fail 판정으로 처리됩니다(창립 rule 비대칭: min=가혹 FAIL, max=준-rule).
 position = (값 − min) / (max − min) · SOA usage = stress/limit, 100% = boundary, >100% = fail.
@@ -262,18 +269,27 @@ victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topol
 
   <!-- ================= 5. Iteration table ================= -->
   <div class="card" id="tableCard" hidden>
-    <h2>7. Iteration table</h2>
+    <h2>8. Iteration table</h2>
     <div class="tw"><table id="itTable"></table></div>
   </div>
 </main>
-<!-- 하단 고정 overlay: injected current 슬라이더 — 어느 스크롤 위치에서든 그래프 연동 -->
+<!-- 하단 고정 overlay: injected current + optimizer iteration 슬라이더 —
+     어느 스크롤 위치에서든 그래프 연동. optimizer 행은 상시 배치(CLS 방지), 실행 전 비활성. -->
 <div id="iovl" style="position:fixed;left:0;right:0;bottom:0;z-index:50;
   background:rgba(255,255,255,.97);border-top:1px solid #cfd6df;
-  box-shadow:0 -2px 8px rgba(0,0,0,.08);padding:5px 14px;display:flex;gap:10px;align-items:center">
-  <span style="font-size:var(--fs-small);font-weight:700;white-space:nowrap">Injected current</span>
-  <input id="iovlR" class="iscrub" type="range" min="0" max="1000" value="650" style="flex:1;margin:0">
-  <b id="iovlLab" style="font-size:var(--fs-small);min-width:62px;text-align:right">—</b>
-  <span id="iovlSt" style="font-size:var(--fs-tiny);min-width:150px;text-align:right"></span>
+  box-shadow:0 -2px 8px rgba(0,0,0,.08);padding:4px 14px;display:flex;flex-direction:column;gap:1px">
+  <div style="display:flex;gap:10px;align-items:center">
+    <span style="font-size:var(--fs-small);font-weight:700;white-space:nowrap;min-width:104px">Injected current</span>
+    <input id="iovlR" class="iscrub" type="range" min="0" max="1000" value="650" style="flex:1;margin:0">
+    <b id="iovlLab" style="font-size:var(--fs-small);min-width:62px;text-align:right">—</b>
+    <span id="iovlSt" style="font-size:var(--fs-tiny);min-width:150px;text-align:right"></span>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <span style="font-size:var(--fs-small);font-weight:700;white-space:nowrap;min-width:104px">Optimizer iter</span>
+    <input id="iovlOpt" class="iscrub" type="range" min="0" max="30" value="0" style="flex:1;margin:0;--zero:0%" disabled>
+    <b id="iovlOptLab" style="font-size:var(--fs-small);min-width:62px;text-align:right">—</b>
+    <span id="iovlOptSt" style="font-size:var(--fs-tiny);min-width:150px;text-align:right;color:#8a94a0">실행 전 (§4)</span>
+  </div>
 </div>
 <script>
 'use strict';
@@ -789,7 +805,7 @@ function renderOptResult(){
     +' ('+fn.worst_name+') '+(fn.soa_pass?P('PASS'):F('FAIL'))+' · cap '+pct(fn.cap_u);
   const sl=document.getElementById('optIdx');
   sl.max=d.history.length-1;
-  sl.value=d.history.length-1;
+  sl.value=(d.best_it!==undefined)?d.best_it:d.history.length-1;  // 기본 위치 = 최적해(best)
   renderOptIter();
 }
 // optimizer iteration 스크럽 — 최적화가 동작한 흐름을 따라 radar·marker가 움직인다
@@ -798,8 +814,40 @@ function renderOptIter(){
   const h=d.history;
   const idx=Math.max(0,Math.min(+document.getElementById('optIdx').value||0,h.length-1));
   const cur=h[idx];
+  const isBest=(d.best_it!==undefined&&cur.it===d.best_it);
   document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
-    +'  (x1='+f(cur.x1,3)+' · x2='+f(cur.x2,0)+' · L='+f(cur.L,0)+'µm · worst '+pct(cur.worst)+')';
+    +(isBest?' ★best':'')+'  (x1='+f(cur.x1,3)+' · x2='+f(cur.x2,0)+' · L='+f(cur.L,0)
+    +'µm · worst '+pct(cur.worst)+')';
+  // AS-IS → TO-BE 표 — TO-BE·diff는 슬라이더 iteration에 연동 (사용자 지시)
+  const t0=h[0];
+  const capU=hh=>((hh.usages&&hh.usages['cap(IO)'])||0)*100;
+  const rows=[
+    ['x1 (diode size)', t0.x1, cur.x1, 3, '', null],
+    ['x2 (clamp size)', t0.x2, cur.x2, 1, '', null],
+    ['L (RDD, µm)', t0.L, cur.L, 1, '', null],
+    ['worst SOA usage', t0.worst*100, cur.worst*100, 1, '%', true],
+    ['cap usage', capU(t0), capU(cur), 1, '%', true],
+    ['loss', t0.loss, cur.loss, 3, '', true],
+  ];
+  document.getElementById('optDiff').innerHTML=
+    '<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')+')</th><th>diff</th></tr>'
+    +rows.map(r=>{
+      const dd=r[2]-r[1];
+      const rel=Math.abs(r[1])>1e-12?' ('+(dd>=0?'+':'')+(dd/Math.abs(r[1])*100).toFixed(1)+'%)':'';
+      const col=r[5]===null?'#5b6673':(dd<=0?'#0a7d38':'#b3261e');  // lower=better 항목만 색
+      return '<tr><td>'+r[0]+'</td><td>'+f(r[1],r[3])+r[4]+'</td><td>'+f(r[2],r[3])+r[4]
+        +'</td><td style="color:'+col+';font-weight:700">'+(dd>=0?'+':'')+f(dd,r[3])+r[4]+rel+'</td></tr>';
+    }).join('');
+  // 하단 overlay optimizer 슬라이더 동기화 + 활성화
+  const ov=document.getElementById('iovlOpt');
+  if(ov){
+    ov.max=h.length-1; ov.disabled=false;
+    if(!OPTOVL_LOCK) ov.value=idx;
+    document.getElementById('iovlOptLab').textContent=cur.it+(isBest?'★':'')+' / '+(h.length-1);
+    const ost=document.getElementById('iovlOptSt');
+    ost.textContent='worst '+pct(cur.worst)+(isBest?' (best)':'');
+    ost.style.color=cur.worst<=1?'#0a7d38':'#b3261e';
+  }
   const vl=[{x:cur.it}];
   lineChart(document.getElementById('optLoss'),{title:'loss',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],
@@ -809,10 +857,13 @@ function renderOptIter(){
             {x:h.map(r=>r.it),y:h.map(r=>r.x2/1000),color:CB.green,label:'x2/1000'},
             {x:h.map(r=>r.it),y:h.map(r=>r.L/100),color:CB.purple,label:'L/100µm'}],
     vlines:vl,xlabel:'iter'});
-  lineChart(document.getElementById('optWorst'),{title:'worst SOA usage',w:380,h:150,
+  const bh=(d.best_it!==undefined)?h[d.best_it]:null;
+  lineChart(document.getElementById('optWorst'),{title:'worst SOA usage (★=best)',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.worst),color:CB.red,label:'worst u'}],
     hlines:[{y:1,color:CB.red,label:'SOA 경계'}],
-    points:[{x:cur.it,y:cur.worst,r:4,color:CB.red}],vlines:vl,xlabel:'iter'});
+    points:[{x:cur.it,y:cur.worst,r:4,color:CB.red}]
+      .concat(bh?[{x:bh.it,y:bh.worst,r:4.5,color:CB.gold}]:[]),
+    vlines:vl,xlabel:'iter'});
   // 소자별 radar — ghost=초기(iter 0), 실선=현재 iteration (소자 리스트는 usage 키에서 동적)
   const box=document.getElementById('optRadar'); box.innerHTML='';
   const us=cur.usages||{}, us0=h[0].usages||{};
@@ -866,7 +917,18 @@ document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 // 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.
 let IOVL_LOCK=false, IOVL_RAF=0;
 loadSchemSweep();
-document.body.style.paddingBottom='46px'; // overlay에 본문이 가리지 않게
+document.body.style.paddingBottom='76px'; // 2행 overlay에 본문이 가리지 않게
+// overlay optimizer 슬라이더 — 실행 전 비활성(상시 배치, CLS 없음), rAF 스로틀
+let OPTOVL_LOCK=false, OPTOVL_RAF=0;
+document.getElementById('iovlOpt').addEventListener('input',()=>{
+  if(OPTOVL_RAF) return;
+  OPTOVL_RAF=requestAnimationFrame(()=>{
+    OPTOVL_RAF=0; OPTOVL_LOCK=true;
+    document.getElementById('optIdx').value=document.getElementById('iovlOpt').value;
+    renderOptIter();
+    OPTOVL_LOCK=false;
+  });
+});
 document.getElementById('iovlR').addEventListener('input',()=>{
   if(IOVL_RAF) return;
   IOVL_RAF=requestAnimationFrame(()=>{
