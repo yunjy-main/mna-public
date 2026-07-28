@@ -35,6 +35,7 @@
   input.iscrub::-moz-range-track{height:4px;border-radius:2px;background:#dfe4ea}
   input.iscrub::-moz-range-progress{background:#dfe4ea}
   input.iscrub::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#1f5f99;border:2px solid #fff}
+  .info{cursor:help;color:#8a94a0;font-size:11px;font-weight:400;margin-left:4px;border-bottom:1px dotted #b0b6bf}
 </style>
 </head>
 <body>
@@ -144,32 +145,30 @@
 
   <!-- ================= 2-0. Schematic device 시각화 (소자 리스트 단일 원천, renderer 패턴) ================= -->
   <div class="card" id="schemSweepCard">
-    <h2>2-0. Schematic device 시각화 — 소자 리스트 단일 원천 (실측 model, I=0→Imax)</h2>
+    <h2>2-0. Schematic device 시각화<span class="info" title="소자 리스트 단일 원천 아키텍처: 모든 시각화 요소는 schematic에서 추출한 소자 리스트(저항 제외) × renderer 등록 패턴으로 자동 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 함께 증감.&#10;실측 model(esdvpnp=Device1, clamp=Device2, secondary는 면적 x1/10) 기반 MNA를 I=−Imax→+Imax로 sweep.&#10;차트의 세로 빨간 점선/가로선 = SOA 한계, first fail = SOA 첫 위반 전류.">ⓘ</span></h2>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:4px">
       <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">scenario (force→gnd)</label>
         <select id="ssScn"></select></div>
+      <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">SOA corner</label>
+        <select id="ssCorner"><option value="worst" selected>worst</option><option value="best">best</option></select></div>
       <button id="ssBtn">sweep 재계산</button>
       <span class="hint" id="ssInfo"></span>
     </div>
     <div style="margin:4px 0 6px">
-      <label class="hint">스크럽 전류 I = <b id="ssIlab">—</b> A — tracing dot·radar·map·gauge·metric 전부 연동</label>
+      <label class="hint">I = <b id="ssIlab">—</b> A<span class="info" title="스크럽 전류 — 모든 tracing dot·radar·SOA map·gauge·metric이 이 전류에 연동. 하단 overlay 슬라이더와 동기화.">ⓘ</span></label>
       <input id="ssIdx" class="iscrub" type="range" min="0" max="40" value="26" style="width:100%">
     </div>
-    <div class="hint">아래 모든 시각화 요소는 schematic 소자 리스트(저항 제외)와 renderer 등록
-      패턴으로 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 자동 증감. 세로 점선 = first SOA fail.</div>
-    <h3>I-V device (X=V 양단, Y=소자 분기전류 — 없으면 I inj · 세로선=vp/vn ·
-      가로선=ip/inn(current SOA) · 회색 점선=실측 특성 · dot=스크럽)</h3>
+    <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, 빨간 dot=스크럽 동작점.">ⓘ</span></h3>
     <div class="g23" id="ssDev"></div>
-    <h3>I-V victim (X=stress V, Y=주입전류 · 세로선=signed 실측 한계)</h3>
+    <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
-    <h3>소자별 radar (스크럽 전류 기준 · ghost 0/0.5/1/1.5/2A)</h3>
+    <h3>소자별 radar<span class="info" title="스크럽 전류 기준 축값, ghost 다각형 = imin/imin·½/0/imax·½/imax.&#10;protection: V·I usage(방향별 vp/vn·ip/inn), V share(=V/V(force net)), I share, margin.&#10;victim: rule 수량별 usage + margin. 바깥=위험, 빨간 점선=100% 경계.">ⓘ</span></h3>
     <div class="radars" id="ssRadar"></div>
-    <h3>소자별 SOA map (instance size의 실측 endpoint · 궤적 = sweep · 방향별 vp/ip↔vn/inn ·
-      victim은 analytic probe I_v map)</h3>
+    <h3>소자별 SOA map<span class="info" title="instance size의 실측 endpoint가 한계(|V|,|I| 사분면), 궤적=sweep, 점=스크럽 동작점 — 진행 방향의 vp/ip↔vn/inn 사용.&#10;victim은 analytic probe(V(OUT), I_v) map — 계산 실행 시 채워짐.">ⓘ</span></h3>
     <div class="g23" id="ssMap"></div>
-    <h3>소자별 gauge (V/I usage)</h3>
+    <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
-    <h3>소자별 summary metric + usage ranking</h3>
+    <h3>소자별 metric · ranking<span class="info" title="chip: 소자별 V·I·usage·PASS/FAIL (스크럽 전류 기준).&#10;ranking: usage 내림차순 — 상단이 현재 지배 제약.">ⓘ</span></h3>
     <div class="chips" id="ssMetric"></div>
     <div class="rank" id="ssRank" style="margin-top:4px"></div>
   </div>
@@ -178,23 +177,21 @@
   <div class="card" id="vizCard" hidden>
     <h2>2. 시각화</h2>
 
-    <h3>2-1. Integrated radar (바깥=위험 · 100% 점선 경계 · ghost 0/0.5/1/1.5/2A)</h3>
-    <div class="hint">최적화 변수(x1/x2/L) 종합 뷰 — 소자별 radar는 §2-0에서 schematic 소자
-      리스트로 동적 생성</div>
+    <h3>2-1. Integrated radar<span class="info" title="최적화 변수(x1/x2/L) 종합 뷰 — 바깥=위험, 빨간 점선=100% 경계, ghost=0/0.5/1/1.5/2A.&#10;소자별 radar는 §2-0에서 schematic 소자 리스트로 동적 생성.">ⓘ</span></h3>
     <div class="radars">
       <div id="radarInt"></div>
     </div>
 
-    <h3>2-2. Precomputed x1(diode) sweep: injected current 0 → Imax</h3>
+    <h3>2-2. x1 sweep<span class="info" title="Precomputed x1(diode) sweep — 주입전류 0→Imax에서 최적화된 x1 최종값, min/max rule 선, PASS/FAIL 점, 현재 전류 marker.">ⓘ</span></h3>
     <div id="sweepChart"></div>
 
-    <h3>2-3. Final constraint position gauges (좌: non-victim · 우: victim, type별 그룹)</h3>
+    <h3>2-3. Constraint gauges<span class="info" title="최종 constraint 위치 — 좌: non-victim(rule/설계변수·metal), 우: victim(analytic probe 종합). 소자별 V/I SOA gauge는 §2-0에서 동적 생성.">ⓘ</span></h3>
     <div class="grid-2" id="gauges"></div>
 
-    <h3>2-4. Constraint tightness ranking</h3>
+    <h3>2-4. Tightness ranking<span class="info" title="변수·rule·metal·analytic victim의 usage 내림차순. 소자별 ranking은 §2-0.">ⓘ</span></h3>
     <div class="rank" id="rank"></div>
 
-    <h3>2-6. Iteration plots (선택 전류점)</h3>
+    <h3>2-6. Iteration plots<span class="info" title="선택 전류점에서의 최적화(Adam) 내부 수렴 이력 — device usage/변수/loss, victim usage/V(OUT).">ⓘ</span></h3>
     <div class="hint">non-victim (device / 변수 / loss)</div>
     <div class="g23">
       <div id="itUsage"></div>
@@ -425,7 +422,7 @@ function dvGhosts(c,ax){
 // 사용자 지시 2026-07-28). 소자 자신의 signed 한계: vp/vn 세로선 + ip/inn 가로선
 // (current SOA를 같은 좌표계에 표현 — 교점이 SOA endpoint). 실측 특성곡선 회색 참조.
 // 축은 궤적이 향하는 방향의 한계까지 포함(퇴화 축 방지, 평평하면 양쪽 스팬).
-dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
+dvRegister({host:'ssDev', applies:d=>d.role!=='soa_monitor', render:(el,d,c)=>{  // victim은 I-V victim에 (중복 제거)
   const Vs=c.I.map((_,k)=>dvV(d,c,k));
   const hasI=c.I.some((_,k)=>dvI(d,c,k)!==null);
   const Ys=c.I.map((_,k)=>{const i=dvI(d,c,k);return i===null?c.I[k]:i;});
@@ -459,6 +456,7 @@ dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
       if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
   }
   lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,sym:true,
+    shadeRect:d.soa?[d.soa.vn,d.soa.inn,d.soa.vp,d.soa.ip]:null,  // SOA 내부 연초록
     xlabel:'V(양단) [V]'});
 }});
 // [renderer] victim monitor stress — 동일 pivot: X=stress V, Y=주입전류 (한계=세로선)
@@ -480,7 +478,11 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const ffl=[];
   if(c.ffI!==null) ffl.push({y:c.ffI,color:CB.red,label:'first fail +'});
   if(c.ffIN!==null) ffl.push({y:c.ffIN,color:CB.red,label:'first fail −'});
+  // SOA 안전영역: 전 rule 교집합 [max(min), min(max)] — 모든 stress가 안전한 X 대역
+  const sx0=rl.length?Math.max(...rl.map(r=>r.min)):null;
+  const sx1=rl.length?Math.min(...rl.map(r=>r.max)):null;
   lineChart(el,{title:'I-V victim · '+d.key,w:380,h:170,series:s,vlines:vl,sym:true,
+    shadeRect:(sx0!==null)?[sx0,-1e9,sx1,1e9]:null,
     points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
     hlines:ffl,xlabel:'stress [V]'});
 }});
@@ -563,7 +565,7 @@ function loadSchemSweep(){
   info.textContent='sweep 중…';
   const q='imax='+encodeURIComponent(val('imax'))+'&imin=-'+encodeURIComponent(val('imax'))
     +'&n=81&x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
-    +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
+    +'&L='+encodeURIComponent(val('linit'))+'&corner='+encodeURIComponent(val('ssCorner'));
   fetch('api/analysis/sweep?'+q)
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{
@@ -581,7 +583,7 @@ function loadSchemSweep(){
       dvRenderAll();
       info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
         +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
-        +' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
+        +' · corner='+d.corner+' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
     }).catch(e=>{info.textContent='오류: '+(e.message||e);});
 }
 
@@ -741,6 +743,7 @@ loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
 // 2-0: schematic device 시각화 — 최적화 실행 없이도 로드 즉시 동작
 document.getElementById('ssBtn').addEventListener('click',loadSchemSweep);
 document.getElementById('ssScn').addEventListener('change',dvRenderAll);
+document.getElementById('ssCorner').addEventListener('change',loadSchemSweep); // corner 변경 = 재계산
 document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 // 하단 overlay 슬라이더: 마스터 전류 조작 — 최적화 로드 시 islider까지,
 // 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.

@@ -60,6 +60,13 @@ window.MNA = (function () {
       const a = X(Math.max(x0, o.shade[0])), b = X(Math.min(x1, o.shade[1]));
       s += '<rect x="' + a + '" y="' + mT + '" width="' + (b - a) + '" height="' + (H - mT - mB) + '" fill="#eef3f8"/>';
     }
+    if (o.shadeRect) { // SOA 안전영역 등 2D 박스 음영 [x0,y0,x1,y1] — plot 영역으로 클램프
+      const a = X(Math.max(x0, o.shadeRect[0])), b = X(Math.min(x1, o.shadeRect[2]));
+      const t = Y(Math.min(y1, o.shadeRect[3])), bt = Y(Math.max(y0, o.shadeRect[1]));
+      if (b > a && bt > t)
+        s += '<rect x="' + a + '" y="' + t + '" width="' + (b - a) + '" height="' + (bt - t)
+          + '" fill="' + (o.shadeColor || 'rgba(10,125,56,.10)') + '"/>';
+    }
     for (let n = Math.round(x0 / xst); n <= Math.round(x1 / xst); n++) {
       const xv = n * xst, zero = n === 0;  // 원점 축은 진하게
       s += '<line x1="' + X(xv) + '" y1="' + mT + '" x2="' + X(xv) + '" y2="' + (H - mB) + '" stroke="'
