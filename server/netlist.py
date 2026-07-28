@@ -352,19 +352,21 @@ def _size_of(dev, x1, x2):
     return num
 
 
-def measured_context(x1=2.56, x2=1415.232, corner="worst"):
+def measured_context(x1=2.56, x2=1415.232, corner="worst", n=None, cache=None):
     """device record → 실측 I(V) 평가기 resolver. 곡선은 server.model calib에서 유도.
 
     cell→모델: d_up/d_down/d_b2b = Device1(esdvpnp 제공 diode model — b2b·down도 동일
     곡선, 사용자 지시 2026-07-28 — 방향은 element 배치가 표현), clamp = Device2 미러.
-    size는 _size_of로 해석. (모델, size)별 곡선 캐시."""
+    size는 _size_of로 해석. (모델, size)별 곡선 캐시 — cache dict를 넘기면 호출 간
+    공유(optimizer 유한차분에서 재보정 회피), n은 calib 격자(저해상도 loss 평가용)."""
     from server import model as M
-    cache = {}
+    cache = {} if cache is None else cache
+    n_eff = n or M.N
 
     def curve(dev, x, mirror=False):
-        key = (dev["id"], round(float(x), 9), mirror)
+        key = (dev["id"], round(float(x), 9), mirror, n_eff, corner)
         if key not in cache:
-            c = M.calib(dev, x, corner)
+            c = M.calib(dev, x, corner, n=n_eff)
             Vs = c["neg"]["V"][::-1] + c["pos"]["V"][1:]
             Is = c["neg"]["I"][::-1] + c["pos"]["I"][1:]
             f = _pwl_iv(Vs, Is)

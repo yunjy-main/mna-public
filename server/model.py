@@ -135,17 +135,17 @@ def integ(x, d, T, q, s, neg, n=N):
     return a * h
 
 
-def corr(x, d, T, I, neg):
+def corr(x, d, T, I, neg, n=N):
     if d["method"] == "late":
-        return {"q": 2, "s": I / integ(x, d, T, 2, 1, neg)}
+        return {"q": 2, "s": I / integ(x, d, T, 2, 1, neg, n)}
     l, h = -1.0, 1.0
-    while integ(x, d, T, l, 1, neg) < I:
+    while integ(x, d, T, l, 1, neg, n) < I:
         l *= 2
-    while integ(x, d, T, h, 1, neg) > I:
+    while integ(x, d, T, h, 1, neg, n) > I:
         h *= 2
     for _ in range(65):
         m2 = (l + h) / 2
-        if integ(x, d, T, m2, 1, neg) > I:
+        if integ(x, d, T, m2, 1, neg, n) > I:
             l = m2
         else:
             h = m2
@@ -179,12 +179,13 @@ def ep(d, x, c):
             "ip": sv(d["soa"]["ip"], x, c), "inn": sv(d["soa"]["inn"], x, c)}
 
 
-def calib(d, x, c):
+def calib(d, x, c, n=N):
+    """n: 적분/곡선 격자 — 기본 N(정밀). optimizer loss 평가는 저해상도 n 허용."""
     e = ep(d, x, c)
-    cp = corr(x, d, e["vp"], e["ip"], False)
-    cn = corr(x, d, -e["vn"], -e["inn"], True)
-    return {"e": e, "pos": branch(x, d, e["vp"], cp, False),
-            "neg": branch(x, d, -e["vn"], cn, True), "cp": cp, "cn": cn}
+    cp = corr(x, d, e["vp"], e["ip"], False, n)
+    cn = corr(x, d, -e["vn"], -e["inn"], True, n)
+    return {"e": e, "pos": branch(x, d, e["vp"], cp, False, n),
+            "neg": branch(x, d, -e["vn"], cn, True, n), "cp": cp, "cn": cn}
 
 
 def VofI(br, i):

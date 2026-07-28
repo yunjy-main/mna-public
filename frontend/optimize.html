@@ -107,11 +107,19 @@
       <div><label>spec 판정 (§1 MNA 기준)</label><span class="hint" id="specStat">—</span></div>
     </div>
     <div style="margin-top:8px">
-      <button id="startBtn">Optimizing 시작</button>
+      <button id="startBtn">Optimizing 시작 (MNA loss)</button>
+      <button id="legacyBtn" style="background:#fff;color:var(--c-accent)">analytic 참고 실행(§4)</button>
       <button id="resetBtn" style="background:#fff;color:var(--c-accent)">Reset</button>
       <span class="status" id="status">Ready.</span>
     </div>
     <div class="err" id="err"></div>
+    <div id="optResult" hidden style="margin-top:6px">
+      <div class="hint" id="optSummary"></div>
+      <div class="g23" style="margin-top:4px">
+        <div id="optLoss"></div><div id="optVars"></div><div id="optWorst"></div>
+      </div>
+      <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
+    </div>
   </div>
 
   <!-- ================= 3. Optimizer 설정 (경계 카드 아래로 이동) ================= -->
@@ -777,7 +785,58 @@ function renderTable(){
 }
 
 // ---------- wiring ----------
-document.getElementById('startBtn').addEventListener('click',start);
+// ---------- §2: MNA 기반 optimizer — loss 평가기 = schematic MNA (궁극 목표) ----------
+let OPT=null;
+function startMnaOpt(){
+  const st=document.getElementById('status'), err=document.getElementById('err');
+  const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
+  st.textContent='MNA 최적화 중… (iter마다 유한차분×±spec 전류 solve — 수십 초)';
+  err.textContent='';
+  document.getElementById('startBtn').disabled=true;
+  const q=new URLSearchParams({x1:val('x1init'),x2:val('x2init'),L:val('linit'),
+    corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
+    hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
+    x1min:val('x1min'),x1max:val('x1max'),x2min:val('x2min'),x2max:val('x2max'),
+    lmin:val('lmin'),lmax:val('lmax'),wA:val('wA'),wC:val('wC'),wL:val('wL'),
+    mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:'0.06',iters:'30'});
+  fetch('api/optimize/mna?'+q.toString())
+    .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+    .then(d=>{OPT=d;renderOptResult();
+      st.textContent='MNA 최적화 완료 ('+d.iters+' iters) — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';})
+    .catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
+    .finally(()=>{document.getElementById('startBtn').disabled=false;});
+}
+function renderOptResult(){
+  const d=OPT; if(!d) return;
+  document.getElementById('optResult').hidden=false;
+  const i=d.initial, fn=d.final;
+  const P=t=>'<b style="color:#0a7d38">'+t+'</b>', F=t=>'<b style="color:#b3261e">'+t+'</b>';
+  document.getElementById('optSummary').innerHTML=
+    'HBM '+d.hbm_kv+'kV(±'+f(d.i_spec,2)+'A) · '+d.force+'→'+d.ground+' · corner='+d.corner
+    +'<br>초기: x1='+f(i.x1,3)+' · x2='+f(i.x2,0)+' · L='+f(i.L,0)+'µm · worst '+pct(i.worst)
+    +' ('+i.worst_name+') '+(i.soa_pass?P('PASS'):F('FAIL'))
+    +'<br>최적: x1='+f(fn.x1,3)+' · x2='+f(fn.x2,0)+' · L='+f(fn.L,0)+'µm · worst '+pct(fn.worst)
+    +' ('+fn.worst_name+') '+(fn.soa_pass?P('PASS'):F('FAIL'))+' · cap '+pct(fn.cap_u);
+  const h=d.history;
+  lineChart(document.getElementById('optLoss'),{title:'loss',w:380,h:150,
+    series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],xlabel:'iter'});
+  lineChart(document.getElementById('optVars'),{title:'variables',w:380,h:150,
+    series:[{x:h.map(r=>r.it),y:h.map(r=>r.x1),color:CB.blue,label:'x1'},
+            {x:h.map(r=>r.it),y:h.map(r=>r.x2/1000),color:CB.green,label:'x2/1000'},
+            {x:h.map(r=>r.it),y:h.map(r=>r.L/100),color:CB.purple,label:'L/100µm'}],xlabel:'iter'});
+  lineChart(document.getElementById('optWorst'),{title:'worst SOA usage',w:380,h:150,
+    series:[{x:h.map(r=>r.it),y:h.map(r=>r.worst),color:CB.red,label:'worst u'}],
+    hlines:[{y:1,color:CB.red,label:'SOA 경계'}],xlabel:'iter'});
+}
+document.getElementById('applyBtn').addEventListener('click',()=>{
+  if(!OPT) return;
+  document.getElementById('x1init').value=(+OPT.final.x1).toFixed(4);
+  document.getElementById('x2init').value=(+OPT.final.x2).toFixed(2);
+  document.getElementById('linit').value=(+OPT.final.L).toFixed(1);
+  loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
+});
+document.getElementById('startBtn').addEventListener('click',startMnaOpt);
+document.getElementById('legacyBtn').addEventListener('click',start);
 document.getElementById('resetBtn').addEventListener('click',()=>location.reload());
 document.getElementById('islider').addEventListener('input',()=>{if(DATA)renderAll();});
 document.getElementById('ival').addEventListener('change',e=>{

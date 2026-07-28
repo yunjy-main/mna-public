@@ -671,6 +671,36 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
             "monitor_rules": monitor_rules, "scenarios": scenarios}
 
 
+@app.get(PREFIX + "/api/optimize/mna")
+def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
+                     corner: str = "worst", force: str = "IO", ground: str = "VSS",
+                     hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
+                     x1min: float = 0.64, x1max: float = 3.84,
+                     x2min: float = 1415.232, x2max: float = 2628.288,
+                     lmin: float = 70.0, lmax: float = 1400.0,
+                     wA: float = 1.0, wC: float = 1.0, wL: float = 0.0,
+                     mu_soa: float = 12.0, mu_rule: float = 20.0,
+                     lr: float = 0.06, iters: int = 30):
+    """Schematic MNA 기반 optimizer (궁극 목표 마지막 조각) — loss 평가기가
+    analytic 직렬 모델이 아니라 표시 중 회로도의 netlist MNA(±HBM spec 전류).
+    §2 경계 카드의 승계 초기조건(x1/x2/L·corner·scenario)과 spec으로 호출된다."""
+    from server.schematic import load_layout
+    from server.opt_mna import optimize_mna
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    if not (1 <= iters <= 200):
+        return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
+    try:
+        return optimize_mna(load_layout()[0], x1, x2, L, corner=corner,
+                            force=force, ground=ground, hbm_kv=hbm_kv,
+                            cap_lim=cap_lim_pf * 1e-12,
+                            x1min=x1min, x1max=x1max, x2min=x2min, x2max=x2max,
+                            lmin=lmin, lmax=lmax, wA=wA, wC=wC, wL=wL,
+                            mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters)
+    except ValueError as ex:
+        return PlainTextResponse(str(ex), status_code=422)
+
+
 @app.post(PREFIX + "/api/schematic/matrix/preview")
 async def schematic_matrix_preview(request: Request, inject: str = "IO", ground: str = "VSS",
                                    i: float = 1.33, L: float = 350.0,

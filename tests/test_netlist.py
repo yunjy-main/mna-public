@@ -492,6 +492,19 @@ chk("병렬 실측 diode 수렴", rp["converged"], "res={}".format(rp["residual"
 chk("병렬 시 diode 강하 감소", 0.5 < (rp["v"]["N1"] - rp["v"]["N2"]) < M.VofI(c1w["pos"], 1.33),
     str(rp["v"]["N1"] - rp["v"]["N2"]))
 
+# 8) MNA 기반 optimizer (궁극 목표 마지막 조각): loss 평가기 = schematic MNA
+from server.opt_mna import optimize_mna  # noqa: E402
+
+ro = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=4, n=200)
+chk("opt: 초기 HBM 1kV FAIL(victim 지배)", ro["initial"]["soa_pass"] is False
+    and "XVictim" in str(ro["initial"]["worst_name"]), str(ro["initial"]["worst_name"]))
+chk("opt: worst usage 감소 방향", ro["final"]["worst"] < ro["initial"]["worst"],
+    "{} -> {}".format(ro["initial"]["worst"], ro["final"]["worst"]))
+chk("opt: history/schema", len(ro["history"]) == 5
+    and all(k in ro["final"] for k in ("x1", "x2", "L", "worst", "soa_pass", "usages")), "")
+chk("opt: 탐색 범위 유지", 0.3 < ro["final"]["x1"] < 4.7 and ro["final"]["L"] >= 1.0,
+    str((ro["final"]["x1"], ro["final"]["L"])))
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:
