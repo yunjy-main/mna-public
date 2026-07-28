@@ -82,6 +82,15 @@ A_PER_KV = 1.33
 HBM_LEVELS_KV = (0.5, 1.0, 2.0, 4.0)
 HBM_DEFAULT_KV = 1.0  # default spec 레벨 = HBM 1kV → 1.33A (사용자 지시 2026-07-28)
 
+# 자유 파라미터 meta — 파라미터 '이름'은 schematic에서 발견(netlist.free_params)되고,
+# 기본값·창은 모델 계층인 여기서 공급한다 (2-소자 시절 x1/x2 하드코딩 청산, 2026-07-28).
+# dev가 있으면 창=xwindow(해당 device), 없으면 lo/hi 직접.
+PARAM_META = {
+    "x1": {"default": 2.56, "unit": "", "dev": "diode"},
+    "x2": {"default": 1415.232, "unit": "", "dev": "clamp"},
+    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0},
+}
+
 
 def hbm_current(kv):
     """HBM 레벨(kV) → 요구 주입 전류 [A] (D9 환산)."""

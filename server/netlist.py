@@ -346,6 +346,28 @@ def size_expr_of(dev):
     return None
 
 
+def free_params(nl):
+    """schematic에서 자유 파라미터 발견 — size 바인딩의 기호(x1, x2, ...) +
+    금속 rdd(L)의 L. 입력 UI·API 파라미터 목록의 단일 원천 (하드코딩 금지,
+    사용자 지시 2026-07-28: 새 기호가 회로도에 생기면 입력도 자동 증감)."""
+    out = {}
+    for key, d in device_keys(nl):
+        e = size_expr_of(d)
+        if not e:
+            continue
+        base = e.split("/")[0]
+        ent = out.setdefault(base, {"devices": [], "exprs": set()})
+        ent["devices"].append(key)
+        ent["exprs"].add(e)
+    for d in nl["devices"]:
+        if d["kind"] == "resistor" and str((d.get("params") or {}).get("R")) == "rdd(L)":
+            ent = out.setdefault("L", {"devices": [], "exprs": set()})
+            ent["devices"].append(d.get("instance") or "R")
+            ent["exprs"].add("rdd(L)")
+    return [{"name": k, "devices": v["devices"], "exprs": sorted(v["exprs"])}
+            for k, v in sorted(out.items())]
+
+
 def _size_of(dev, x1, x2):
     """instance params.size 해석 — "x1"/"x2"/"x1/10"/숫자. 기본: diode류=x1, clamp=x2.
     (secondary는 primary 면적 1/10 — 사용자 지시 2026-07-28)"""

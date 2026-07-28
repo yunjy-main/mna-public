@@ -59,12 +59,7 @@
   <div class="card" id="schemSweepCard">
     <h2>1. MNA solving — schematic device 시각화<span class="info" title="소자 리스트 단일 원천 아키텍처: 모든 시각화 요소는 schematic에서 추출한 소자 리스트(저항 제외) × renderer 등록 패턴으로 자동 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 함께 증감.&#10;실측 model(esdvpnp=Device1, clamp=Device2, secondary는 면적 x1/10) 기반 MNA를 I=−Imax→+Imax로 sweep.&#10;x1/x2/L/Imax 입력 = 값의 원천(schematic은 size=x1 같은 바인딩만 정의) — 변경 즉시 회로도·sweep 자동 재해석.&#10;차트의 세로 빨간 점선/가로선 = SOA 한계, first fail = SOA 첫 위반 전류.">ⓘ</span></h2>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:4px">
-      <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">x1 (diode)</label>
-        <input id="x1init" type="number" step="any" value="2.56" style="width:76px"></div>
-      <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">x2 (clamp)</label>
-        <input id="x2init" type="number" step="any" value="1415.232" style="width:90px"></div>
-      <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">L (µm)</label>
-        <input id="linit" type="number" step="any" value="350" style="width:64px"></div>
+      <div id="ssParams" style="display:contents"></div>
       <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">Imax (A)</label>
         <input id="imax" type="number" step="any" value="2.0" style="width:56px"></div>
       <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">scenario (force→gnd)</label>
@@ -303,7 +298,39 @@ const P=['x1init','x2init','linit','rio','rvddRdl','rvssRdl','imax','warmStart',
 const f=MNA.f, pct=MNA.pct;
 const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
-function val(id){return document.getElementById(id).value;}
+function val(id){const el=document.getElementById(id);return el?el.value:'';}
+// 자유 파라미터 — 이름·기본값·바인딩은 서버(schematic 발견+model meta)가 원천.
+// 레거시 코드 호환을 위해 알려진 이름은 기존 id를 재사용한다.
+const PARAM_ID={x1:'x1init',x2:'x2init',L:'linit'};
+const PARAM_DEFAULTS={x1:2.56,x2:1415.232,L:350};
+function pv(name){
+  const el=document.getElementById(PARAM_ID[name]||('param_'+name));
+  if(el&&el.value!=='') return el.value;
+  if(SS&&SS.params){const p=SS.params.find(q=>q.name===name);if(p)return String(p.default);}
+  return String(PARAM_DEFAULTS[name]!==undefined?PARAM_DEFAULTS[name]:1);
+}
+function renderParamInputs(){
+  const box=document.getElementById('ssParams');
+  if(!box||!SS||!SS.params) return;
+  const sig=SS.params.map(q=>q.name+(q.supported?'+':'-')).join(',');
+  if(box.dataset.sig===sig) return;  // 동일 파라미터 세트면 유지 (사용자 편집 보존)
+  box.dataset.sig=sig; box.innerHTML='';
+  SS.params.forEach(q=>{
+    const id=PARAM_ID[q.name]||('param_'+q.name);
+    const cur=(SS[q.name]!==undefined)?SS[q.name]:q.default;
+    const w=document.createElement('div');
+    w.innerHTML='<label style="display:block;font-size:var(--fs-tiny);color:#5b6673">'
+      +q.name+(q.unit?(' ('+q.unit+')'):'')
+      +'<span class="info" title="schematic 바인딩: '+q.exprs.join(', ')+' ⇐ '+q.devices.join('·')
+      +(q.lo!=null?('&#10;창(D5/rule): '+q.lo+' ~ '+q.hi):'')
+      +(q.supported?'':'&#10;※ 엔진 미지원 파라미터 — 비활성(활성=연계 원칙)')+'">ⓘ</span></label>'
+      +'<input id="'+id+'" type="number" step="any" value="'+cur+'" style="width:86px"'
+      +(q.supported?'':' disabled')+'>';
+    box.appendChild(w);
+    if(q.supported)
+      w.querySelector('input').addEventListener('change',()=>{loadSchematic();loadSchemSweep();});
+  });
+}
 function collect(){const q={};P.forEach(k=>q[k]=val(k));return q;}
 
 // ---------- 3. MNA / loss definition (v4 updateEquations 대응) ----------
@@ -358,8 +385,8 @@ function cur(){return DATA.sweep[+document.getElementById('islider').value];}
 // ---------- 섹션 0: 회로도 — 슬라이더 이동 시 주석을 클라이언트에서 실시간 갱신 ----------
 let SCHEM_TBL=null, ANN=null;
 function loadSchematic(){
-  const q='x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
-        +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
+  const q='x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
+        +'&L='+encodeURIComponent(pv('L'))+'&corner=worst';
   SCHEM_TBL=null; ANN=null;
   fetch('api/schematic?'+q+'&i=1.33')
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
@@ -433,7 +460,7 @@ function updateBoundary(){
   st.innerHTML='HBM '+kv+'kV(±'+f(amp,2)+'A): '+(okP&&okN?P('PASS'):F('FAIL'))
     +' · cap '+f(SS.io_cap_total*1e15,0)+'fF/'+f(SS.cap_lim*1e12,1)+'pF: '+(capOk?P('PASS'):F('FAIL'));
   const iNow=DV.ctx?DV.ctx.iNow:0;
-  ic.textContent='승계된 초기조건 — x1='+val('x1init')+' · x2='+val('x2init')+' · L='+val('linit')
+  ic.textContent='승계된 초기조건 — x1='+pv('x1')+' · x2='+pv('x2')+' · L='+pv('L')
     +'µm · corner='+val('ssCorner')+' · scenario='+(sc.force?sc.force+'→'+sc.ground:'—')
     +' · forcing I₀='+f(Math.max(0,iNow),2)+'A (§1 스크럽)';
 }
@@ -608,13 +635,14 @@ function loadSchemSweep(){
   const info=document.getElementById('ssInfo');
   info.textContent='sweep 중…';
   const q='imax='+encodeURIComponent(val('imax'))+'&imin=-'+encodeURIComponent(val('imax'))
-    +'&n=81&x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
-    +'&L='+encodeURIComponent(val('linit'))+'&corner='+encodeURIComponent(val('ssCorner'))
+    +'&n=81&x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
+    +'&L='+encodeURIComponent(pv('L'))+'&corner='+encodeURIComponent(val('ssCorner'))
     +'&cap_lim_pf='+encodeURIComponent(val('specCapLim'))+'&hbm_kv='+encodeURIComponent(val('specHbm'));
   fetch('api/analysis/sweep?'+q)
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{
       SS=d; DV.devs=d.devices||[];   // 소자 리스트 = schematic 추출과 1:1 (단일 원천)
+      renderParamInputs();  // 자유 파라미터 입력 동적 생성 (schematic 발견분)
       const sel=document.getElementById('ssScn'), prev=sel.value;
       sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
       if(prev && +prev<d.scenarios.length) sel.value=prev;
@@ -782,7 +810,7 @@ function startMnaOpt(){
   st.textContent='MNA 최적화 중… (iter마다 유한차분×±spec 전류 solve — 수십 초)';
   err.textContent='';
   document.getElementById('startBtn').disabled=true;
-  const q=new URLSearchParams({x1:val('x1init'),x2:val('x2init'),L:val('linit'),
+  const q=new URLSearchParams({x1:pv('x1'),x2:pv('x2'),L:pv('L'),
     corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     x1min:val('x1min'),x1max:val('x1max'),x2min:val('x2min'),x2max:val('x2max'),
@@ -844,19 +872,15 @@ function renderOptIter(){
       lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',type,spec,verdict);
   };
   const fmtF=v=>Math.abs(v)>=1e-12?f(v*1e12,2)+'pF':f(v*1e15,0)+'fF';  // F 단위 공학 표기
-  // size 바인딩 식 (서버 size_expr — 기본 바인딩 포함 단일 원천)
+  // ── row 순서 규칙 (사용자 확정 2026-07-28): ① loss(목적함수) → ② spec 관련
+  //    (집계 spec + 소자 바인딩 없는 rule 변수) → ③ 소자별 나열(각 소자는 SOA 먼저,
+  //    size 등 parameter 나중) — 패턴 고정.
   const exprOf={};
   ((SS&&SS.devices)||[]).forEach(dv=>{
     exprOf[dv.key]=dv.size_expr||(dv.params&&dv.params.size)||null;});
-  // 1) 설계변수 중 소자 바인딩 없는 것(L) — type=size, 값=rule 창
-  (d.variables||[]).forEach(vd=>{
-    const bound=Object.values(exprOf).some(e=>e===vd.key);
-    if(bound) return;  // 소자별 size 행이 대표
-    numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
-      'size','rule '+vd.lo+' ~ '+vd.hi+vd.unit,
-      cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
-  });
-  // 2) 집계 spec — usage 키 중 '·' 없는 항목을 detail[동일 키]로 표시 (type=spec)
+  // ① 목적함수
+  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true,'—');
+  // ② spec 관련 — 집계 spec(usage 키 중 '·' 없음 ↔ detail[동일 키])
   Object.keys(u0).filter(k=>!k.includes('·')).forEach(k=>{
     const a0=d0[k], ac=dc[k];
     if(!a0||!ac||a0.value===undefined) return;
@@ -867,19 +891,17 @@ function renderOptIter(){
       ac.value<=a0.value?'#0a7d38':'#b3261e',
       ac.kind||'spec','≤ '+fu(ac.lim), ac.value<=ac.lim);
   });
-  // 3) 목적함수
-  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true,'—');
-  // 4) 소자별 — size 행(각 소자 개별, 바인딩 밝혀 적기) + usage 행 전수 동적
+  // ② spec 관련 — 소자 바인딩 없는 rule 변수(L 등)
+  (d.variables||[]).forEach(vd=>{
+    const bound=Object.values(exprOf).some(e=>e===vd.key);
+    if(bound) return;  // 소자별 size 행이 대표
+    numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
+      'size','rule '+vd.lo+' ~ '+vd.hi+vd.unit,
+      cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
+  });
+  // ③ 소자별 — SOA(usage) 행 먼저, size 등 parameter 행 나중
   const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
   devs.forEach(devk=>{
-    const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
-    if(s0!==undefined){
-      const expr=exprOf[devk];
-      const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
-      numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
-        'size', vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null),
-        vd?(sc>=vd.lo&&sc<=vd.hi):undefined);
-    }
     Object.keys(u0).filter(k=>k.startsWith(devk+'·')).forEach(k=>{
       const q=k.split('·')[1];
       const unit=q.startsWith('I')?'A':'V';
@@ -894,6 +916,15 @@ function renderOptIter(){
         ub<=ua?'#0a7d38':'#b3261e',
         'SOA', sp===null?null:(vb>=0?'≤ ':'≥ ')+sp, ub<=1.0);
     });
+    // 소자 parameter(size 등) — SOA 행 다음 (row 순서 규칙 ③)
+    const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
+    if(s0!==undefined){
+      const expr=exprOf[devk];
+      const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
+      numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
+        'size', vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null),
+        vd?(sc>=vd.lo&&sc<=vd.hi):undefined);
+    }
   });
   document.getElementById('optDiff').innerHTML=html;
   // 하단 overlay optimizer 슬라이더 동기화 + 활성화
@@ -946,9 +977,8 @@ function renderOptIter(){
 }
 document.getElementById('applyBtn').addEventListener('click',()=>{
   if(!OPT) return;
-  document.getElementById('x1init').value=(+OPT.final.x1).toFixed(4);
-  document.getElementById('x2init').value=(+OPT.final.x2).toFixed(2);
-  document.getElementById('linit').value=(+OPT.final.L).toFixed(1);
+  [['x1',(+OPT.final.x1).toFixed(4)],['x2',(+OPT.final.x2).toFixed(2)],['L',(+OPT.final.L).toFixed(1)]]
+    .forEach(([nm,v])=>{const el=document.getElementById(PARAM_ID[nm]||('param_'+nm));if(el)el.value=v;});
   loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
 });
 document.getElementById('startBtn').addEventListener('click',startMnaOpt);
@@ -970,11 +1000,8 @@ document.getElementById('ssScn').addEventListener('change',dvRenderAll);
 document.getElementById('ssCorner').addEventListener('change',loadSchemSweep); // corner 변경 = 재계산
 document.getElementById('specHbm').addEventListener('change',loadSchemSweep);
 document.getElementById('specCapLim').addEventListener('change',loadSchemSweep);
-// §1 설계값(x1/x2/L/Imax)은 표시용이 아니라 값 원천(schematic은 size=x1 바인딩만 정의) —
-// 변경 즉시 회로도 렌더 + MNA sweep 재해석 (활성 input=동작 연계 원칙, 사용자 지시)
-['x1init','x2init','linit','imax'].forEach(id=>{
-  document.getElementById(id).addEventListener('change',()=>{loadSchematic();loadSchemSweep();});
-});
+// 파라미터 입력 리스너는 renderParamInputs()가 생성 시 부착. Imax(sweep 설정)만 정적.
+document.getElementById('imax').addEventListener('change',()=>{loadSchematic();loadSchemSweep();});
 document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 // 하단 overlay 슬라이더: 마스터 전류 조작 — 최적화 로드 시 islider까지,
 // 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.

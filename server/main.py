@@ -630,7 +630,7 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     if not (0 < imax <= 100) or not (2 <= n <= 201) or not (-100 <= imin < imax):
         return PlainTextResponse("imax∈(0,100], n∈[2,201], imin∈[-100,imax) 필요", status_code=422)
     from server.netlist import (device_keys, soa_endpoints, soa_rules_for, device_curves,
-                                device_caps, size_expr_of)
+                                device_caps, size_expr_of, free_params)
     ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
     if err:
         return err
@@ -655,11 +655,29 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
+    # 자유 파라미터 목록 — schematic 발견 + 모델 meta 병합 (§1 입력 동적 생성의 원천).
+    # supported=False면 회로도에 기호는 있으나 solve 엔진이 아직 모르는 파라미터 —
+    # frontend는 비활성 input으로 표기(활성=연계 원칙).
+    ENGINE_PARAMS = ("x1", "x2", "L")
+    params = []
+    for p in free_params(nl):
+        meta = M.PARAM_META.get(p["name"], {})
+        if meta.get("dev") == "diode":
+            lo, hi = M.xwindow(M.D1)
+        elif meta.get("dev") == "clamp":
+            lo, hi = M.xwindow(M.D2)
+        else:
+            lo, hi = meta.get("lo"), meta.get("hi")
+        params.append({"name": p["name"], "default": meta.get("default", 1.0),
+                       "unit": meta.get("unit", ""), "lo": lo, "hi": hi,
+                       "devices": p["devices"], "exprs": p["exprs"],
+                       "supported": p["name"] in ENGINE_PARAMS})
     io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
     # spec 입력(UI) 반영 — 미지정 시 model 기본값 (capLim 5pF, HBM 1kV)
     cap_lim = (cap_lim_pf * 1e-12) if (cap_lim_pf and cap_lim_pf > 0) else M.IO_CAP_LIM
     spec_kv = hbm_kv if (hbm_kv and hbm_kv > 0) else M.HBM_DEFAULT_KV
     return {"imax": imax, "imin": imin, "n": n, "L": L, "x1": x1, "x2": x2,
+            "params": params,
             "corner": corner, "model_mode": model_mode, "devices": devices,
             "cap_lim": cap_lim, "io_cap_total": io_cap_total,
             "cap_pass": io_cap_total <= cap_lim,
