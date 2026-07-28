@@ -35,6 +35,17 @@ def _softplus(z):
     return math.log1p(math.exp(z))
 
 
+def _logbar(v, lo, hi, eps=1e-3):
+    """내부 log barrier (max쪽, 사용자 확정 2026-07-28) — B = −ln((hi−v)/span).
+    창 내부에서는 힘(μb/(hi−v))이 미미해 margin을 끝까지 소모하고, 벽에서 발산해
+    limit 불가침. z-clip이 창 밖(v≥hi)을 허용하므로 u≤ε에서 C¹ 선형 연장."""
+    span = hi - lo
+    u = (hi - v) / span
+    if u > eps:
+        return -math.log(u)
+    return -math.log(eps) + (eps - u) / eps
+
+
 def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
                   warm=None, calib_cache=None, n=OPT_N):
     """candidate pset의 (usage dict, detail dict) — schematic 소자 전부(±I_spec) + cap.
@@ -90,15 +101,22 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
                  ground="VSS", hbm_kv=1.0, cap_lim=5e-12,
                  windows=None, weights=None,
                  mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
-                 progress_cb=None, freeze=(), pset=None):
+                 progress_cb=None, freeze=(), pset=None,
+                 barrier="log", mu_bar=0.05):
     """승계된 초기조건 pset에서 spec(HBM 레벨·capLim) 하의 Adam 최적화 (N-차원 자동).
 
     설계변수 = registry supported 파라미터 (순서 = registry 정본 순서).
     windows/weights: {name: (lo,hi)}/{name: w} override — 미지정 시 META rule/cost_w.
     freeze: 고정 변수 이름들 — gradient 마스크(FD·update 생략, 값은 회로 평가의 상수).
     rule 창 없는 변수는 강제 고정(E3, lockable=false). x1/x2/L kwarg는 동결 legacy.
+    barrier(max쪽 모양, 사용자 확정 2026-07-28 — min쪽은 항상 가혹 FAIL 급경사):
+      "log"(기본) = 내부 log barrier μb·(−ln((hi−v)/span)) — margin 최대 소모,
+        잔여 margin ≈ μb/F(SOA 힘), limit 발산 벽 불가침;
+      "softplus" = 기존 준-rule 완경사 μRule·softplus((v−hi)/(0.05·span)).
     progress_cb(done, total): evaluate 1회=1단위 — 초기 1 + iter당 (활성변수+2)
     + 최종 정밀 재평가(격자 비율 가중)."""
+    if barrier not in ("log", "softplus"):
+        raise ValueError("barrier must be log|softplus")
     nl = extract_netlist(layout)
     reg = [r for r in params_registry(nl) if r["supported"]]
     p0 = _pset(pset, x1=x1, x2=x2, L=L)
@@ -150,11 +168,14 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
         for i in active:
             v = var_spec[i]
             val, span = pv[v["key"]], v["hi"] - v["lo"]
-            # 창립 rule 비대칭: min=가혹 FAIL(급경사), max=준-rule(완경사)
-            rule += (_softplus((v["lo"] - val) / (0.01 * span))
-                     + _softplus((val - v["hi"]) / (0.05 * span)))
+            # min쪽은 항상 가혹 FAIL 급경사 (창립 비대칭 유지)
+            rule += mu_rule * _softplus((v["lo"] - val) / (0.01 * span))
+            if barrier == "log":  # max쪽: margin 최대 소모 + limit 발산 벽
+                rule += mu_bar * _logbar(val, v["lo"], v["hi"])
+            else:                 # max쪽: 기존 준-rule 완경사
+                rule += mu_rule * _softplus((val - v["hi"]) / (0.05 * span))
         _tick()
-        return cost + pen + mu_rule * rule, us, det
+        return cost + pen + rule, us, det
 
     def summarize(z, us):
         pv = to_p(z)
@@ -220,4 +241,5 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
                            "kind": v["kind"], "frozen": v["frozen"],
                            "lockable": v["lockable"]} for v in var_spec],
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
-            "force": force, "ground": ground, "corner": corner, "iters": iters}
+            "force": force, "ground": ground, "corner": corner, "iters": iters,
+            "barrier": barrier, "mu_bar": mu_bar}

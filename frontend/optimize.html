@@ -119,7 +119,11 @@
     <h3>수치 최적화 (MNA optimizer 연계)</h3>
     <div class="in">
       <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
-      <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
+      <div><label>μ Rule (min측)<span class="info" title="min 위반 = 가혹 FAIL 급경사 barrier 가중치 (창립 비대칭 — barrier 선택과 무관하게 항상 적용). softplus 모드에서는 max측 완경사에도 사용.">ⓘ</span></label>
+        <input id="muRule" type="number" step="any" value="20"></div>
+      <div><label>max barrier<span class="info" title="log(기본): 내부 log barrier −μb·ln((hi−v)/span) — 창 내부에서 힘이 미미해 margin을 끝까지 소모하고 limit에서 발산(불가침). 잔여 margin ≈ μb/F.&#10;softplus: 기존 준-rule 완경사 — 경계 접근 자체에 비용(경계 앞 여유를 남김).">ⓘ</span></label>
+        <select id="mnaBarrier"><option value="log" selected>log (margin 소모)</option><option value="softplus">softplus (준-rule)</option></select></div>
+      <div><label>μ barrier (log)</label><input id="muBar" type="number" step="any" value="0.05"></div>
       <div><label>learning rate (MNA)</label><input id="mnaLr" type="number" step="any" value="0.06"></div>
       <div><label>iterations (MNA)</label><input id="mnaIters" type="number" step="1" value="30"></div>
     </div>
@@ -984,6 +988,7 @@ function startMnaOpt(){
     corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
+    barrier:val('mnaBarrier'),mu_bar:val('muBar'),
     freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
   sup.forEach(p=>{ // 초기값·창·cost — registry 루프 (이슈 #11 신규약: <name>_min/max, w_<name>)
     q.set(p.name,pv(p.name));
@@ -1167,6 +1172,9 @@ document.getElementById('applyBtn').addEventListener('click',()=>{
   loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
 });
 document.getElementById('startBtn').addEventListener('click',startMnaOpt);
+// max barrier 선택 ↔ μ barrier 연계 (softplus 모드에서는 μb 미사용 → 비활성)
+document.getElementById('mnaBarrier').addEventListener('change',()=>{
+  document.getElementById('muBar').disabled=val('mnaBarrier')!=='log';});
 document.getElementById('optIdx').addEventListener('input',renderOptIter);
 document.getElementById('legacyBtn').addEventListener('click',start);
 document.getElementById('resetBtn').addEventListener('click',()=>location.reload());

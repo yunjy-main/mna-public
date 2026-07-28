@@ -4,6 +4,7 @@
 - net 추출: 기대 net 이름·소속 pin 전수 대조 (회로도 기하가 유일한 원천)
 - 조립·해석: KCL residual, 직렬 경로 전류 보존, 부동 net, Jacobian 대칭
 """
+import math
 import os
 import sys
 
@@ -657,6 +658,26 @@ try:
         v3f["W"]["frozen"] is True and v3f["W"]["lockable"] is False, str(v3f["W"]))
 finally:
     M.PARAM_META["W"]["rule"] = _wr
+
+# 14) max barrier 선택 (사용자 확정 2026-07-28): log(기본, margin 소모) | softplus(준-rule)
+from server.opt_mna import _logbar  # noqa: E402
+
+chk("logbar: 내부 미미·벽 발산·C¹ 선형 연장", abs(_logbar(5.0, 1.0, 10.0) - math.log(9.0 / 5.0)) < 1e-12
+    and _logbar(9.99, 1.0, 10.0) > 6.0
+    and abs(_logbar(10.0, 1.0, 10.0) - (-math.log(1e-3) + 1.0)) < 1e-9, "")
+try:
+    optimize_mna(Lw, iters=1, n=200, barrier="bogus")
+    chk("barrier 검증: 미지 모양 거부", False, "예외 없음")
+except ValueError:
+    chk("barrier 검증: 미지 모양 거부", True, "")
+r_log = optimize_mna(Lw, iters=14, n=200, freeze=("L",))
+chk("log barrier(기본): W margin 소모 — 완경사 균형점(8.4) 초과", r_log["barrier"] == "log"
+    and r_log["final"]["W"] > 9.3 and r_log["final"]["W"] < 10.0,
+    "W={}".format(r_log["final"]["W"]))
+r_sp = optimize_mna(Lw, iters=14, n=200, freeze=("L",), barrier="softplus")
+chk("softplus 옵션: 준-rule 여유 유지 (log보다 안쪽)", r_sp["barrier"] == "softplus"
+    and r_sp["final"]["W"] < r_log["final"]["W"] - 0.5,
+    "W log={} sp={}".format(r_log["final"]["W"], r_sp["final"]["W"]))
 
 # 13) S5 리허설 (이슈 #11 완료 기준): 새 파라미터는 정본 3곳(schematic 바인딩 +
 #     PARAM_META + 물리식 등록)만으로 발견→supported→평가→optimizer 전 층 자동 — 배관 수정 0
