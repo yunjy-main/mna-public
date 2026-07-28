@@ -24,6 +24,17 @@
   .short a{margin-right:8px}
   /* 차트 그리드(방사형·SOA map·iteration 공용): 화면 폭과 무관하게 항상 3열 */
   .radars,.g23{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1000px}
+  /* current 슬라이더: 채움 금지 — 균일 트랙 + 0 위치 눈금 + thumb 위치만 표시 */
+  input.iscrub{-webkit-appearance:none;appearance:none;background:transparent;height:18px;cursor:pointer}
+  input.iscrub::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+    background:linear-gradient(90deg,#dfe4ea 0,#dfe4ea calc(var(--zero,0%) - 1px),
+      #5b6673 calc(var(--zero,0%) - 1px),#5b6673 calc(var(--zero,0%) + 1px),
+      #dfe4ea calc(var(--zero,0%) + 1px),#dfe4ea 100%)}
+  input.iscrub::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-4px;
+    border-radius:50%;background:#1f5f99;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.45)}
+  input.iscrub::-moz-range-track{height:4px;border-radius:2px;background:#dfe4ea}
+  input.iscrub::-moz-range-progress{background:#dfe4ea}
+  input.iscrub::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#1f5f99;border:2px solid #fff}
 </style>
 </head>
 <body>
@@ -126,7 +137,7 @@
     <div class="err" id="err"></div>
     <div class="scrub">
       <span class="kv" id="currentScrubLabel">Injected current: 1.30 A</span>
-      <input id="islider" type="range" min="0" max="40" step="1" value="26">
+      <input id="islider" class="iscrub" type="range" min="0" max="40" step="1" value="26" style="--zero:0%">
       <input id="ival" type="number" step="0.05" value="1.30"> A
     </div>
   </div>
@@ -142,7 +153,7 @@
     </div>
     <div style="margin:4px 0 6px">
       <label class="hint">스크럽 전류 I = <b id="ssIlab">—</b> A — tracing dot·radar·map·gauge·metric 전부 연동</label>
-      <input id="ssIdx" type="range" min="0" max="40" value="26" style="width:100%">
+      <input id="ssIdx" class="iscrub" type="range" min="0" max="40" value="26" style="width:100%">
     </div>
     <div class="hint">아래 모든 시각화 요소는 schematic 소자 리스트(저항 제외)와 renderer 등록
       패턴으로 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 자동 증감. 세로 점선 = first SOA fail.</div>
@@ -230,7 +241,7 @@ victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topol
   background:rgba(255,255,255,.97);border-top:1px solid #cfd6df;
   box-shadow:0 -2px 8px rgba(0,0,0,.08);padding:5px 14px;display:flex;gap:10px;align-items:center">
   <span style="font-size:var(--fs-small);font-weight:700;white-space:nowrap">Injected current</span>
-  <input id="iovlR" type="range" min="0" max="1000" value="650" style="flex:1;margin:0">
+  <input id="iovlR" class="iscrub" type="range" min="0" max="1000" value="650" style="flex:1;margin:0">
   <b id="iovlLab" style="font-size:var(--fs-small);min-width:62px;text-align:right">—</b>
   <span id="iovlSt" style="font-size:var(--fs-tiny);min-width:150px;text-align:right"></span>
 </div>
@@ -421,23 +432,19 @@ dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
   const maxV=Math.max(...Vs), minV=Math.min(...Vs);
   const maxI=Math.max(...Ys), minI=Math.min(...Ys);
   const series=[], vl=[], hl=[], pts=[{x:Vs[c.idx],y:Ys[c.idx],r:4.5,color:CB.red}];
-  let showP=false, showN=false, showIP=false, showIN=false;
   if(d.soa){
-    const flatV=minV>=-1e-6&&maxV<=1e-6, flatI=minI>=-1e-9&&maxI<=1e-9;
-    showP=maxV>1e-6||flatV; showN=minV<-1e-6||flatV;
-    showIP=maxI>1e-9||flatI; showIN=minI<-1e-9||flatI;
-    if(showP){vl.push({x:d.soa.vp,color:CB.red,label:'vp '+f(d.soa.vp,2)});
-              pts.push({x:d.soa.vp,y:0,r:0,color:'none'});}
-    if(showN){vl.push({x:d.soa.vn,color:CB.red,label:'vn '+f(d.soa.vn,2)});
-              pts.push({x:d.soa.vn,y:0,r:0,color:'none'});}
-    if(showIP){hl.push({y:d.soa.ip,color:CB.orange,label:'ip '+f(d.soa.ip,2)+'A'});
-               pts.push({x:0,y:d.soa.ip,r:0,color:'none'});}
-    if(showIN){hl.push({y:d.soa.inn,color:CB.orange,label:'inn '+f(d.soa.inn,3)+'A'});
-               pts.push({x:0,y:d.soa.inn,r:0,color:'none'});}
+    // SOA 한계는 양/음 4개(vp/vn·ip/inn) 전부 상시 표시 — 단자쌍 순서 반전 동치
+    // (사용자 지시). vp≠−vn, ip≠−inn의 비대칭은 실측이 명시한 값 그대로.
+    vl.push({x:d.soa.vp,color:CB.red,label:'vp '+f(d.soa.vp,2)},
+            {x:d.soa.vn,color:CB.red,label:'vn '+f(d.soa.vn,2)});
+    hl.push({y:d.soa.ip,color:CB.orange,label:'ip '+f(d.soa.ip,2)+'A'},
+            {y:d.soa.inn,color:CB.orange,label:'inn '+f(d.soa.inn,3)+'A'});
+    pts.push({x:d.soa.vp,y:0,r:0,color:'none'},{x:d.soa.vn,y:0,r:0,color:'none'},
+             {x:0,y:d.soa.ip,r:0,color:'none'},{x:0,y:d.soa.inn,r:0,color:'none'});
   }
-  if(d.curve){ // 실측 특성곡선 — 표시창(한계 방향·전류 상한)으로 클립한 회색 참조
-    const xlo=showN?d.soa.vn*1.02:Math.min(minV,0), xhi=showP?d.soa.vp*1.02:Math.max(maxV,0);
-    const iCap=Math.max(c.imax,showIP?d.soa.ip:0,showIN?-d.soa.inn:0)*1.15;
+  if(d.curve){ // 실측 특성곡선 — 한계 창(전 구간)·전류 상한으로 클립한 회색 참조
+    const xlo=d.soa?d.soa.vn*1.02:Math.min(minV,0), xhi=d.soa?d.soa.vp*1.02:Math.max(maxV,0);
+    const iCap=Math.max(c.imax,d.soa?d.soa.ip:0,d.soa?-d.soa.inn:0)*1.15;
     const cx=[],cy=[];
     d.curve.V.forEach((v,j)=>{const i=d.curve.I[j];
       if(v>=xlo&&v<=xhi&&Math.abs(i)<=iCap){cx.push(v);cy.push(i);}});
@@ -464,9 +471,11 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const s=QS.map((q,i)=>{const pr=pick(q);return{x:pr.xs,y:pr.ys,color:QC[i],label:q};})
     .filter(t=>t.x.length);
   if(!s.length){el.className='hint';el.textContent=d.key+': monitor 무효(unresolved/비수렴)';return;}
+  // SOA 한계는 양/음 모두 표시 (단자쌍 순서 반전 동치 — 사용자 지시.
+  // 비대칭 값(oxide inv +2.9 / acc −3.3)은 실측이 명시한 예외)
   const vl=[], g=lim('VGS'), t=lim('VDS');
   if(g) vl.push({x:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{x:g.min,color:CB.gray});
-  if(t) vl.push({x:t.max,color:CB.orange,label:'VDS ±'+t.max});
+  if(t) vl.push({x:t.max,color:CB.orange,label:'VDS ±'+t.max},{x:t.min,color:CB.orange});
   const m0=dvMon(d,c,c.idx);
   const ffl=[];
   if(c.ffI!==null) ffl.push({y:c.ffI,color:CB.red,label:'first fail +'});
@@ -565,6 +574,10 @@ function loadSchemSweep(){
       const sl=document.getElementById('ssIdx');
       sl.max=d.n-1;
       if(+sl.value>d.n-1) sl.value=d.n-1;
+      // 0A 위치 눈금 (채움 없는 트랙에 0 기준 마커 — 사용자 지시)
+      const z=((0-(d.imin||0))/((d.imax-(d.imin||0))||1)*100).toFixed(1)+'%';
+      sl.style.setProperty('--zero',z);
+      document.getElementById('iovlR').style.setProperty('--zero',z);
       dvRenderAll();
       info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
         +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
