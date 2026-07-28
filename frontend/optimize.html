@@ -840,8 +840,24 @@ function renderOptIter(){
       lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',spec,verdict);
   };
   const fmtF=v=>Math.abs(v)>=1e-12?f(v*1e12,2)+'pF':f(v*1e15,0)+'fF';  // F 단위 공학 표기
-  // 1) 설계변수 — 서버 descriptor에서 동적
+  // 1) 설계변수·size — 소자 size는 변수 바인딩(x1/x1÷10/x2)의 파생값이므로
+  //    변수 상위 행과 소자별 size 행의 중복 대신 **바인딩별 1행**(멤버 명시)로 통합.
+  //    소자 바인딩이 없는 변수(L=저항 파라미터, 소자 리스트 제외)만 자체 행 유지.
+  const bind={};  // size 식 → 멤버 소자 (서버 size_expr — 기본 바인딩 포함 단일 원천)
+  ((SS&&SS.devices)||[]).forEach(dv=>{
+    const s=dv.size_expr||(dv.params&&dv.params.size);
+    if(s)(bind[s]=bind[s]||[]).push(dv.key);});
+  const sizeOf=(dd,ms)=>{for(const m of ms){const v=(dd[m]||{}).size;if(v!==undefined)return v;}};
+  Object.keys(bind).sort().forEach(expr=>{
+    const ms=bind[expr];
+    const a=sizeOf(d0,ms), b=sizeOf(dc,ms);
+    const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩(x1/x2)이면 rule 창 부착
+    numRow('size='+expr+' ⇐ '+ms.join('·'), a, b, 4, '', false,
+      vd?('rule '+vd.lo+' ~ '+vd.hi):('파생 = '+expr),
+      vd?(b>=vd.lo&&b<=vd.hi):undefined);
+  });
   (d.variables||[]).forEach(vd=>{
+    if(bind[vd.key]) return;  // 소자 바인딩 행이 대표 — 상위 중복 행 생략 (사용자 지적)
     numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
       'rule '+vd.lo+' ~ '+vd.hi+vd.unit,
       cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
@@ -862,8 +878,7 @@ function renderOptIter(){
   // 4) 소자별 — usage 키 전수 동적: spec/SOA = TO-BE 시점의 signed SOA 한계(값÷usage)
   const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
   devs.forEach(devk=>{
-    const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
-    if(s0!==undefined) numRow(devk+' · size',s0,sc,4,'');
+    // (소자별 size 행은 상단 바인딩 행으로 정규화 — 파생값 중복 제거, 사용자 지적)
     Object.keys(u0).filter(k=>k.startsWith(devk+'·')).forEach(k=>{
       const q=k.split('·')[1];
       const unit=q.startsWith('I')?'A':'V';

@@ -331,6 +331,21 @@ def _mirror(f):
     return g
 
 
+def size_expr_of(dev):
+    """instance의 size 바인딩 식 — params.size 명시값 또는 cell 기본(diode류=x1,
+    clamp=x2). 실측 대상이 아닌 소자(전류원·monitor 등 params.size 없음)는 None.
+    _size_of와 같은 규칙의 '표기' 버전 (frontend 표의 바인딩 그룹 원천)."""
+    s = (dev.get("params") or {}).get("size")
+    if s is not None:
+        return str(s).replace(" ", "")
+    cell = dev.get("cell")
+    if cell in ("d_up", "d_down", "d_b2b"):
+        return "x1"
+    if cell == "clamp":
+        return "x2"
+    return None
+
+
 def _size_of(dev, x1, x2):
     """instance params.size 해석 — "x1"/"x2"/"x1/10"/숫자. 기본: diode류=x1, clamp=x2.
     (secondary는 primary 면적 1/10 — 사용자 지시 2026-07-28)"""

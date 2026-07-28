@@ -630,7 +630,7 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     if not (0 < imax <= 100) or not (2 <= n <= 201) or not (-100 <= imin < imax):
         return PlainTextResponse("imax∈(0,100], n∈[2,201], imin∈[-100,imax) 필요", status_code=422)
     from server.netlist import (device_keys, soa_endpoints, soa_rules_for, device_curves,
-                                device_caps)
+                                device_caps, size_expr_of)
     ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
     if err:
         return err
@@ -648,8 +648,8 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     caps = device_caps(nl, x1=x1, x2=x2)
     devices = [{"key": k, "instance": d.get("instance"), "cell": d.get("cell"),
                 "model": d.get("model"), "kind": d["kind"], "role": d.get("role"),
-                "params": d.get("params", {}), "soa": eps.get(k), "curve": curves.get(k),
-                "cap": caps.get(k)}
+                "params": d.get("params", {}), "size_expr": size_expr_of(d),
+                "soa": eps.get(k), "curve": curves.get(k), "cap": caps.get(k)}
                for k, d in device_keys(nl)]
     monitor_rules = {}
     for k, d in device_keys(nl):
