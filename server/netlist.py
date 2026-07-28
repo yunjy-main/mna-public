@@ -446,8 +446,18 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
         capped = mx > cap
         if capped and res >= 0.9 * prev_res:
             cap *= 4.0
-        damp = 1.0 if mx <= cap else cap / mx
-        v = [vi + damp * di for vi, di in zip(v, dv)]
+        step = 1.0 if mx <= cap else cap / mx
+        # residual backtracking: 구간선형(실측 pwl) kink에서의 진동 방지 —
+        # 스텝 후 잔차가 늘면 반감 (부동 net 걷기는 잔차가 단조 감소라 무영향)
+        vn = [vi + step * di for vi, di in zip(v, dv)]
+        for _ in range(8):
+            Fn = build(vn)[1]
+            rn = max(abs(x) for x in Fn) if Fn else 0.0
+            if rn <= res or step < 1e-6:
+                break
+            step *= 0.5
+            vn = [vi + step * di for vi, di in zip(v, dv)]
+        v = vn
         prev_res = res
 
     G, F = build(v)

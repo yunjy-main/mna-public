@@ -412,6 +412,14 @@ chk("measured sweep 전 point 수렴", all(p["converged"] for p in swm["points"]
 chk("sweep point에 device_v 포함", all("device_v" in p and len(p["device_v"]) == 11
                                        for p in swm["points"]), "")
 
+# pwl kink 진동 회귀 (2026-07-28 발견): 병렬 실측 diode도 backtracking으로 수렴
+Lp = copy.deepcopy(DEFAULT_LAYOUT)
+Lp["elements"].append({"type": "diode", "from": "N1", "to": "N2"})
+rp = assemble_and_solve(extract_netlist(Lp), inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
+chk("병렬 실측 diode 수렴", rp["converged"], "res={}".format(rp["residual"]))
+chk("병렬 시 diode 강하 감소", 0.5 < (rp["v"]["N1"] - rp["v"]["N2"]) < M.VofI(c1w["pos"], 1.33),
+    str(rp["v"]["N1"] - rp["v"]["N2"]))
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:
