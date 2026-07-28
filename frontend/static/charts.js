@@ -37,8 +37,18 @@ window.MNA = (function () {
     xs = xs.filter(isFinite); ys = ys.filter(isFinite);
     if (!xs.length) { el.innerHTML = ''; return; }
     let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    if (o.origin) { x0 = Math.min(x0, 0); x1 = Math.max(x1, 0); y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
     if (x0 === x1) { x0 -= 1; x1 += 1; } if (y0 === y1) { y0 -= 1; y1 += 1; }
     const px = (x1 - x0) * .03, py = (y1 - y0) * .07; x0 -= px; x1 += px; y0 -= py; y1 += py;
+    // graph 기본: 눈금은 1-2-5 계열의 '딱 떨어지는' step, 0에 정렬 —
+    // 축 경계를 step 배수로 snap하면 0이 범위 안에 있을 때 항상 정확한 눈금이 된다.
+    function niceStep(span, target) {
+      const raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+      return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+    }
+    const xst = niceStep(x1 - x0, 4), yst = niceStep(y1 - y0, 4);
+    x0 = Math.floor(x0 / xst) * xst; x1 = Math.ceil(x1 / xst) * xst;
+    y0 = Math.floor(y0 / yst) * yst; y1 = Math.ceil(y1 / yst) * yst;
     const X = x => mL + (x - x0) / (x1 - x0) * (W - mL - mR);
     const Y = y => H - mB - (y - y0) / (y1 - y0) * (H - mT - mB);
     let s = '<svg viewBox="0 0 ' + W + ' ' + H + '">';
@@ -46,11 +56,16 @@ window.MNA = (function () {
       const a = X(Math.max(x0, o.shade[0])), b = X(Math.min(x1, o.shade[1]));
       s += '<rect x="' + a + '" y="' + mT + '" width="' + (b - a) + '" height="' + (H - mT - mB) + '" fill="#eef3f8"/>';
     }
-    for (let i = 0; i <= 4; i++) {
-      const xv = x0 + (x1 - x0) * i / 4, yv = y0 + (y1 - y0) * i / 4;
-      s += '<line x1="' + X(xv) + '" y1="' + mT + '" x2="' + X(xv) + '" y2="' + (H - mB) + '" stroke="' + C.grid + '"/>'
-        + '<line x1="' + mL + '" y1="' + Y(yv) + '" x2="' + (W - mR) + '" y2="' + Y(yv) + '" stroke="' + C.grid + '"/>'
-        + '<text x="' + X(xv) + '" y="' + (H - mB + 13) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>'
+    for (let n = Math.round(x0 / xst); n <= Math.round(x1 / xst); n++) {
+      const xv = n * xst, zero = n === 0;  // 원점 축은 진하게
+      s += '<line x1="' + X(xv) + '" y1="' + mT + '" x2="' + X(xv) + '" y2="' + (H - mB) + '" stroke="'
+        + (zero ? '#aeb7c2' : C.grid) + '"/>'
+        + '<text x="' + X(xv) + '" y="' + (H - mB + 13) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
+    }
+    for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++) {
+      const yv = n * yst, zero = n === 0;
+      s += '<line x1="' + mL + '" y1="' + Y(yv) + '" x2="' + (W - mR) + '" y2="' + Y(yv) + '" stroke="'
+        + (zero ? '#aeb7c2' : C.grid) + '"/>'
         + '<text x="' + (mL - 4) + '" y="' + (Y(yv) + 3) + '" text-anchor="end" font-size="8.5" fill="' + C.gray + '">' + fmtN(yv) + '</text>';
     }
     s += '<rect x="' + mL + '" y="' + mT + '" width="' + (W - mL - mR) + '" height="' + (H - mT - mB) + '" fill="none" stroke="' + C.frame + '"/>';
@@ -60,6 +75,11 @@ window.MNA = (function () {
     });
     (o.vlines || []).forEach(h => {
       s += '<line x1="' + X(h.x) + '" y1="' + mT + '" x2="' + X(h.x) + '" y2="' + (H - mB) + '" stroke="' + (h.color || C.gray) + '" stroke-dasharray="4 4"/>';
+      if (h.label) {
+        const right = X(h.x) > (mL + W - mR) / 2;  // 위치에 따라 선 안쪽으로 라벨
+        s += '<text x="' + (X(h.x) + (right ? -3 : 3)) + '" y="' + (H - mB - 4) + '" text-anchor="'
+          + (right ? 'end' : 'start') + '" font-size="8.5" fill="' + (h.color || C.gray) + '">' + h.label + '</text>';
+      }
     });
     (o.series || []).forEach(sr => {
       const pts = sr.x.map((x, i) => X(x).toFixed(1) + ',' + Y(sr.y[i]).toFixed(1)).join(' ');

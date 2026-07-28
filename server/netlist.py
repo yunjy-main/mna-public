@@ -568,6 +568,40 @@ def soa_rules_for(model):
     ]
 
 
+def device_curves(nl, x1=2.56, x2=1415.232, corner="worst", npts=41):
+    """저항 제외 device별 실측 특성곡선 {V,I} — I-V 차트의 참조선(궤적 vs 특성 대비).
+    element 좌표계(clamp는 미러). 실측 데이터 없는 소자=None. (모델,size)별 캐시."""
+    from server import model as M
+    cache = {}
+    out = {}
+    for key, d in device_keys(nl):
+        cell = d.get("cell")
+        if cell in ("d_up", "d_down", "d_b2b"):
+            dev, mirror = M.D1, False
+        elif cell == "clamp":
+            dev, mirror = M.D2, True
+        else:
+            out[key] = None
+            continue
+        x = _size_of(d, x1, x2)
+        ck = (dev["id"], round(x, 9), mirror)
+        if ck not in cache:
+            c = M.calib(dev, x, corner)
+            Vs = c["neg"]["V"][::-1] + c["pos"]["V"][1:]
+            Is = c["neg"]["I"][::-1] + c["pos"]["I"][1:]
+            if mirror:
+                Vs = [-v for v in reversed(Vs)]
+                Is = [-i for i in reversed(Is)]
+            step = max(1, len(Vs) // npts)
+            keep = list(range(0, len(Vs), step))
+            if keep[-1] != len(Vs) - 1:
+                keep.append(len(Vs) - 1)
+            cache[ck] = {"V": [round(Vs[j], 4) for j in keep],
+                         "I": [round(Is[j], 5) for j in keep]}
+        out[key] = cache[ck]
+    return out
+
+
 def evaluate_soa_monitors(nl, sol, rules_by_model=None):
     """solve 이후 post-processing (이슈 #10 §3·§4).
 
