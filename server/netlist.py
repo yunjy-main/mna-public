@@ -745,22 +745,18 @@ def device_currents(nl, sol, model_ctx=None):
     return out
 
 
-def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None):
-    """I=0→Imax continuation sweep (warm-start) + 매 point SOA 평가.
+def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, imin=0.0):
+    """I=imin→imax continuation sweep + 매 point SOA 평가 (points는 I 오름차순).
 
+    imin<0(양극 sweep, 사용자 지시 2026-07-28)이면 0에서 바깥쪽으로 양/음 두 갈래
+    warm-start 후 병합 — 극성 반전점에서의 cold start를 피한다.
     point 상태 4종: non_convergence / unresolved_monitor_terminal / soa_fail / pass.
     SOA fail은 solve 실패가 아니다 — 해는 유효하게 저장하고 metadata만 기록."""
-    points = []
-    v0 = None
-    first_fail = None
-    last_conv = None
-    for k in range(n):
-        i = imax * k / float(n - 1) if n > 1 else imax
+    grid = [imin + (imax - imin) * k / float(n - 1) if n > 1 else imax for k in range(n)]
+
+    def solve_point(i, v0):
         sol = assemble_and_solve(nl, inject=force, ground=ground, I=i, L=L, v0=v0,
                                  model_ctx=model_ctx)
-        if sol["converged"]:
-            v0 = [sol["v"][nm] for nm in sol["unknowns"]]  # continuation warm-start
-            last_conv = {"current": i, "newton_iters": sol["newton_iters"]}
         mons = evaluate_soa_monitors(nl, sol)
         if not sol["converged"]:
             status = "non_convergence"
@@ -770,21 +766,40 @@ def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None):
             status = "soa_fail"
         else:
             status = "pass"
-        if status == "soa_fail" and first_fail is None:
-            fm = [m for m in mons if m["valid"] and m["passed"] is False][0]
-            first_fail = {"current": i, "instance": fm["instance"],
-                          "quantity": fm["worst_quantity"], "margin": fm["worst_margin"]}
-        points.append({"I": i, "status": status, "converged": sol["converged"],
-                       "residual": sol["residual"], "v": sol["v"],
-                       "device_v": device_voltages(nl, sol),
-                       "device_i": device_currents(nl, sol, model_ctx=model_ctx),
-                       "monitors": [{"instance": m["instance"], "valid": m["valid"],
-                                     "reason": m["reason"], "passed": m["passed"],
-                                     "stress": m["stress"],
-                                     "worst_quantity": m["worst_quantity"],
-                                     "worst_margin": m["worst_margin"]} for m in mons]})
-    return {"force": force, "ground": ground, "imax": imax, "n": n,
-            "points": points, "first_soa_fail": first_fail,
-            "last_converged": last_conv,
-            "active_limiter": ("{}:{}".format(first_fail["instance"], first_fail["quantity"])
-                               if first_fail else None)}
+        point = {"I": i, "status": status, "converged": sol["converged"],
+                 "residual": sol["residual"], "v": sol["v"],
+                 "device_v": device_voltages(nl, sol),
+                 "device_i": device_currents(nl, sol, model_ctx=model_ctx),
+                 "monitors": [{"instance": m["instance"], "valid": m["valid"],
+                               "reason": m["reason"], "passed": m["passed"],
+                               "stress": m["stress"],
+                               "worst_quantity": m["worst_quantity"],
+                               "worst_margin": m["worst_margin"]} for m in mons]}
+        return point, sol, mons
+
+    def branch(currents):  # 0 근처→바깥 순서로 continuation, (points, first_fail, last_conv)
+        pts, v0, ff, lc = [], None, None, None
+        for i in currents:
+            p, sol, mons = solve_point(i, v0)
+            if sol["converged"]:
+                v0 = [sol["v"][nm] for nm in sol["unknowns"]]
+                lc = {"current": i, "newton_iters": sol["newton_iters"]}
+            if p["status"] == "soa_fail" and ff is None:
+                fm = [m for m in mons if m["valid"] and m["passed"] is False][0]
+                ff = {"current": i, "instance": fm["instance"],
+                      "quantity": fm["worst_quantity"], "margin": fm["worst_margin"]}
+            pts.append(p)
+        return pts, ff, lc
+
+    pos = [g for g in grid if g >= 0.0]
+    neg = sorted([g for g in grid if g < 0.0], reverse=True)  # 0에 가까운 쪽부터
+    pos_pts, ff_pos, lc_pos = branch(pos)
+    neg_pts, ff_neg, lc_neg = branch(neg)
+    points = list(reversed(neg_pts)) + pos_pts  # I 오름차순
+
+    lim = lambda ff: "{}:{}".format(ff["instance"], ff["quantity"]) if ff else None
+    return {"force": force, "ground": ground, "imax": imax, "imin": imin, "n": len(points),
+            "points": points,
+            "first_soa_fail": ff_pos, "first_soa_fail_neg": ff_neg,
+            "last_converged": lc_pos, "last_converged_neg": lc_neg,
+            "active_limiter": lim(ff_pos), "active_limiter_neg": lim(ff_neg)}

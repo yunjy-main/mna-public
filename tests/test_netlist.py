@@ -366,7 +366,9 @@ chk("SOA fail ≠ solve 실패(해 저장)", all(p["converged"] for p in sw["poi
     and any(p["status"] == "soa_fail" for p in sw["points"]), "")
 chk("sweep 상태 단조 pass→fail", [p["status"] for p in sw["points"]]
     == ["pass"] * 30 + ["soa_fail"] * 11, str([p["status"] for p in sw["points"][28:33]]))
-KEYS = {"force", "ground", "imax", "n", "points", "first_soa_fail", "last_converged", "active_limiter"}
+KEYS = {"force", "ground", "imax", "imin", "n", "points",
+        "first_soa_fail", "first_soa_fail_neg", "last_converged", "last_converged_neg",
+        "active_limiter", "active_limiter_neg"}
 STATES = {"non_convergence", "unresolved_monitor_terminal", "soa_fail", "pass"}
 ok6 = True
 limiters = {}
@@ -439,6 +441,21 @@ pi = sw2["points"][-1]["device_i"]
 chk("device_i KCL(2A 분담)", abs(pi["XD_up"] + pi["XD_up2"] - 2.0) < 2e-3,
     str((pi["XD_up"], pi["XD_up2"])))
 chk("device_i monitor/전류원 None", pi["XVictim"] is None and pi["XI_ESD (IO→VSS)"] is None, "")
+
+# 양극 sweep (사용자 지시 2026-07-28): I=-2→+2, 0에서 두 갈래 continuation
+swb = sweep_scenario(nl, "IO", "VSS", imax=2.0, n=41, imin=-2.0, model_ctx=ctx)
+bI = [p["I"] for p in swb["points"]]
+chk("양극 sweep 41점 오름차순", len(bI) == 41 and bI == sorted(bI)
+    and abs(bI[0] + 2.0) < 1e-12 and abs(bI[-1] - 2.0) < 1e-12, str((bI[0], bI[-1], len(bI))))
+chk("양극 sweep I=0 포함", any(abs(i) < 1e-12 for i in bI), "")
+chk("양극 sweep 전 point 수렴", all(p["converged"] for p in swb["points"]), "")
+chk("양극 first fail 극성별 보고", swb["first_soa_fail"] is not None
+    and abs(swb["first_soa_fail"]["current"] - 0.9) < 1e-9
+    and "first_soa_fail_neg" in swb, str((swb["first_soa_fail"], swb["first_soa_fail_neg"])))
+neg_pt = swb["points"][0]  # I=-2: 음(-) 스트레스 — down diode가 자기 좌표계 순방향 도통
+chk("음극에서 down diode 순방향 도통(+2A)", neg_pt["device_i"]["XD_down"] > 1.5,
+    str(neg_pt["device_i"]["XD_down"]))
+chk("음극 V(IO) 음수", neg_pt["v"]["IO"] < -1.0, str(neg_pt["v"]["IO"]))
 
 # pwl kink 진동 회귀 (2026-07-28 발견): 병렬 실측 diode도 backtracking으로 수렴
 Lp = copy.deepcopy(DEFAULT_LAYOUT)

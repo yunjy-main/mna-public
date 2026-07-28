@@ -351,7 +351,12 @@ function dvCtx(){
   return {sc, pts:sc.points, I:sc.points.map(p=>p.I), idx,
           iNow:sc.points[idx].I, pNow:sc.points[idx],
           ffI:sc.first_soa_fail?sc.first_soa_fail.current:null,
-          rules:SS.monitor_rules||{}, imax:SS.imax};
+          ffIN:sc.first_soa_fail_neg?sc.first_soa_fail_neg.current:null,
+          rules:SS.monitor_rules||{}, imax:SS.imax, imin:SS.imin||0};
+}
+function dvIdxOf(c,i){ // 전류 → point 인덱스 (양극 sweep 대응)
+  return Math.max(0,Math.min(c.pts.length-1,
+    Math.round((i-c.imin)/((c.imax-c.imin)||1)*(c.pts.length-1))));
 }
 function dvRenderAll(){
   if(!SS) return;
@@ -362,7 +367,8 @@ function dvRenderAll(){
     const st=document.getElementById('iovlSt');
     st.textContent=c.sc.force+'→'+c.sc.ground+' · '+c.pNow.status;
     st.style.color=c.pNow.status==='pass'?'#0b7a3b':'#b3261e';
-    if(!IOVL_LOCK) document.getElementById('iovlR').value=Math.round(c.iNow/(c.imax||1)*1000);
+    if(!IOVL_LOCK) document.getElementById('iovlR').value=
+      Math.round((c.iNow-c.imin)/((c.imax-c.imin)||1)*1000);
   }
   DV.reg.forEach(r=>{
     const host=document.getElementById(r.host); if(!host) return;
@@ -394,9 +400,13 @@ function dvUsage(d,c,k){
   return {uV,uI,u:Math.max(uV,uI),worst:uV>=uI?'V':'I',valid:true};
 }
 function dvGhosts(c,ax){
-  const gs=[];
-  [0,0.5,1.0,1.5,2.0].forEach(g=>{if(g<=c.imax+1e-9)
-    gs.push({vals:ax(Math.round(g/c.imax*(c.pts.length-1)))});});
+  const gs=[], seen={};
+  [c.imin,c.imin/2,0,c.imax/2,c.imax].forEach(g=>{
+    if(g<c.imin-1e-9||g>c.imax+1e-9) return;
+    const k=dvIdxOf(c,g);
+    if(seen[k]) return; seen[k]=1;
+    gs.push({vals:ax(k)});
+  });
   return gs;
 }
 
@@ -434,10 +444,12 @@ dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
     if(cx.length>1) series.push({x:cx,y:cy,color:'#b9c2cc',label:'model',dash:'4 3'});
   }
   series.push({x:Vs,y:Ys,color:CB.blue,label:hasI?'I(소자)':'I inj'});
-  if(!d.soa&&!hasI){ // 한계선 없는 fallback 소자(victim): 자기 한계 초과 전류 표시
-    let xI=null;
-    for(let k=0;k<c.pts.length;k++){const u=dvUsage(d,c,k);if(u&&u.u>=1){xI=c.I[k];break;}}
-    if(xI!==null) hl.push({y:xI,color:CB.red,label:'한계 @'+f(xI,2)+'A'});
+  if(!d.soa&&!hasI){ // 한계선 없는 fallback 소자(victim): 극성별 자기 한계 초과 전류
+    const k0=dvIdxOf(c,0);
+    for(let k=k0;k<c.pts.length;k++){const u=dvUsage(d,c,k);
+      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
+    for(let k=k0;k>=0;k--){const u=dvUsage(d,c,k);
+      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
   }
   lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,origin:true,
     xlabel:'V(양단) [V]'});
@@ -456,10 +468,12 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   if(g) vl.push({x:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{x:g.min,color:CB.gray});
   if(t) vl.push({x:t.max,color:CB.orange,label:'VDS ±'+t.max});
   const m0=dvMon(d,c,c.idx);
+  const ffl=[];
+  if(c.ffI!==null) ffl.push({y:c.ffI,color:CB.red,label:'first fail +'});
+  if(c.ffIN!==null) ffl.push({y:c.ffIN,color:CB.red,label:'first fail −'});
   lineChart(el,{title:'I-V victim · '+d.key,w:380,h:170,series:s,vlines:vl,origin:true,
     points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
-    hlines:c.ffI!==null?[{y:c.ffI,color:CB.red,label:'first fail'}]:[],
-    xlabel:'stress [V]'});
+    hlines:ffl,xlabel:'stress [V]'});
 }});
 // [renderer] 소자별 radar (ghost = 0/0.5/1/1.5/2A)
 dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
@@ -538,8 +552,8 @@ dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
 function loadSchemSweep(){
   const info=document.getElementById('ssInfo');
   info.textContent='sweep 중…';
-  const q='imax='+encodeURIComponent(val('imax'))+'&n=41'
-    +'&x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
+  const q='imax='+encodeURIComponent(val('imax'))+'&imin=-'+encodeURIComponent(val('imax'))
+    +'&n=81&x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
     +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
   fetch('api/analysis/sweep?'+q)
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
@@ -563,9 +577,11 @@ function renderAll(){
   document.getElementById('ival').value=e.I.toFixed(2);
   document.getElementById('currentScrubLabel').textContent='Injected current: '+e.I.toFixed(2)+' A';
   updateSchemAnn(e.I);
-  if(SS){ // §2-0 스크럽을 최적화 슬라이더와 동기화 (tracing dot 연동)
-    const sl=document.getElementById('ssIdx');
-    sl.value=Math.max(0,Math.min(+sl.max,Math.round(e.I/SS.imax*(+sl.max))));
+  if(SS){ // §2-0 스크럽을 최적화 슬라이더와 동기화 — overlay 구동 중에는 덮어쓰지 않음
+    if(!IOVL_LOCK){
+      const mn=SS.imin||0, sl=document.getElementById('ssIdx');
+      sl.value=Math.max(0,Math.min(+sl.max,Math.round((e.I-mn)/((SS.imax-mn)||1)*(+sl.max))));
+    }
     dvRenderAll();
   }
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
@@ -723,14 +739,18 @@ document.getElementById('iovlR').addEventListener('input',()=>{
   IOVL_RAF=requestAnimationFrame(()=>{
     IOVL_RAF=0; IOVL_LOCK=true;
     const fr=+document.getElementById('iovlR').value/1000;
-    if(DATA){
-      const sl=document.getElementById('islider');
-      sl.value=Math.round(fr*(+sl.max));
-      renderAll();               // §2 전체 + (내부 동기화로) 2-0까지 갱신
+    // 2-0 스크럽은 항상 전체 스팬(imin..imax, 음극 포함)을 직접 구동
+    const sl=document.getElementById('ssIdx');
+    sl.value=Math.round(fr*(+sl.max));
+    if(DATA&&SS){
+      // 최적화(§2, analytic 0..imax)는 양수로 clamp해 구동 — ssIdx는 lock으로 보존
+      const mn=SS.imin||0, iT=mn+fr*(SS.imax-mn);
+      const isl=document.getElementById('islider');
+      const ip=Math.max(0,Math.min(iT,DATA.settings.imax));
+      isl.value=Math.round(ip/DATA.settings.imax*(+isl.max));
+      renderAll();               // §2 갱신 + 내부에서 dvRenderAll(2-0) 호출
     }else if(SS){
-      const sl=document.getElementById('ssIdx');
-      sl.value=Math.round(fr*(+sl.max));
-      dvRenderAll();             // 2-0 소자 시각화 갱신
+      dvRenderAll();             // 2-0 소자 시각화만 갱신
     }
     IOVL_LOCK=false;
   });

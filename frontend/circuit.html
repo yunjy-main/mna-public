@@ -77,7 +77,22 @@
     <div class="cap" id="mStat"></div>
     <pre id="mOut"></pre>
     <div class="cap">회로도(레이아웃 기하)에서 net을 추출하고 instance cell/model/params로 조립.
-      model equation은 임의 placeholder(softplus diode·양방향 clamp·선형 R) — open(회색) 소자는 미조립.</div>
+      model equation은 임의 placeholder(softplus diode·양방향 clamp·선형 R) — open(회색) 소자는 미조립.
+      role=soa_monitor(XVictim)는 행렬에 기여하지 않고 solve 후 terminal 전압으로만 SOA를 평가.</div>
+  </div>
+
+  <div class="card">
+    <h2>3.6 rail 시나리오 sweep (6종 ordered force/ground × I=0→Imax, SOA monitor)</h2>
+    <div class="ctl">
+      <div><label>Imax (A)</label><input id="swImax" type="number" step="any" value="2.0"></div>
+      <div><label>points</label><input id="swN" type="number" step="1" value="21"></div>
+      <button id="swBtn">sweep 실행</button>
+    </div>
+    <div class="cap" id="swStat"></div>
+    <pre id="swOut"></pre>
+    <div class="cap">상태 4종: non_convergence(해 무효) / unresolved_monitor_terminal(monitor 단자가 active
+      graph에서 미해석 — GMIN 전압으로 SOA 평가 금지) / soa_fail(해는 유효, SOA rule 위반) / pass.
+      SOA rule은 victim_soa 실측(SG_NFET 1stk_1rx: VDS ±3.1V, VGS/VGD/VGB −3.3(acc)~+2.9(inv)V)에서 유도.</div>
   </div>
 </main>
 <script>
@@ -182,6 +197,23 @@ function loadMatrix(){
       let t='netlist (회로도에서 추출):\n';
       d.devices.forEach(v=>{t+='  '+String(v.instance).padEnd(26)+(v.cell||'—').padEnd(8)
         +String(v.model||'—').padEnd(22)+v.pins+(v.open?'  (open — 미조립)':'')+'\n';});
+      if(d.monitors&&d.monitors.length){
+        t+='\nSOA monitor (solve 후 관측 — 행렬 미기여):\n';
+        d.monitors.forEach(m=>{
+          t+='  '+m.instance+'  '+m.model+'\n';
+          Object.entries(m.terminals).forEach(([k,tv])=>{
+            t+='    '+k.toUpperCase()+' = '+tv.net.padEnd(6)
+              +(tv.voltage===null?'미해석(unresolved)':f(tv.voltage)+' V')+'\n';});
+          if(!m.valid){t+='    → 무효: '+m.reason
+            +(m.unresolved_terminals.length?' ['+m.unresolved_terminals.map(u=>u.terminal+'='+u.net).join(', ')+']':'')+'\n';}
+          else{
+            m.checks.forEach(c=>{t+='    '+c.quantity.padEnd(4)+f(c.value,3).padStart(8)+' V  ∈ ['
+              +f(c.min,2)+', '+f(c.max,2)+']  margin '+f(c.margin,3).padStart(7)
+              +(c.passed?'  PASS':'  FAIL')+'\n';});
+            t+='    → '+(m.passed?'PASS':'FAIL — worst '+m.worst_quantity+' (margin '+f(m.worst_margin,3)+')')+'\n';
+          }
+        });
+      }
       t+='\n해 (V):\n';
       Object.entries(s.v).forEach(([k,v])=>{t+='  '+k.padEnd(6)+v.toFixed(4)+'\n';});
       t+='\nG (Newton 해에서의 Jacobian, '+s.size+' S 단위):\n';
@@ -194,6 +226,43 @@ function loadMatrix(){
 }
 document.getElementById('mBtn').addEventListener('click', loadMatrix);
 loadMatrix();
+
+// ---- §3.6 rail 시나리오 sweep ----
+function loadSweep(){
+  const st=document.getElementById('swStat'), out=document.getElementById('swOut');
+  st.textContent='sweep 중…';
+  fetch('api/analysis/sweep?imax='+encodeURIComponent(swImax.value)
+        +'&imin=-'+encodeURIComponent(swImax.value)
+        +'&n='+encodeURIComponent(swN.value)+'&L='+encodeURIComponent(lop.value))
+    .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
+    .then(d=>{
+      st.textContent='6 시나리오 × '+d.n+' points (I='+(d.imin||0)+'→'+d.imax+'A, L='+d.L
+        +'µm, 0에서 양/음 두 갈래 continuation)';
+      let t='';
+      d.scenarios.forEach(s=>{
+        if(s.error){t+=s.force+'→'+s.ground+'  오류: '+s.error+'\n\n'; return;}
+        const cnt={}; s.points.forEach(p=>{cnt[p.status]=(cnt[p.status]||0)+1;});
+        t+=(s.force+'→'+s.ground).padEnd(10)
+          +Object.entries(cnt).map(([k,v])=>k+'×'+v).join(' · ')
+          +'  | last_converged I='+(s.last_converged?f(s.last_converged.current,3):'—')
+          +'  | first_fail+ '+(s.first_soa_fail?('I='+f(s.first_soa_fail.current,3)+' '+s.first_soa_fail.instance+':'+s.first_soa_fail.quantity):'없음')
+          +'  | first_fail− '+(s.first_soa_fail_neg?('I='+f(s.first_soa_fail_neg.current,3)+' '+s.first_soa_fail_neg.quantity):'없음')
+          +'  | limiter '+(s.active_limiter||'—')+'/'+(s.active_limiter_neg||'—')+'\n';
+        s.points.forEach(p=>{
+          if(p.status!=='pass'&&p.status!=='unresolved_monitor_terminal'){
+            const m=p.monitors&&p.monitors[0];
+            t+='    I='+f(p.I,3)+'  '+p.status
+              +(m&&m.worst_quantity?('  '+m.worst_quantity+' margin '+f(m.worst_margin,3)):'')+'\n';
+          }
+        });
+        t+='\n';
+      });
+      out.textContent=t;
+    })
+    .catch(e=>{st.textContent='오류: '+(e.message||e); out.textContent='';});
+}
+document.getElementById('swBtn').addEventListener('click', loadSweep);
+loadSweep();
 
 // ---- 레이아웃 편집 ----
 function qs(){return 'x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)

@@ -619,14 +619,15 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
 @app.get(PREFIX + "/api/analysis/sweep")
 def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
                    x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
-                   model_mode: str = "measured"):
-    """6종 ordered rail 시나리오 × I=0→Imax continuation sweep + 매 point SOA 평가
+                   model_mode: str = "measured", imin: float = 0.0):
+    """6종 ordered rail 시나리오 × I=imin→Imax continuation sweep + 매 point SOA 평가
     (이슈 #10 §5 + 사용자 궁극 목표: 실측 model 연계, point마다 저항 제외 device_v).
+    imin<0이면 양극 sweep(0에서 바깥쪽 두 갈래 continuation).
     상태: non_convergence / unresolved_monitor_terminal / soa_fail / pass."""
     from server.schematic import load_layout
     from server.netlist import extract_netlist, sweep_scenario, RAIL_SCENARIOS
-    if not (0 < imax <= 100) or not (2 <= n <= 201):
-        return PlainTextResponse("imax∈(0,100], n∈[2,201] 필요", status_code=422)
+    if not (0 < imax <= 100) or not (2 <= n <= 201) or not (-100 <= imin < imax):
+        return PlainTextResponse("imax∈(0,100], n∈[2,201], imin∈[-100,imax) 필요", status_code=422)
     from server.netlist import device_keys, soa_endpoints, soa_rules_for, device_curves
     ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
     if err:
@@ -636,7 +637,7 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     for force, ground in RAIL_SCENARIOS:
         try:
             scenarios.append(sweep_scenario(nl, force, ground, imax=imax, n=n, L=L,
-                                            model_ctx=ctx))
+                                            model_ctx=ctx, imin=imin))
         except ValueError as ex:
             scenarios.append({"force": force, "ground": ground, "error": str(ex)})
     # 소자 리스트 = frontend 시각화의 단일 원천 (key는 device_v/device_i와 동일)
@@ -650,8 +651,8 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
-    return {"imax": imax, "n": n, "L": L, "x1": x1, "x2": x2, "corner": corner,
-            "model_mode": model_mode, "devices": devices,
+    return {"imax": imax, "imin": imin, "n": n, "L": L, "x1": x1, "x2": x2,
+            "corner": corner, "model_mode": model_mode, "devices": devices,
             "monitor_rules": monitor_rules, "scenarios": scenarios}
 
 
