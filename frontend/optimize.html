@@ -146,13 +146,14 @@
     </div>
     <div class="hint">아래 모든 시각화 요소는 schematic 소자 리스트(저항 제외)와 renderer 등록
       패턴으로 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 자동 증감. 세로 점선 = first SOA fail.</div>
-    <h3>소자별 V·I vs 주입전류 (tracing dot = 스크럽 전류)</h3>
+    <h3>소자별 V–I (X=V 양단, Y=주입전류 · tracing dot = 스크럽 · 가로 점선 = first fail)</h3>
     <div class="g23" id="ssDev"></div>
-    <h3>victim monitor stress — signed 실측 rule</h3>
+    <h3>victim monitor stress (X=stress V, Y=주입전류 · 세로선 = signed 실측 한계)</h3>
     <div class="g23" id="ssMon"></div>
     <h3>소자별 radar (스크럽 전류 기준 · ghost 0/0.5/1/1.5/2A)</h3>
     <div class="radars" id="ssRadar"></div>
-    <h3>소자별 SOA map (instance size의 실측 endpoint · 궤적 = sweep · 방향별 vp/ip↔vn/inn)</h3>
+    <h3>소자별 SOA map (instance size의 실측 endpoint · 궤적 = sweep · 방향별 vp/ip↔vn/inn ·
+      victim은 analytic probe I_v map)</h3>
     <div class="g23" id="ssMap"></div>
     <h3>소자별 gauge (V/I usage)</h3>
     <div class="g23" id="ssGauge"></div>
@@ -180,13 +181,6 @@
 
     <h3>2-4. Constraint tightness ranking</h3>
     <div class="rank" id="rank"></div>
-
-    <h3>2-5. Victim V-I SOA map (analytic probe — I_v)</h3>
-    <div class="hint">소자별 SOA map은 §2-0에서 schematic 소자 리스트로 동적 생성(instance
-      size별 실측 endpoint). 여기는 analytic victim probe(I_v)의 종합 map만 유지.</div>
-    <div class="g23">
-      <div id="mapV"></div>
-    </div>
 
     <h3>2-6. Iteration plots (선택 전류점)</h3>
     <div class="hint">non-victim (device / 변수 / loss)</div>
@@ -405,32 +399,32 @@ function dvGhosts(c,ax){
   return gs;
 }
 
-// [renderer] 소자별 V·I 곡선 + tracing dot
+// [renderer] 소자별 V 곡선 — pivot: X=V(양단), Y=주입전류 (사용자 지시, I plot 없음)
 dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
-  const series=[{x:c.I,y:c.I.map((_,k)=>dvV(d,c,k)),color:CB.blue,label:'V'}];
-  if(c.I.some((_,k)=>dvI(d,c,k)!==null))
-    series.push({x:c.I,y:c.I.map((_,k)=>dvI(d,c,k)||0),color:CB.green,label:'I (A)'});
-  lineChart(el,{title:d.key,w:380,h:150,series,
-    points:[{x:c.iNow,y:dvV(d,c,c.idx),r:4.5,color:CB.red}],
-    vlines:c.ffI!==null?[{x:c.ffI}]:[],xlabel:'I inj (A)'});
+  lineChart(el,{title:d.key,w:380,h:150,
+    series:[{x:c.I.map((_,k)=>dvV(d,c,k)),y:c.I,color:CB.blue,label:'I inj'}],
+    points:[{x:dvV(d,c,c.idx),y:c.iNow,r:4.5,color:CB.red}],
+    hlines:c.ffI!==null?[{y:c.ffI,color:CB.red,label:'first fail'}]:[],
+    xlabel:'V(양단) [V]'});
 }});
-// [renderer] victim monitor stress + signed 한계선 + tracing dot
+// [renderer] victim monitor stress — 동일 pivot: X=stress V, Y=주입전류 (한계=세로선)
 dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const rl=c.rules[d.model]||[], lim=q=>rl.find(r=>r.quantity===q);
   const pick=q=>{const xs=[],ys=[];c.pts.forEach(p=>{
     const m=(p.monitors||[]).find(m=>m.instance===d.instance);
-    if(m&&m.stress){xs.push(p.I);ys.push(m.stress[q]);}});return{xs,ys};};
+    if(m&&m.stress){xs.push(m.stress[q]);ys.push(p.I);}});return{xs,ys};};
   const QS=['VGS','VGD','VDS'], QC=[CB.blue,CB.green,CB.purple];
   const s=QS.map((q,i)=>{const pr=pick(q);return{x:pr.xs,y:pr.ys,color:QC[i],label:q};})
     .filter(t=>t.x.length);
   if(!s.length){el.className='hint';el.textContent=d.key+': monitor 무효(unresolved/비수렴)';return;}
-  const hl=[], g=lim('VGS'), t=lim('VDS');
-  if(g) hl.push({y:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{y:g.min,color:CB.gray});
-  if(t) hl.push({y:t.max,color:CB.orange,label:'VDS ±'+t.max});
+  const vl=[], g=lim('VGS'), t=lim('VDS');
+  if(g) vl.push({x:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{x:g.min,color:CB.gray});
+  if(t) vl.push({x:t.max,color:CB.orange,label:'VDS ±'+t.max});
   const m0=dvMon(d,c,c.idx);
-  lineChart(el,{title:d.key+' stress',w:380,h:170,series:s,hlines:hl,
-    points:(m0&&m0.stress)?QS.map((q,i)=>({x:c.iNow,y:m0.stress[q],r:4,color:QC[i]})):[],
-    vlines:c.ffI!==null?[{x:c.ffI}]:[],xlabel:'I inj (A)'});
+  lineChart(el,{title:d.key+' stress',w:380,h:170,series:s,vlines:vl,
+    points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
+    hlines:c.ffI!==null?[{y:c.ffI,color:CB.red,label:'first fail'}]:[],
+    xlabel:'stress [V]'});
 }});
 // [renderer] 소자별 radar (ghost = 0/0.5/1/1.5/2A)
 dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
@@ -451,8 +445,22 @@ dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el
   radar(el,d.key+' · size '+f(d.soa.size,3),
     ['V usage','I usage','V share','I share','V margin','I margin'],ax(c.idx),dvGhosts(c,ax));
 }});
-// [renderer] 소자별 SOA map — 스크럽 동작점 + sweep 궤적, 방향별 한계
-dvRegister({host:'ssMap', applies:d=>!!d.soa, render:(el,d,c)=>{
+// [renderer] 소자별 SOA map — 스크럽 동작점 + sweep 궤적, 방향별 한계.
+// victim monitor는 branch 전류가 없으므로(무방정식) analytic probe(I_v) map으로 포함.
+dvRegister({host:'ssMap', applies:d=>!!d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
+  if(d.role==='soa_monitor'){
+    if(!DATA){el.className='hint';
+      el.textContent=d.key+' (V(OUT), I_v): analytic probe map — "계산" 실행 시 표시';return;}
+    const s=DATA.sweep, p=DATA.settings;
+    // 동작점은 2-0 스크럽 전류(c.iNow)에 가장 가까운 analytic sweep point
+    const k=Math.max(0,Math.min(s.length-1,Math.round(c.iNow/p.imax*(s.length-1))));
+    const fin=s[k].final;
+    MNA.soaMap(el,{title:d.key+' (V(OUT), I_v — analytic)',
+      V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
+      pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})),
+      fmtI:v=>f(1000*v,2)+'mA', xlabel:'V(OUT) [V]'});
+    return;
+  }
   const V=dvV(d,c,c.idx), I=dvI(d,c,c.idx)||0, neg=V<0;
   MNA.soaMap(el,{title:d.key+(neg?' (역방향 vn/inn)':''),
     V:Math.abs(V), I:Math.abs(I),
@@ -526,7 +534,7 @@ function renderAll(){
     dvRenderAll();
   }
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
-  renderMaps(p);renderIter();renderMetrics(fin,p);renderTable();
+  renderIter();renderMetrics(fin,p);renderTable();
 }
 function ghostSets(ax){
   const gs=[],p=DATA.settings;
@@ -585,14 +593,6 @@ function renderRank(fin){
     return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'+(bad?MNA.C.fail:MNA.C.pass)+'">'+pct(it[1])+'</span></div>'
       +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'+(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:'+CB.red+'"></i></div></div>';
   }).join('');
-}
-function renderMaps(p){
-  // 소자별 SOA map은 §2-0 renderer 패턴에서 동적 생성 — 여기는 analytic victim probe만
-  const s=DATA.sweep,e=cur(),fin=e.final;
-  const mA=v=>f(1000*v,2)+'mA';
-  MNA.soaMap(document.getElementById('mapV'),{title:'XVictim (V(OUT), I_v — analytic)',
-    V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
-    pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})), fmtI:mA, xlabel:'V(OUT) [V]'});
 }
 function renderIter(){
   const h=cur().history,p=DATA.settings;
