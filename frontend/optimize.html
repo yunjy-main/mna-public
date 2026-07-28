@@ -116,12 +116,6 @@
     </div>
     <h3>설계변수 — 탐색 창·고정<span class="info" title="schematic 자유 파라미터 레지스트리에서 동적 생성(§1 입력과 같은 원천).&#10;자물쇠 = optimizer 변경 권한: 잠금 시 gradient 마스크(FD·update 생략) — 값은 §1 승계·회로 반영 유지. 고정된 변수의 탐색 창은 미연계라 비활성(활성=연계 원칙).&#10;창은 비대칭 rule: min=가혹 FAIL(급경사)·max=준-rule(완경사).&#10;기본: L 고정(layout이 결정하는 물리량).">ⓘ</span></h3>
     <div id="optVarRows"></div>
-    <h3>Cost</h3>
-    <div class="in">
-      <div><label>wA (x1 area)</label><input id="wA" type="number" step="any" value="1.0"></div>
-      <div><label>wC (x2 area)</label><input id="wC" type="number" step="any" value="1.0"></div>
-      <div><label>wL (routing)</label><input id="wL" type="number" step="any" value="0.0"></div>
-    </div>
     <h3>수치 최적화 (MNA optimizer 연계)</h3>
     <div class="in">
       <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
@@ -199,7 +193,7 @@
       <div class="radars" id="optRadar"></div>
       <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선=녹색, 악화=적색.&#10;spec/SOA 열의 종류 표기: rule=설계변수 창, spec=외부 spec(capLim), SOA=소자 실측 한계(TO-BE size 반영, 순방향 ≤/역방향 ≥).&#10;행은 전부 데이터 구동(서버 variables·usage·detail) — 하드코딩 없음.&#10;※ 미러 소자의 동일 값(예: XD_up·V+ ↔ XD_down·V−)은 대칭 시나리오+동일 곡선·size의 물리적 결과(차이 <1e-8).">ⓘ</span></h3>
       <div class="tw"><table id="optDiff"></table></div>
-      <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
+      <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (설계변수 갱신 + 재해석)</button>
     </div>
   </div>
 
@@ -296,28 +290,28 @@ const f=MNA.f, pct=MNA.pct;
 const lineChart=MNA.lineChart, radar=MNA.radar, gauge=MNA.gauge;
 
 function val(id){const el=document.getElementById(id);return el?el.value:'';}
-// 자유 파라미터 — 이름·기본값·바인딩은 서버(schematic 발견+model meta)가 원천.
-// 레거시 코드 호환을 위해 알려진 이름은 기존 id를 재사용한다.
-const PARAM_ID={x1:'x1init',x2:'x2init',L:'linit'};
-const PARAM_DEFAULTS={x1:2.56,x2:1415.232,L:350};
-// §3 설계변수 — 자물쇠(고정=gradient 마스크) 상태 + 탐색 창 legacy id 매핑
-const FZ={};  // name → bool. 기본 L만 잠금 (사용자 확정 2026-07-28)
-const WID={x1:['x1min','x1max'],x2:['x2min','x2max'],L:['lmin','lmax']};
+// 자유 파라미터 — 이름·기본값·바인딩은 서버 registry(schematic 발견+model meta)가 원천.
+// id 규약 (이슈 #11 §3): 입력 param_<name>, §3 창 pwin_<name>_min/max, cost pw_<name>
+// — 매핑 테이블(PARAM_ID/PARAM_DEFAULTS/WID) 폐지.
+const FZ={};  // 자물쇠 상태 name → bool. 기본은 registry freeze_default (L·W 등)
 const PARAM_OVERRIDE={};  // 카드 내 input이 canonical 생성 전 편집될 때의 저장소
 function pv(name){
-  const el=document.getElementById(PARAM_ID[name]||('param_'+name));
+  const el=document.getElementById('param_'+name);
   if(el&&el.value!=='') return el.value;
   if(PARAM_OVERRIDE[name]!==undefined) return String(PARAM_OVERRIDE[name]);
   if(SS&&SS.params){const p=SS.params.find(q=>q.name===name);if(p)return String(p.default);}
-  return String(PARAM_DEFAULTS[name]!==undefined?PARAM_DEFAULTS[name]:1);
+  return '';
+}
+function pq(){ // 자유 파라미터 query 공용 빌더 — registry 루프. SS 로드 전엔 생략(서버 META default)
+  return ((SS&&SS.params)||[]).filter(q=>q.supported)
+    .map(q=>'&'+q.name+'='+encodeURIComponent(pv(q.name))).join('');
 }
 // §0 Device instances 카드 — schematic 전 소자(저항·open 포함, 사용자 지시 2026-07-28).
 // 원천: matrix API 전 소자 목록(pins 포함) + sweep 소자 리스트(SOA/cap/바인딩) 병합.
 function loadDeviceCards(){
   const box=document.getElementById('devCards');
   if(!box) return;
-  const q='x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
-    +'&L='+encodeURIComponent(pv('L'))+'&corner='+encodeURIComponent(val('ssCorner')||'worst');
+  const q='corner='+encodeURIComponent(val('ssCorner')||'worst')+pq();
   fetch('api/schematic/matrix?i=1.33&'+q)
     .then(r=>r.ok?r.json():null)
     .then(mx=>{
@@ -331,11 +325,19 @@ function loadDeviceCards(){
         const isOpen=els.some(e=>e.open);
         let prm=Object.entries(d0.params||{}).map(([k,v])=>k+'='+v).join(' · ')||'—';
         let extra='';
-        if(d0.kind==='resistor'){  // 저항: 바인딩 → 현재값 (자유 파라미터 L은 input)
+        if(d0.kind==='resistor'){  // 저항: 바인딩 식 → 해석값(서버 파서) + 기호별 input
           const R=(d0.params||{}).R;
-          if(R==='rdd(L)') extra+='<div>R = rdd(L) → '+f(0.5*(+pv('L'))/350,3)
-            +'Ω · L = <input class="cardParam" data-param="L" type="number" step="any" value="'
-            +pv('L')+'" style="width:62px">µm</div>';
+          if(typeof R==='string'){
+            const m=R.replace(/\s+/g,'').match(/^[A-Za-z_]\w*\(([^)]*)\)$/);
+            const syms=m?m[1].split(',').filter(Boolean):[];
+            extra+='<div>R = '+R
+              +((d0.R!==undefined&&d0.R!==null)?(' → '+f(+d0.R,3)+'Ω'):'')
+              +syms.map(s=>{const sp=((SS&&SS.params)||[]).find(p=>p.name===s);
+                return ' · '+s+' = <input class="cardParam" data-param="'+s
+                  +'" type="number" step="any" value="'+pv(s)+'" style="width:62px"'
+                  +((sp&&sp.supported)?'':' disabled')+'>'+((sp&&sp.unit)||'');}).join('')
+              +'</div>';
+          }
           else if(R!==undefined) extra+='<div>R = '+R+'Ω</div>';
         }
         if(ss&&ss.size_expr){
@@ -371,7 +373,7 @@ function loadDeviceCards(){
         inp.addEventListener('change',()=>{
           const nm=inp.dataset.param;
           PARAM_OVERRIDE[nm]=inp.value;
-          const cn=document.getElementById(PARAM_ID[nm]||('param_'+nm));
+          const cn=document.getElementById('param_'+nm);
           if(cn){cn.value=inp.value;cn.dispatchEvent(new Event('change'));}
           else{loadSchematic();loadSchemSweep();}
         });
@@ -386,8 +388,8 @@ function renderParamInputs(){
   if(box.dataset.sig===sig) return;  // 동일 파라미터 세트면 유지 (사용자 편집 보존)
   box.dataset.sig=sig; box.innerHTML='';
   SS.params.forEach(q=>{
-    const id=PARAM_ID[q.name]||('param_'+q.name);
-    const cur=(SS[q.name]!==undefined)?SS[q.name]:q.default;
+    const id='param_'+q.name;
+    const cur=(SS.pset&&SS.pset[q.name]!==undefined)?SS.pset[q.name]:q.default;
     const w=document.createElement('div');
     w.innerHTML='<label style="display:block;font-size:var(--fs-tiny);color:#5b6673">'
       +q.name+(q.unit?(' ('+q.unit+')'):'')
@@ -402,32 +404,41 @@ function renderParamInputs(){
   });
   renderOptVarRows();
 }
-// §3 설계변수 행 — 같은 레지스트리(SS.params)에서 동적 생성: 자물쇠 + 탐색 창(min~max)
+// §3 설계변수 행 — 같은 레지스트리(SS.params)에서 동적 생성:
+// 자물쇠(기본=freeze_default) + 탐색 창(pwin_<name>_min/max) + cost 가중치(pw_<name>).
+// rule 창 없는 파라미터는 변수화 불가 → 강제 잠금(E3, 해제 버튼 비활성).
 function renderOptVarRows(){
   const vb=document.getElementById('optVarRows');
   if(!vb||!SS||!SS.params) return;
   vb.innerHTML='';
   SS.params.forEach(q=>{
-    if(!(q.name in FZ)) FZ[q.name]=(q.name==='L');  // 기본: L만 잠금
-    const [idLo,idHi]=WID[q.name]||['param_'+q.name+'_min','param_'+q.name+'_max'];
+    const forced=q.supported&&q.rule_lo==null;  // E3: rule 창 미정 — 변수화 불가
+    if(!(q.name in FZ)||forced) FZ[q.name]=forced||q.freeze_default===true;
     const row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:6px;padding:2px 0;flex-wrap:wrap';
     row.innerHTML='<button type="button" style="width:26px;padding:1px 0" '
-      +'title="optimizer 변경 권한 — 잠금=gradient 마스크 (값은 §1 승계, 회로 반영 유지)"'
-      +(q.supported?'':' disabled')+'></button>'
+      +'title="'+(forced?'rule 창 미정 — 변수화 불가(model PARAM_META에 rule 정의 필요)'
+        :'optimizer 변경 권한 — 잠금=gradient 마스크 (값은 §1 승계, 회로 반영 유지)')+'"'
+      +((q.supported&&!forced)?'':' disabled')+'></button>'
       +'<b style="min-width:26px">'+q.name+'</b>'
       +'<span class="hint">창</span>'
-      +'<input id="'+idLo+'" type="number" step="any" value="'+(q.rule_lo!=null?q.rule_lo:(q.lo!=null?q.lo:''))+'" style="width:82px">'
+      +'<input id="pwin_'+q.name+'_min" type="number" step="any" value="'
+      +(q.rule_lo!=null?q.rule_lo:'')+'" style="width:82px">'
       +'<span class="hint">~</span>'
-      +'<input id="'+idHi+'" type="number" step="any" value="'+(q.rule_hi!=null?q.rule_hi:(q.hi!=null?q.hi:''))+'" style="width:82px">'
-      +'<span class="hint">'+(q.unit||'')+'</span>'
+      +'<input id="pwin_'+q.name+'_max" type="number" step="any" value="'
+      +(q.rule_hi!=null?q.rule_hi:'')+'" style="width:82px">'
+      +'<span class="hint">'+(q.unit||'')+' · cost w</span>'
+      +'<input id="pw_'+q.name+'" type="number" step="any" value="'+(q.cost_w!=null?q.cost_w:0)
+      +'" style="width:54px">'
       +'<span style="display:none;font-size:var(--fs-tiny);color:#1f5f99;border:1px solid #1f5f99;'
       +'border-radius:3px;padding:0 5px">고정</span>'
       +(q.supported?'':'<span class="hint">엔진 미지원 — 비활성</span>');
-    const btn=row.children[0], lo=row.children[3], hi=row.children[5], badge=row.children[7];
+    const btn=row.children[0], lo=row.children[3], hi=row.children[5],
+          cw=row.children[7], badge=row.children[8];
     const apply=()=>{const fz=FZ[q.name];
       btn.textContent=fz?'🔒':'🔓';
-      lo.disabled=hi.disabled=fz||!q.supported;
+      lo.disabled=hi.disabled=fz||!q.supported;   // 고정 시 창 미연계 → 비활성
+      cw.disabled=fz||!q.supported;               // cost도 변수일 때만 연계
       badge.style.display=fz?'':'none';};
     btn.addEventListener('click',()=>{FZ[q.name]=!FZ[q.name];apply();});
     [lo,hi].forEach(el=>el.addEventListener('change',updateEquations));
@@ -436,7 +447,17 @@ function renderOptVarRows(){
   });
   updateEquations();  // 창 input이 이제 존재 — rule 수식 표시 갱신
 }
-function collect(){const q={};P.forEach(k=>q[k]=val(k));return q;}
+function collect(){
+  const q={};P.forEach(k=>q[k]=val(k));
+  // E7(이슈 #11): analytic 참고 경로는 x1/x2/L 3변수 전제의 격리 legacy —
+  // 신 id(param_/pwin_/pw_)에서 legacy 이름으로 매핑해 공급 (미렌더 시 창립 기본값)
+  q.x1init=pv('x1')||'2.56'; q.x2init=pv('x2')||'1415.232'; q.linit=pv('L')||'350';
+  q.x1min=val('pwin_x1_min')||'0.64'; q.x1max=val('pwin_x1_max')||'3.84';
+  q.x2min=val('pwin_x2_min')||'1415.232'; q.x2max=val('pwin_x2_max')||'2628.288';
+  q.lmin=val('pwin_L_min')||'70'; q.lmax=val('pwin_L_max')||'1400';
+  q.wA=val('pw_x1')||'1'; q.wC=val('pw_x2')||'1'; q.wL=val('pw_L')||'0';
+  return q;
+}
 
 // ---------- 3. MNA / loss definition (v4 updateEquations 대응) ----------
 function updateEquations(){
@@ -451,11 +472,13 @@ victim (inverter, IO ─Resd→ OUT, gate=OUT diode-connected):
 V(OUT) = (Rj·V_IO + Resd·(V_N3 + Von)) / (Rj + Resd)   · PMOS 접합 도통 시
 I_v    = (V_IO − V(OUT)) / Resd
 oxide 검사: VG = V(OUT) 기준 VGS/VGD/VGB`;
+  const ruleLines=((SS&&SS.params)||[]).filter(p=>p.supported)
+    .map(p=>(val('pwin_'+p.name+'_min')||'—')+' ≤ '+p.name+' ≤ '
+      +(val('pwin_'+p.name+'_max')||'—')+(p.unit?' '+p.unit:'')
+      +(FZ[p.name]?' (고정)':'')).join('\n')||'(§1 sweep 후 registry에서 표시)';
   document.getElementById('lossEq').textContent =
-`Rules (비대칭):
-x1 ≥ ${val('x1min')} (min=가혹 FAIL) · x1 ≤ ${val('x1max')} (준-rule)
-x2 ≥ ${val('x2min')} · x2 ≤ ${val('x2max')}
-${val('lmin')} ≤ L ≤ ${val('lmax')} µm (공정/EM 기원)
+`Rules (비대칭 · min=가혹 FAIL, max=준-rule):
+${ruleLines}
 
 SOA (usage < 1):
 victim U(SG NFET/PFET ${val('vTopo')}), I_v ≤ ${val('bILim')} A
@@ -490,8 +513,7 @@ function cur(){return DATA.sweep[+document.getElementById('islider').value];}
 // ---------- 섹션 0: 회로도 — 슬라이더 이동 시 주석을 클라이언트에서 실시간 갱신 ----------
 let SCHEM_TBL=null, ANN=null;
 function loadSchematic(){
-  const q='x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
-        +'&L='+encodeURIComponent(pv('L'))+'&corner=worst';
+  const q='corner=worst'+pq();  // 자유 파라미터 = registry 루프 (SS 전엔 서버 default)
   SCHEM_TBL=null; ANN=null;
   fetch('api/schematic?'+q+'&i=1.33')
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
@@ -565,8 +587,9 @@ function updateBoundary(){
   st.innerHTML='HBM '+kv+'kV(±'+f(amp,2)+'A): '+(okP&&okN?P('PASS'):F('FAIL'))
     +' · cap '+f(SS.io_cap_total*1e15,0)+'fF/'+f(SS.cap_lim*1e12,1)+'pF: '+(capOk?P('PASS'):F('FAIL'));
   const iNow=DV.ctx?DV.ctx.iNow:0;
-  ic.textContent='승계된 초기조건 — x1='+pv('x1')+' · x2='+pv('x2')+' · L='+pv('L')
-    +'µm · corner='+val('ssCorner')+' · scenario='+(sc.force?sc.force+'→'+sc.ground:'—')
+  ic.textContent='승계된 초기조건 — '
+    +(SS.params||[]).filter(p=>p.supported).map(p=>p.name+'='+pv(p.name)+(p.unit||'')).join(' · ')
+    +' · corner='+val('ssCorner')+' · scenario='+(sc.force?sc.force+'→'+sc.ground:'—')
     +' · forcing I₀='+f(Math.max(0,iNow),2)+'A (§1 스크럽)';
 }
 function dvRenderAll(){
@@ -748,8 +771,7 @@ function loadSchemSweep(){
   const im=+val('imax')||2.0;
   const nPts=Math.round(im*2/0.01)+1;  // 0.01A 단위 — spec 전류(1.33A)가 격자에 정확히 놓임 (사용자 지시)
   const q='imax='+encodeURIComponent(im)+'&imin=-'+encodeURIComponent(im)
-    +'&n='+nPts+'&slim=1&x1='+encodeURIComponent(pv('x1'))+'&x2='+encodeURIComponent(pv('x2'))
-    +'&L='+encodeURIComponent(pv('L'))+'&corner='+encodeURIComponent(val('ssCorner'))
+    +'&n='+nPts+'&slim=1'+pq()+'&corner='+encodeURIComponent(val('ssCorner'))
     +'&cap_lim_pf='+encodeURIComponent(val('specCapLim'))+'&hbm_kv='+encodeURIComponent(val('specHbm'));
   // 실시간 진행률 (서버 progress 엔드포인트 폴링 — 사용자 지시)
   if(SS_POLL) clearInterval(SS_POLL);
@@ -785,7 +807,8 @@ function loadSchemSweep(){
       dvRenderAll();
       info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
         +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
-        +' · corner='+d.corner+' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
+        +' · corner='+d.corner+' · '
+        +Object.entries(d.pset||{}).map(([k,v])=>k+'='+v).join(' · ');
     }).catch(e=>{
       if((e.message||'')==='__superseded__') return;  // 더 새 sweep이 대체 — 조용히 무시
       if(seq===SS_SEQ&&SS_POLL){clearInterval(SS_POLL);SS_POLL=null;}
@@ -957,13 +980,18 @@ function startMnaOpt(){
         +pp.done+'/'+pp.total+' eval · 유한차분×±spec 전류 solve)…';
     }).catch(()=>{});
   },400);
-  const q=new URLSearchParams({x1:pv('x1'),x2:pv('x2'),L:pv('L'),
+  const q=new URLSearchParams({
     corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
-    x1min:val('x1min'),x1max:val('x1max'),x2min:val('x2min'),x2max:val('x2max'),
-    lmin:val('lmin'),lmax:val('lmax'),wA:val('wA'),wC:val('wC'),wL:val('wL'),
     mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
     freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
+  sup.forEach(p=>{ // 초기값·창·cost — registry 루프 (이슈 #11 신규약: <name>_min/max, w_<name>)
+    q.set(p.name,pv(p.name));
+    const lo=val('pwin_'+p.name+'_min'), hi=val('pwin_'+p.name+'_max');
+    if(lo!==''&&hi!==''){q.set(p.name+'_min',lo);q.set(p.name+'_max',hi);}
+    const w=val('pw_'+p.name);
+    if(w!=='')q.set('w_'+p.name,w);
+  });
   fetch('api/optimize/mna?'+q.toString())
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{OPT=d;renderOptResult();
@@ -1131,8 +1159,11 @@ function renderOptIter(){
 }
 document.getElementById('applyBtn').addEventListener('click',()=>{
   if(!OPT) return;
-  [['x1',(+OPT.final.x1).toFixed(4)],['x2',(+OPT.final.x2).toFixed(2)],['L',(+OPT.final.L).toFixed(1)]]
-    .forEach(([nm,v])=>{const el=document.getElementById(PARAM_ID[nm]||('param_'+nm));if(el)el.value=v;});
+  (OPT.variables||[]).forEach(v=>{ // 변수 목록 = 응답 descriptor (하드코딩 금지)
+    const el=document.getElementById('param_'+v.key);
+    if(el&&OPT.final[v.key]!==undefined)
+      el.value=(+OPT.final[v.key]).toFixed(v.dec!=null?v.dec+1:3);
+  });
   loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
 });
 document.getElementById('startBtn').addEventListener('click',startMnaOpt);

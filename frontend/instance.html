@@ -36,16 +36,17 @@
 'use strict';
 const f=MNA.f, pct=MNA.pct, lineChart=MNA.lineChart;
 const slug=s=>String(s).replace(/[^0-9A-Za-z가-힣]+/g,'_');
+// 자유 파라미터는 URL query 그대로 서버에 전달 — registry가 해석(미지정=META default)
 const qp=new URLSearchParams(location.search);
-const q='x1='+(qp.get('x1')||2.56)+'&x2='+(qp.get('x2')||1415.232)
-  +'&L='+(qp.get('L')||350)+'&corner='+(qp.get('corner')||'worst');
+if(!qp.get('corner')) qp.set('corner','worst');
 
-fetch('api/instance/info?'+q)
+fetch('api/instance/info?'+qp.toString())
   .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
   .then(d=>{
     document.getElementById('hdr').textContent=
-      d.instances.length+' instances · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm · corner='+d.corner
-      +' — 카드/Subcircuit 클릭으로 진입 시 해당 섹션이 강조됩니다.';
+      d.instances.length+' instances · '
+      +Object.entries(d.pset||{}).map(([k,v])=>k+'='+v).join(' · ')
+      +' · corner='+d.corner+' — 카드/Subcircuit 클릭으로 진입 시 해당 섹션이 강조됩니다.';
     const toc=document.getElementById('toc');
     toc.innerHTML=d.instances.map(i=>'<a href="#'+i.slug+'">'+i.instance+'</a>').join('');
     const list=document.getElementById('list');

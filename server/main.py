@@ -640,15 +640,21 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
         return PlainTextResponse(str(ex), status_code=422)
     names = nl["nets"]
     monitors = evaluate_soa_monitors(nl, sol)
+    from server.netlist import parse_binding, eval_binding, binding_ok
     devs = []
     for d in nl["devices"]:
         if d["kind"] in ("pfet", "nfet"):
             pins = "d={} g={} s={}".format(names[d["drain"]], names[d["gate"]], names[d["source"]])
         else:
             pins = "{} – {}".format(names[d["a"]], names[d["b"]])
-        devs.append({"instance": d["instance"], "cell": d["cell"], "kind": d["kind"],
-                     "model": d["model"], "open": d["open"], "pins": pins,
-                     "params": d.get("params", {}), "role": d.get("role")})
+        ent = {"instance": d["instance"], "cell": d["cell"], "kind": d["kind"],
+               "model": d["model"], "open": d["open"], "pins": pins,
+               "params": d.get("params", {}), "role": d.get("role")}
+        R = (d.get("params") or {}).get("R")
+        if d["kind"] == "resistor" and isinstance(R, str):  # 바인딩 → 해석값 (파서 평가)
+            pb = parse_binding(R)
+            ent["R"] = eval_binding(pb, sol["pset"]) if (pb and binding_ok(R)) else None
+        devs.append(ent)
     return {"nets": sorted(names.values()),
             "n_nets": len(names), "n_wires": nl["n_wires"], "devices": devs,
             "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],

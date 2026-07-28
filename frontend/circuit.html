@@ -19,10 +19,8 @@
 <main>
   <div class="card">
     <div class="ctl">
-      <div><label>diode x1</label><input id="x1" type="number" step="any" value="2.56"></div>
-      <div><label>clamp x2</label><input id="x2" type="number" step="any" value="1415.232"></div>
+      <span id="ctlParams" style="display:contents"></span>
       <div><label>동작점 전류 I (A)</label><input id="iop" type="number" step="any" value="1.33"></div>
-      <div><label>RDD L (µm, 공유)</label><input id="lop" type="number" step="any" value="350"></div>
       <div><label>SOA corner</label><select id="corner"><option>worst</option><option>best</option></select></div>
       <button id="loadBtn">계산</button>
     </div>
@@ -100,12 +98,25 @@
 <script>
 'use strict';
 function f(v,d){return (v===null||v===undefined||!isFinite(v))?'—':(+v).toFixed(d===undefined?4:d);}
+// 자유 파라미터 입력 — registry(/api/params)에서 동적 생성 (이슈 #11 S4, 하드코딩 금지)
+let PARAMS=[];
+function pv(name){const el=document.getElementById('param_'+name);
+  if(el&&el.value!=='')return el.value;
+  const p=PARAMS.find(q=>q.name===name);return p?String(p.default):'';}
+function pq(){return PARAMS.filter(q=>q.supported)
+  .map(q=>'&'+q.name+'='+encodeURIComponent(pv(q.name))).join('');}
+function renderCtlParams(){
+  const box=document.getElementById('ctlParams');
+  box.innerHTML=PARAMS.map(q=>'<div><label>'+(q.label||q.name)+(q.unit?' ('+q.unit+')':'')
+    +'</label><input id="param_'+q.name+'" type="number" step="any" value="'+q.default+'"'
+    +(q.supported?'':' disabled title="엔진 미지원 — 비활성(활성=연계)"')+'></div>').join('');
+  PARAMS.filter(q=>q.supported).forEach(q=>document.getElementById('param_'+q.name)
+    .addEventListener('change',load));
+}
 function load(){
   const err=document.getElementById('err'); err.textContent='';
-  const q='api/circuit?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
-        +'&i='+encodeURIComponent(iop.value)+'&corner='+corner.value;
-  fetch('api/schematic?x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
-        +'&i='+encodeURIComponent(iop.value)+'&L='+encodeURIComponent(lop.value)+'&corner='+corner.value)
+  const q='api/circuit?i='+encodeURIComponent(iop.value)+'&corner='+corner.value+pq();
+  fetch('api/schematic?i='+encodeURIComponent(iop.value)+'&corner='+corner.value+pq())
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.text();})
     .then(svg=>{document.getElementById('schem').innerHTML=svg;})
     .catch(e=>{document.getElementById('schem').textContent='회로도 오류: '+(e.message||e);});
@@ -178,15 +189,17 @@ function load(){
   }).catch(e=>{err.textContent=String(e.message||e);});
 }
 document.getElementById('loadBtn').addEventListener('click', load);
-load();
+// registry 로드 → 파라미터 입력 렌더 → 첫 계산 (렌더 전 호출은 서버 META default)
+fetch('api/params').then(r=>r.json())
+  .then(d=>{PARAMS=d.params||[];renderCtlParams();load();})
+  .catch(()=>{load();});
 
 // ---- §3.5 회로도 → 행렬 자동 변환 ----
 function loadMatrix(){
   const st=document.getElementById('mStat'), out=document.getElementById('mOut');
   st.textContent='변환 중…';
   fetch('api/schematic/matrix?inject='+encodeURIComponent(mInj.value)
-        +'&ground='+encodeURIComponent(mGnd.value)+'&i='+encodeURIComponent(mI.value)
-        +'&L='+encodeURIComponent(lop.value))
+        +'&ground='+encodeURIComponent(mGnd.value)+'&i='+encodeURIComponent(mI.value)+pq())
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
     .then(d=>{
       const s=d.solution;
@@ -237,7 +250,7 @@ function loadSweep(){
   st.textContent='sweep 중…';
   fetch('api/analysis/sweep?imax='+encodeURIComponent(swImax.value)
         +'&imin=-'+encodeURIComponent(swImax.value)
-        +'&n='+encodeURIComponent(swN.value)+'&L='+encodeURIComponent(lop.value))
+        +'&n='+encodeURIComponent(swN.value)+pq())
     .then(async r=>{if(!r.ok) throw new Error(await r.text()); return r.json();})
     .then(d=>{
       st.textContent='6 시나리오 × '+d.n+' points (I='+(d.imin||0)+'→'+d.imax+'A, L='+d.L
@@ -269,8 +282,7 @@ document.getElementById('swBtn').addEventListener('click', loadSweep);
 loadSweep();
 
 // ---- 레이아웃 편집 ----
-function qs(){return 'x1='+encodeURIComponent(x1.value)+'&x2='+encodeURIComponent(x2.value)
-  +'&i='+encodeURIComponent(iop.value)+'&L='+encodeURIComponent(lop.value)+'&corner='+corner.value;}
+function qs(){return 'i='+encodeURIComponent(iop.value)+'&corner='+corner.value+pq();}
 function loadLayout(){
   fetch('api/schematic/layout').then(r=>r.json()).then(d=>{
     document.getElementById('layoutTxt').value=JSON.stringify(d.layout,null,1);
