@@ -160,12 +160,10 @@
     </div>
     <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, 빨간 dot=스크럽 동작점.">ⓘ</span></h3>
     <div class="g23" id="ssDev"></div>
-    <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;XI_ESD forcing 소스 곡선은 SOA 없는 참고용으로 이 섹션에 함께 표시.">ⓘ</span></h3>
+    <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;victim analytic map(V(OUT), I_v — probe 전용 정보)과 XI_ESD forcing 소스 곡선(SOA 없는 참고용)도 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
-    <h3>소자별 radar<span class="info" title="스크럽 전류 기준 축값, ghost 다각형 = imin/imin·½/0/imax·½/imax.&#10;protection: V·I usage(방향별 vp/vn·ip/inn), V share(=V/V(force net)), I share, margin.&#10;victim: rule 수량별 usage + margin. 바깥=위험, 빨간 점선=100% 경계.">ⓘ</span></h3>
+    <h3>소자별 radar<span class="info" title="스크럽 전류 기준 축값, ghost 다각형 = imin/imin·½/0/imax·½/imax.&#10;protection: V·I usage(방향별 vp/vn·ip/inn), V share(=V/V(force net)), I share, margin.&#10;victim: rule 수량별 usage + margin. 바깥=위험, 빨간 점선=100% 경계.&#10;※ 축이 의미를 가지려면 capacitance/leakage 등 size 종속 spec equation이 model에 추가 정의되어야 함 — 현재는 SOA usage 계열만 존재.">ⓘ</span></h3>
     <div class="radars" id="ssRadar"></div>
-    <h3>소자별 SOA map<span class="info" title="instance size의 실측 endpoint가 한계(|V|,|I| 사분면), 궤적=sweep, 점=스크럽 동작점 — 진행 방향의 vp/ip↔vn/inn 사용.&#10;victim은 analytic probe(V(OUT), I_v) map — 계산 실행 시 채워짐.">ⓘ</span></h3>
-    <div class="g23" id="ssMap"></div>
     <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
     <h3>소자별 metric · ranking<span class="info" title="chip: 소자별 V·I·usage·PASS/FAIL (스크럽 전류 기준).&#10;ranking: usage 내림차순 — 상단이 현재 지배 제약.">ⓘ</span></h3>
@@ -514,28 +512,18 @@ dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el
   radar(el,d.key+' · size '+f(d.soa.size,3),
     ['V usage','I usage','V share','I share','V margin','I margin'],ax(c.idx),dvGhosts(c,ax));
 }});
-// [renderer] 소자별 SOA map — 스크럽 동작점 + sweep 궤적, 방향별 한계.
-// victim monitor는 branch 전류가 없으므로(무방정식) analytic probe(I_v) map으로 포함.
-dvRegister({host:'ssMap', applies:d=>!!d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
-  if(d.role==='soa_monitor'){
-    if(!DATA){el.className='hint';
-      el.textContent=d.key+' (V(OUT), I_v): analytic probe map — "계산" 실행 시 표시';return;}
-    const s=DATA.sweep, p=DATA.settings;
-    // 동작점은 2-0 스크럽 전류(c.iNow)에 가장 가까운 analytic sweep point
-    const k=Math.max(0,Math.min(s.length-1,Math.round(c.iNow/p.imax*(s.length-1))));
-    const fin=s[k].final;
-    MNA.soaMap(el,{title:d.key+' (V(OUT), I_v — analytic)',
-      V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
-      pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})),
-      fmtI:v=>f(1000*v,2)+'mA', xlabel:'V(OUT) [V]'});
-    return;
-  }
-  const V=dvV(d,c,c.idx), I=dvI(d,c,c.idx)||0, neg=V<0;
-  MNA.soaMap(el,{title:d.key+(neg?' (역방향 vn/inn)':''),
-    V:Math.abs(V), I:Math.abs(I),
-    Vlim:neg?-d.soa.vn:d.soa.vp, Ilim:neg?-d.soa.inn:d.soa.ip,
-    pairs:c.pts.map(p=>({V:Math.abs(p.device_v[d.key]),I:Math.abs(p.device_i[d.key]||0)})),
-    fmtI:v=>f(v,3)+'A', xlabel:'|V| ['+d.key+']'});
+// [renderer] victim analytic map — I_v는 monitor에 없는 analytic probe 정보라 유일하게 유지.
+// (소자별 SOA map은 I-V device가 전 기능 포함하므로 삭제 — 사용자 지시 2026-07-28)
+dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
+  if(!DATA){el.className='hint';
+    el.textContent=d.key+' (V(OUT), I_v): analytic probe map — "계산" 실행 시 표시';return;}
+  const s=DATA.sweep, p=DATA.settings;
+  const k=Math.max(0,Math.min(s.length-1,Math.round(c.iNow/p.imax*(s.length-1))));
+  const fin=s[k].final;
+  MNA.soaMap(el,{title:d.key+' (V(OUT), I_v — analytic)',
+    V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
+    pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})),
+    fmtI:v=>f(1000*v,2)+'mA', xlabel:'V(OUT) [V]'});
 }});
 // [renderer] 소자별 gauge
 dvRegister({host:'ssGauge', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
