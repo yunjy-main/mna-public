@@ -146,8 +146,8 @@
     </div>
     <div class="hint">아래 모든 시각화 요소는 schematic 소자 리스트(저항 제외)와 renderer 등록
       패턴으로 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 자동 증감. 세로 점선 = first SOA fail.</div>
-    <h3>I-V device (X=V 양단, Y=주입전류 · 세로선=소자 signed 한계 · 회색 점선=실측 특성
-      · 가로선=자기 한계 초과 전류 · dot=스크럽)</h3>
+    <h3>I-V device (X=V 양단, Y=소자 분기전류 — 없으면 I inj · 세로선=vp/vn ·
+      가로선=ip/inn(current SOA) · 회색 점선=실측 특성 · dot=스크럽)</h3>
     <div class="g23" id="ssDev"></div>
     <h3>I-V victim (X=stress V, Y=주입전류 · 세로선=signed 실측 한계)</h3>
     <div class="g23" id="ssMon"></div>
@@ -400,34 +400,46 @@ function dvGhosts(c,ax){
   return gs;
 }
 
-// [renderer] I-V device — X=V(양단), Y=주입전류. 소자 자신의 signed 한계 세로선 +
-// 실측 특성곡선(회색 참조) + 자기 한계 초과 전류 가로선. 축은 곡선이 향하는
-// 방향의 한계까지 포함(퇴화 축 방지 — 평평한 곡선은 양쪽 한계 스팬으로 표시).
+// [renderer] I-V device — X=V(양단), Y=**소자 분기전류**(없으면 I inj로 fallback,
+// 사용자 지시 2026-07-28). 소자 자신의 signed 한계: vp/vn 세로선 + ip/inn 가로선
+// (current SOA를 같은 좌표계에 표현 — 교점이 SOA endpoint). 실측 특성곡선 회색 참조.
+// 축은 궤적이 향하는 방향의 한계까지 포함(퇴화 축 방지, 평평하면 양쪽 스팬).
 dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
   const Vs=c.I.map((_,k)=>dvV(d,c,k));
+  const hasI=c.I.some((_,k)=>dvI(d,c,k)!==null);
+  const Ys=c.I.map((_,k)=>{const i=dvI(d,c,k);return i===null?c.I[k]:i;});
   const maxV=Math.max(...Vs), minV=Math.min(...Vs);
-  const series=[], vl=[], pts=[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.red}];
-  let showP=false, showN=false;
+  const maxI=Math.max(...Ys), minI=Math.min(...Ys);
+  const series=[], vl=[], hl=[], pts=[{x:Vs[c.idx],y:Ys[c.idx],r:4.5,color:CB.red}];
+  let showP=false, showN=false, showIP=false, showIN=false;
   if(d.soa){
-    showP=maxV>1e-6||(minV>=-1e-6&&maxV<=1e-6);
-    showN=minV<-1e-6||(minV>=-1e-6&&maxV<=1e-6);
+    const flatV=minV>=-1e-6&&maxV<=1e-6, flatI=minI>=-1e-9&&maxI<=1e-9;
+    showP=maxV>1e-6||flatV; showN=minV<-1e-6||flatV;
+    showIP=maxI>1e-9||flatI; showIN=minI<-1e-9||flatI;
     if(showP){vl.push({x:d.soa.vp,color:CB.red,label:'vp '+f(d.soa.vp,2)});
               pts.push({x:d.soa.vp,y:0,r:0,color:'none'});}
     if(showN){vl.push({x:d.soa.vn,color:CB.red,label:'vn '+f(d.soa.vn,2)});
               pts.push({x:d.soa.vn,y:0,r:0,color:'none'});}
+    if(showIP){hl.push({y:d.soa.ip,color:CB.orange,label:'ip '+f(d.soa.ip,2)+'A'});
+               pts.push({x:0,y:d.soa.ip,r:0,color:'none'});}
+    if(showIN){hl.push({y:d.soa.inn,color:CB.orange,label:'inn '+f(d.soa.inn,3)+'A'});
+               pts.push({x:0,y:d.soa.inn,r:0,color:'none'});}
   }
-  if(d.curve){ // 실측 특성곡선 — 표시창(전류·한계 방향)으로 클립한 회색 참조
+  if(d.curve){ // 실측 특성곡선 — 표시창(한계 방향·전류 상한)으로 클립한 회색 참조
     const xlo=showN?d.soa.vn*1.02:Math.min(minV,0), xhi=showP?d.soa.vp*1.02:Math.max(maxV,0);
+    const iCap=Math.max(c.imax,showIP?d.soa.ip:0,showIN?-d.soa.inn:0)*1.15;
     const cx=[],cy=[];
     d.curve.V.forEach((v,j)=>{const i=d.curve.I[j];
-      if(v>=xlo&&v<=xhi&&Math.abs(i)<=c.imax*1.15){cx.push(v);cy.push(i);}});
+      if(v>=xlo&&v<=xhi&&Math.abs(i)<=iCap){cx.push(v);cy.push(i);}});
     if(cx.length>1) series.push({x:cx,y:cy,color:'#b9c2cc',label:'model',dash:'4 3'});
   }
-  series.push({x:Vs,y:c.I,color:CB.blue,label:'궤적'});
-  let xI=null; // 이 소자 자신의 한계 초과 전류 (전역 first-fail이 아님)
-  for(let k=0;k<c.pts.length;k++){const u=dvUsage(d,c,k);if(u&&u.u>=1){xI=c.I[k];break;}}
-  lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,origin:true,
-    hlines:xI!==null?[{y:xI,color:CB.red,label:'한계 @'+f(xI,2)+'A'}]:[],
+  series.push({x:Vs,y:Ys,color:CB.blue,label:hasI?'I(소자)':'I inj'});
+  if(!d.soa&&!hasI){ // 한계선 없는 fallback 소자(victim): 자기 한계 초과 전류 표시
+    let xI=null;
+    for(let k=0;k<c.pts.length;k++){const u=dvUsage(d,c,k);if(u&&u.u>=1){xI=c.I[k];break;}}
+    if(xI!==null) hl.push({y:xI,color:CB.red,label:'한계 @'+f(xI,2)+'A'});
+  }
+  lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,origin:true,
     xlabel:'V(양단) [V]'});
 }});
 // [renderer] victim monitor stress — 동일 pivot: X=stress V, Y=주입전류 (한계=세로선)
