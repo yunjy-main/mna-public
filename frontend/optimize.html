@@ -160,7 +160,7 @@
     </div>
     <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, 빨간 dot=스크럽 동작점.">ⓘ</span></h3>
     <div class="g23" id="ssDev"></div>
-    <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.">ⓘ</span></h3>
+    <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;XI_ESD forcing 소스 곡선은 SOA 없는 참고용으로 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
     <h3>소자별 radar<span class="info" title="스크럽 전류 기준 축값, ghost 다각형 = imin/imin·½/0/imax·½/imax.&#10;protection: V·I usage(방향별 vp/vn·ip/inn), V share(=V/V(force net)), I share, margin.&#10;victim: rule 수량별 usage + margin. 바깥=위험, 빨간 점선=100% 경계.">ⓘ</span></h3>
     <div class="radars" id="ssRadar"></div>
@@ -378,9 +378,10 @@ function dvRenderAll(){
     if(!IOVL_LOCK) document.getElementById('iovlR').value=
       Math.round((c.iNow-c.imin)/((c.imax-c.imin)||1)*1000);
   }
+  const cleared={};
   DV.reg.forEach(r=>{
     const host=document.getElementById(r.host); if(!host) return;
-    host.innerHTML='';
+    if(!cleared[r.host]){host.innerHTML='';cleared[r.host]=true;}  // host당 1회 (한 host에 복수 renderer 허용)
     if(!c){host.textContent='시나리오 오류';return;}
     DV.devs.filter(d=>r.applies(d)).forEach(d=>{
       const cell=document.createElement('div'); host.appendChild(cell); r.render(cell,d,c);});
@@ -422,7 +423,7 @@ function dvGhosts(c,ax){
 // 사용자 지시 2026-07-28). 소자 자신의 signed 한계: vp/vn 세로선 + ip/inn 가로선
 // (current SOA를 같은 좌표계에 표현 — 교점이 SOA endpoint). 실측 특성곡선 회색 참조.
 // 축은 궤적이 향하는 방향의 한계까지 포함(퇴화 축 방지, 평평하면 양쪽 스팬).
-dvRegister({host:'ssDev', applies:d=>d.role!=='soa_monitor', render:(el,d,c)=>{  // victim은 I-V victim에 (중복 제거)
+dvRegister({host:'ssDev', applies:d=>d.role!=='soa_monitor'&&d.kind!=='sourcei', render:(el,d,c)=>{  // victim·전류원은 I-V victim 쪽에
   const Vs=c.I.map((_,k)=>dvV(d,c,k));
   const hasI=c.I.some((_,k)=>dvI(d,c,k)!==null);
   const Ys=c.I.map((_,k)=>{const i=dvI(d,c,k);return i===null?c.I[k]:i;});
@@ -485,6 +486,14 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
     shadeRect:(sx0!==null)?[sx0,-1e9,sx1,1e9]:null,
     points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
     hlines:ffl,xlabel:'stress [V]'});
+}});
+// [renderer] 전류원 참고 곡선 — SOA 없음, I-V victim 섹션에 참고용으로 배치 (사용자 지시)
+dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
+  const Vs=c.I.map((_,k)=>dvV(d,c,k));
+  lineChart(el,{title:d.key+' (참고 — SOA 없음)',w:380,h:170,
+    series:[{x:Vs,y:c.I,color:CB.gray,label:'I inj'}],
+    points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.red}],
+    sym:true,xlabel:'V(양단) [V]'});
 }});
 // [renderer] 소자별 radar (ghost = 0/0.5/1/1.5/2A)
 dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
