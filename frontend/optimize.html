@@ -818,26 +818,52 @@ function renderOptIter(){
   document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
     +(isBest?' ★best':'')+'  (x1='+f(cur.x1,3)+' · x2='+f(cur.x2,0)+' · L='+f(cur.L,0)
     +'µm · worst '+pct(cur.worst)+')';
-  // AS-IS → TO-BE 표 — TO-BE·diff는 슬라이더 iteration에 연동 (사용자 지시)
-  const t0=h[0];
-  const capU=hh=>((hh.usages&&hh.usages['cap(IO)'])||0)*100;
-  const rows=[
-    ['x1 (diode size)', t0.x1, cur.x1, 3, '', null],
-    ['x2 (clamp size)', t0.x2, cur.x2, 1, '', null],
-    ['L (RDD, µm)', t0.L, cur.L, 1, '', null],
-    ['worst SOA usage', t0.worst*100, cur.worst*100, 1, '%', true],
-    ['cap usage', capU(t0), capU(cur), 1, '%', true],
-    ['loss', t0.loss, cur.loss, 3, '', true],
-  ];
-  document.getElementById('optDiff').innerHTML=
-    '<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')+')</th><th>diff</th></tr>'
-    +rows.map(r=>{
-      const dd=r[2]-r[1];
-      const rel=Math.abs(r[1])>1e-12?' ('+(dd>=0?'+':'')+(dd/Math.abs(r[1])*100).toFixed(1)+'%)':'';
-      const col=r[5]===null?'#5b6673':(dd<=0?'#0a7d38':'#b3261e');  // lower=better 항목만 색
-      return '<tr><td>'+r[0]+'</td><td>'+f(r[1],r[3])+r[4]+'</td><td>'+f(r[2],r[3])+r[4]
-        +'</td><td style="color:'+col+';font-weight:700">'+(dd>=0?'+':'')+f(dd,r[3])+r[4]+rel+'</td></tr>';
-    }).join('');
+  // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
+  const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
+  const u0=t0.usages||{}, uc=cur.usages||{};
+  let html='<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')+')</th><th>diff</th></tr>';
+  const drow=(name,at,bt,dtext,col)=>{html+='<tr><td>'+name+'</td><td>'+at+'</td><td>'+bt
+    +'</td><td style="color:'+(col||'#5b6673')+';font-weight:700">'+dtext+'</td></tr>';};
+  const numRow=(name,a,b,dec,unit,lower)=>{
+    if(a===undefined||b===undefined) return;
+    const dd=b-a, rel=Math.abs(a)>1e-12?' ('+(dd>=0?'+':'')+(dd/Math.abs(a)*100).toFixed(1)+'%)':'';
+    drow(name,f(a,dec)+unit,f(b,dec)+unit,(dd>=0?'+':'')+f(dd,dec)+unit+rel,
+      lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673');
+  };
+  // 1) 설계변수 (절대값)
+  numRow('x1 (diode size)',t0.x1,cur.x1,3,'');
+  numRow('x2 (clamp size)',t0.x2,cur.x2,1,'');
+  numRow('L (RDD, µm)',t0.L,cur.L,1,'');
+  // 2) spec 집계 — cap은 합산 절대값/한계 병기
+  const cap0=d0.cap, capc=dc.cap;
+  if(cap0&&capc){
+    drow('cap (IO 합산)',
+      f(cap0.total*1e15,0)+'fF / '+f(cap0.lim*1e12,1)+'pF ('+pct(u0['cap(IO)']||0)+')',
+      f(capc.total*1e15,0)+'fF / '+f(capc.lim*1e12,1)+'pF ('+pct(uc['cap(IO)']||0)+')',
+      ((capc.total>=cap0.total?'+':'')+f((capc.total-cap0.total)*1e15,0)+'fF ('
+        +(((uc['cap(IO)']||0)-(u0['cap(IO)']||0))*100).toFixed(1)+'%p)'),
+      capc.total<=cap0.total?'#0a7d38':'#b3261e');
+  }
+  numRow('loss',t0.loss,cur.loss,3,'',true);
+  // 3) 소자별 — usage 전 항목 동적: 값/한계(=값÷usage) 절대값 병기, diff는 %p+절대
+  const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
+  devs.forEach(devk=>{
+    const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
+    if(s0!==undefined) numRow(devk+' · size',s0,sc,4,'');
+    Object.keys(u0).filter(k=>k.startsWith(devk+'·')).forEach(k=>{
+      const q=k.split('·')[1];
+      const unit=q.startsWith('I')?'A':'V';
+      const va=(d0[devk]||{})[q], vb=(dc[devk]||{})[q];
+      const ua=u0[k]||0, ub=uc[k]||0;
+      const lim=(v,u)=>(v!==undefined&&Math.abs(u)>1e-9)?f(v/u,2)+unit:'—';
+      const cell=(v,u)=>(v===undefined?'—':f(v,3)+unit)+' / '+lim(v,u)+' ('+pct(u)+')';
+      drow(devk+' · '+q, cell(va,ua), cell(vb,ub),
+        ((ub-ua)>=0?'+':'')+((ub-ua)*100).toFixed(1)+'%p'
+          +((va!==undefined&&vb!==undefined)?' ('+((vb-va)>=0?'+':'')+f(vb-va,3)+unit+')':''),
+        ub<=ua?'#0a7d38':'#b3261e');
+    });
+  });
+  document.getElementById('optDiff').innerHTML=html;
   // 하단 overlay optimizer 슬라이더 동기화 + 활성화
   const ov=document.getElementById('iovlOpt');
   if(ov){

@@ -34,12 +34,16 @@ def _softplus(z):
 
 def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
                   warm=None, calib_cache=None, n=OPT_N):
-    """candidate 설계의 usage dict — schematic 소자 전부(±I_spec 두 극성) + cap.
+    """candidate 설계의 (usage dict, detail dict) — schematic 소자 전부(±I_spec) + cap.
+
+    usage는 loss용 비율, detail은 표시용 절대값(사용자 지시: % 병기 절대값):
+      detail[소자] = {size, vp/vn/ip/inn, V±/I± 원시값} · victim은 rule 수량별 stress[V].
+      detail["cap"] = {total[F], lim[F]}.
     비수렴/monitor 무효는 큰 usage(3.0)로 penalty (해 신뢰 불가)."""
     ctx = measured_context(x1, x2, corner, n=n, cache=calib_cache)
     eps = soa_endpoints(nl, x1, x2, corner)
     caps = device_caps(nl, x1, x2)
-    out = {}
+    out, detail = {}, {}
     warm = warm if warm is not None else {}
     for sgn, tag in ((1.0, "+"), (-1.0, "-")):
         sol = assemble_and_solve(nl, inject=force, ground=ground, I=sgn * i_spec, L=L,
@@ -56,17 +60,26 @@ def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
             V, I = dv[key], (di.get(key) or 0.0)
             out["{}·V{}".format(key, tag)] = V / e["vp"] if V >= 0 else V / e["vn"]
             out["{}·I{}".format(key, tag)] = I / e["ip"] if I >= 0 else I / e["inn"]
+            dd = detail.setdefault(key, {"size": round(e["size"], 4),
+                                         "vp": round(e["vp"], 3), "vn": round(e["vn"], 3),
+                                         "ip": round(e["ip"], 4), "inn": round(e["inn"], 4)})
+            dd["V" + tag] = round(V, 4)
+            dd["I" + tag] = round(I, 4)
         for m in evaluate_soa_monitors(nl, sol):
             if m["valid"] and m["checks"]:
-                # rule 수량별로 기록 — optimizer radar가 iteration 흐름을 축별로 추적
+                # rule 수량별로 기록 — radar·AS-IS/TO-BE 표가 축/행별로 추적
+                dd = detail.setdefault(m["instance"], {})
                 for c in m["checks"]:
                     v = c["value"]
                     out["{}·{}{}".format(m["instance"], c["quantity"], tag)] = (
                         v / c["max"] if v >= 0 else v / c["min"])
+                    dd[c["quantity"] + tag] = round(v, 4)
             elif not m["valid"]:
                 out["{}·invalid{}".format(m["instance"], tag)] = 3.0
-    out["cap(IO)"] = sum(c["c0"] for c in caps.values() if c and c["on_io"]) / cap_lim
-    return out
+    cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
+    out["cap(IO)"] = cap_total / cap_lim
+    detail["cap"] = {"total": cap_total, "lim": cap_lim}
+    return out, detail
 
 
 def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
@@ -86,8 +99,8 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
 
     def evaluate(z, n_eval=n):
         xx1, xx2, ll = to_x(z)
-        us = design_usages(nl, xx1, xx2, ll, corner, force, ground, i_spec, cap_lim,
-                           warm=warm, calib_cache=ccache, n=n_eval)
+        us, det = design_usages(nl, xx1, xx2, ll, corner, force, ground, i_spec, cap_lim,
+                                warm=warm, calib_cache=ccache, n=n_eval)
         cost = wA * xx1 / x1max + wC * xx2 / x2max + wL * ll / lmax
         pen = mu_soa * sum(_softplus(8.0 * (u - U_TARGET)) / 8.0 for u in us.values())
         rule = 0.0
@@ -95,7 +108,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             span = hi - lo
             # 창립 rule 비대칭: min=가혹 FAIL(급경사), max=준-rule(완경사)
             rule += _softplus((lo - v) / (0.01 * span)) + _softplus((v - hi) / (0.05 * span))
-        return cost + pen + mu_rule * rule, us
+        return cost + pen + mu_rule * rule, us, det
 
     def summarize(z, us):
         xx1, xx2, ll = to_x(z)
@@ -109,7 +122,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
 
     z = [min(1.2, max(-0.2, (v - lo) / (hi - lo)))
          for v, (lo, hi) in zip((x1, x2, L), bounds)]
-    f0, us0 = evaluate(z)
+    f0, us0, det0 = evaluate(z)
     initial = summarize(z, us0)
     initial["loss"] = f0
     best_f, best_z, best_us, best_it = f0, list(z), us0, 0
@@ -120,14 +133,15 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
         return {k: round(u, 4) for k, u in us.items()}
 
     history = [{"it": 0, "loss": f0, "x1": initial["x1"], "x2": initial["x2"],
-                "L": initial["L"], "worst": initial["worst"], "usages": _round_us(us0)}]
+                "L": initial["L"], "worst": initial["worst"],
+                "usages": _round_us(us0), "detail": det0}]
     for it in range(1, iters + 1):
-        f_base, us_base = evaluate(z)
+        f_base, us_base, _d0 = evaluate(z)
         grad = []
         for i in range(3):
             zp = list(z)
             zp[i] += FD_H
-            fp, _ = evaluate(zp)
+            fp, _u, _d = evaluate(zp)
             grad.append((fp - f_base) / FD_H)
         for i in range(3):
             mom[i] = b1 * mom[i] + (1 - b1) * grad[i]
@@ -135,18 +149,20 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             mh = mom[i] / (1 - b1 ** it)
             vh = vel[i] / (1 - b2 ** it)
             z[i] = min(1.2, max(-0.2, z[i] - lr * mh / (math.sqrt(vh) + eps_)))
-        f_new, us_new = evaluate(z)
+        f_new, us_new, det_new = evaluate(z)
         if f_new < best_f:
             best_f, best_z, best_us, best_it = f_new, list(z), us_new, it
         s = summarize(z, us_new)
         history.append({"it": it, "loss": f_new, "x1": s["x1"], "x2": s["x2"],
-                        "L": s["L"], "worst": s["worst"], "usages": _round_us(us_new)})
+                        "L": s["L"], "worst": s["worst"],
+                        "usages": _round_us(us_new), "detail": det_new})
     # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거
     xb1, xb2, lb = to_x(best_z)
-    us_final = design_usages(nl, xb1, xb2, lb, corner, force, ground, i_spec, cap_lim,
-                             warm={}, calib_cache={}, n=M.N)
+    us_final, det_final = design_usages(nl, xb1, xb2, lb, corner, force, ground,
+                                        i_spec, cap_lim, warm={}, calib_cache={}, n=M.N)
     final = summarize(best_z, us_final)
     final["loss"] = best_f
+    final["detail"] = det_final
     return {"initial": initial, "final": final, "history": history,
             "best_it": best_it,  # 최적해 iteration — 마지막 step이 아닐 수 있음(Adam 관성)
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
