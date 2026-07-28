@@ -604,7 +604,8 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
         else:
             pins = "{} – {}".format(names[d["a"]], names[d["b"]])
         devs.append({"instance": d["instance"], "cell": d["cell"], "kind": d["kind"],
-                     "model": d["model"], "open": d["open"], "pins": pins})
+                     "model": d["model"], "open": d["open"], "pins": pins,
+                     "params": d.get("params", {}), "role": d.get("role")})
     return {"nets": sorted(names.values()),
             "n_nets": len(names), "n_wires": nl["n_wires"], "devices": devs,
             "global_ground_nets": [names[g] for g in nl["global_ground_nets"]],

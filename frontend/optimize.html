@@ -131,6 +131,22 @@
     </div>
   </div>
 
+  <!-- ================= 2-0. Schematic MNA sweep (회로도 소자 동적 그래프) ================= -->
+  <div class="card" id="schemSweepCard">
+    <h2>2-0. Schematic MNA sweep — 회로도 소자별 전압 (실측 model, I=0→Imax)</h2>
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:4px">
+      <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">scenario (force→gnd)</label>
+        <select id="ssScn"></select></div>
+      <button id="ssBtn">sweep 재계산</button>
+      <span class="hint" id="ssInfo"></span>
+    </div>
+    <div class="hint">그래프는 schematic에 표현된 소자(저항 제외)에서 자동 생성 — 회로도에서 소자를
+      추가/삭제/비활성화하면 그래프도 따라 증감합니다. 세로 점선 = first SOA fail 전류.</div>
+    <div class="g23" id="ssDev"></div>
+    <div class="hint" style="margin-top:6px">victim monitor stress — signed 실측 rule (한계선 회색)</div>
+    <div class="g23" id="ssMon"></div>
+  </div>
+
   <!-- ================= 2. 시각화 ================= -->
   <div class="card" id="vizCard" hidden>
     <h2>2. 시각화</h2>
@@ -156,12 +172,10 @@
     <h3>2-4. Constraint tightness ranking</h3>
     <div class="rank" id="rank"></div>
 
-    <h3>2-5. Protection / victim V-I SOA map</h3>
-    <div class="hint">non-victim (protection)</div>
-    <div class="g23">
-      <div id="mapD"></div>
-      <div id="mapC"></div>
-    </div>
+    <h3>2-5. Protection / victim V-I SOA map (schematic 소자에서 동적 생성)</h3>
+    <div class="hint">non-victim (protection) — 한계선은 최적화 변수(x1/x2) 바인딩 소자만
+      (secondary x1/10·b2b는 한계 데이터 없음 → 2-0 전압 그래프로 관측)</div>
+    <div class="g23" id="mapsNV"></div>
     <div class="hint" style="margin-top:6px">victim</div>
     <div class="g23">
       <div id="mapV"></div>
@@ -253,6 +267,7 @@ function start(){
   const btn=document.getElementById('startBtn'),st=document.getElementById('status'),err=document.getElementById('err');
   btn.disabled=true;st.textContent='0→Imax sweep 최적화 중… (테이블 기반, 수 초)';err.textContent='';
   loadSchematic(); // 입력이 바뀌었을 수 있으므로 회로도·주석 테이블 재로드
+  loadSchemSweep(); // 2-0 schematic sweep도 새 입력(x1/x2/L/Imax)으로 재계산
   fetch('api/optimize?'+new URLSearchParams(collect()).toString())
   .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
   .then(d=>{DATA=d;
@@ -310,6 +325,66 @@ function updateSchemAnn(I){
   set('i','I='+(+I).toFixed(2)+'A');
   set('iv','I_v='+(1000*ip(t.IV)).toFixed(2)+'mA');
 }
+// ---------- 2-0. Schematic MNA sweep — 회로도 소자 동적 그래프 ----------
+let SS=null, SSDEV=null, SSLIM=null;
+function loadSchemSweep(){
+  const info=document.getElementById('ssInfo');
+  info.textContent='sweep 중…';
+  const base='x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
+    +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
+  Promise.all([
+    fetch('api/analysis/sweep?imax='+encodeURIComponent(val('imax'))+'&n=41&'+base)
+      .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();}),
+    fetch('api/schematic/matrix?i=1.33&'+base)
+      .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();}),
+  ]).then(([d,mx])=>{
+    SS=d; SSDEV=mx.devices;
+    SSLIM={};
+    (mx.monitors||[]).forEach(m=>(m.checks||[]).forEach(c=>{SSLIM[c.quantity]={min:c.min,max:c.max};}));
+    const sel=document.getElementById('ssScn'), prev=sel.value;
+    sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
+    if(prev && +prev<d.scenarios.length) sel.value=prev;
+    renderSchemSweep();
+    if(DATA) renderMaps(DATA.settings), renderRadars(cur().final);
+    info.textContent=d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
+      +' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
+  }).catch(e=>{info.textContent='오류: '+(e.message||e);});
+}
+function renderSchemSweep(){
+  if(!SS) return;
+  const sc=SS.scenarios[+document.getElementById('ssScn').value||0];
+  const box=document.getElementById('ssDev'), mbox=document.getElementById('ssMon');
+  box.innerHTML=''; mbox.innerHTML='';
+  if(!sc||sc.error){box.textContent='시나리오 오류: '+(sc?sc.error:'없음');return;}
+  const pts=sc.points, I=pts.map(p=>p.I);
+  const ffI=sc.first_soa_fail?sc.first_soa_fail.current:null;
+  const vl=ffI!==null?[{x:ffI}]:[];
+  // 소자 목록은 schematic이 원천 (device_v 키) — 동적 생성
+  Object.keys(pts[0].device_v).forEach(k=>{
+    const div=document.createElement('div'); box.appendChild(div);
+    lineChart(div,{title:k,w:380,h:150,
+      series:[{x:I,y:pts.map(p=>p.device_v[k]),color:CB.blue,label:'V(양단)'}],
+      vlines:vl,xlabel:'I (A)'});
+  });
+  // victim monitor stress + signed 한계선
+  const n_mon=(pts[0].monitors||[]).length;
+  for(let mi=0;mi<n_mon;mi++){
+    const inst=pts[0].monitors[mi].instance;
+    const pick=q=>{const xs=[],ys=[];pts.forEach(p=>{const m=p.monitors[mi];
+      if(m&&m.stress){xs.push(p.I);ys.push(m.stress[q]);}});return {xs,ys};};
+    const hl=[];
+    if(SSLIM.VGS) hl.push({y:SSLIM.VGS.max,color:CB.gray,label:'VGS/VGD max '+SSLIM.VGS.max},
+                          {y:SSLIM.VGS.min,color:CB.gray,label:'min '+SSLIM.VGS.min});
+    if(SSLIM.VDS) hl.push({y:SSLIM.VDS.max,color:CB.orange,label:'VDS ±'+SSLIM.VDS.max});
+    const s=['VGS','VGD','VDS'].map((q,qi)=>{const pr=pick(q);
+      return {x:pr.xs,y:pr.ys,color:[CB.blue,CB.green,CB.purple][qi],label:q};})
+      .filter(t=>t.x.length);
+    const div=document.createElement('div'); mbox.appendChild(div);
+    if(s.length){lineChart(div,{title:inst+' stress',w:380,h:170,series:s,hlines:hl,vlines:vl,xlabel:'I (A)'});}
+    else{div.className='hint';div.textContent=inst+': 이 시나리오에서 monitor 무효(unresolved/비수렴) — stress 없음';}
+  }
+}
+
 function renderAll(){
   const e=cur(),fin=e.final,p=DATA.settings;
   document.getElementById('ival').value=e.I.toFixed(2);
@@ -334,12 +409,21 @@ function renderRadars(fin){
   const axC=r=>[r.x2pos,r.uVC,r.uIC,(r.vc||0)/(r.vio||1),r.uCap2,r.uLeak2,Math.max(0,r.x2pos),Math.max(0,1-r.x2pos)];
   radar(document.getElementById('radarInt'),'Integrated',
     ['x1 pos','x2 pos','L pos','Victim V','Victim I','Up V','Clamp V','Cap'],axInt(fin),ghostSets(axInt));
-  radar(document.getElementById('radarA'),'A: up diode',
-    ['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'],axA(fin),ghostSets(axA));
-  radar(document.getElementById('radarB'),'B: victim',
+  // subject 라벨·존재 여부는 schematic 소자 목록(SSDEV)에서 동적 결정 —
+  // 해당 소자가 회로도에서 빠지면 radar도 사라진다
+  const dl=SSDEV||[], el=id=>document.getElementById(id);
+  const names=filt=>dl.filter(d=>!d.open&&filt(d)).map(d=>d.instance).join(' · ');
+  const tA=names(d=>(d.cell==='d_up'||d.cell==='d_down')&&(d.params||{}).size==='x1');
+  const tB=names(d=>d.role==='soa_monitor');
+  const tC=names(d=>d.cell==='clamp');
+  const axesDC=['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'];
+  if(tA||!dl.length) radar(el('radarA'),(tA||'A: up diode')+' — x1',axesDC,axA(fin),ghostSets(axA));
+  else el('radarA').innerHTML='';
+  if(tB||!dl.length) radar(el('radarB'),(tB||'victim'),
     ['V usage','I usage','V margin','I margin','Rail drop','PAD stress'],axB(fin),ghostSets(axB));
-  radar(document.getElementById('radarC'),'C: clamp',
-    ['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'],axC(fin),ghostSets(axC));
+  else el('radarB').innerHTML='';
+  if(tC||!dl.length) radar(el('radarC'),(tC||'clamp')+' — x2',axesDC,axC(fin),ghostSets(axC));
+  else el('radarC').innerHTML='';
 }
 function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAIL 점 + 현재 marker
   const s=DATA.sweep,p=DATA.settings,e=cur();
@@ -392,18 +476,28 @@ function renderRank(fin){
   }).join('');
 }
 function renderMaps(p){
-  // v4 drawSOAMap 1:1 — safe region 음영 + Vlim/Ilim 점선 + sweep 궤적 + 동작점 + 수치
+  // v4 drawSOAMap 계승 — 단, 소자 목록은 schematic(SSDEV)에서 동적 생성.
+  // 궤적: 2-0 sweep(선택 시나리오)의 per-device 전압, 한계: 최적화 변수 바인딩(x1/x2).
   const s=DATA.sweep,e=cur(),fin=e.final;
   const mA=v=>f(1000*v,2)+'mA', A=v=>f(v,3)+'A';
-  MNA.soaMap(document.getElementById('mapV'),{title:'Victim (V(OUT), I_v)',
+  MNA.soaMap(document.getElementById('mapV'),{title:'XVictim (V(OUT), I_v)',
     V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
     pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})), fmtI:mA, xlabel:'V(OUT) [V]'});
-  MNA.soaMap(document.getElementById('mapD'),{title:'Up diode (V_d, I)',
-    V:fin.vd, I:e.I, Vlim:fin.vt2d, Ilim:fin.it2d,
-    pairs:s.map(q=>({V:q.final.vd,I:q.I})), fmtI:A, xlabel:'V_d [V]'});
-  MNA.soaMap(document.getElementById('mapC'),{title:'Clamp (V_c, I)',
-    V:fin.vc, I:e.I, Vlim:fin.vt2c, Ilim:fin.it2c,
-    pairs:s.map(q=>({V:q.final.vc,I:q.I})), fmtI:A, xlabel:'V_c [V]'});
+  const box=document.getElementById('mapsNV'); box.innerHTML='';
+  const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
+  (SSDEV||[]).filter(d=>!d.open&&!d.role).forEach(d=>{
+    const sz=(d.params||{}).size;
+    const lim=(d.cell==='d_up'||d.cell==='d_down')&&sz==='x1'?{V:fin.vt2d,I:fin.it2d}
+            :(d.cell==='clamp'&&sz==='x2'?{V:fin.vt2c,I:fin.it2c}:null);
+    if(!lim) return; // 한계 데이터 없는 소자(secondary/b2b/소스)는 2-0에서 전압 관측
+    const pairs=(sc&&!sc.error)?sc.points.map(q=>({V:Math.abs(q.device_v[d.instance]||0),I:q.I})):[];
+    const now=pairs.length?pairs[Math.min(pairs.length-1,
+      Math.round(e.I/DATA.settings.imax*(pairs.length-1)))]:{V:0,I:0};
+    const div=document.createElement('div'); box.appendChild(div);
+    MNA.soaMap(div,{title:d.instance+' ('+(d.model||d.cell)+')',
+      V:now.V, I:now.I, Vlim:lim.V, Ilim:lim.I, pairs:pairs, fmtI:A,
+      xlabel:'|V| ['+d.instance+']'});
+  });
 }
 function renderIter(){
   const h=cur().history,p=DATA.settings;
@@ -485,6 +579,10 @@ document.getElementById('ival').addEventListener('change',e=>{
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
 loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
+// 2-0: schematic MNA sweep — 최적화 실행 없이도 로드 즉시 동적 그래프
+document.getElementById('ssBtn').addEventListener('click',loadSchemSweep);
+document.getElementById('ssScn').addEventListener('change',()=>{renderSchemSweep();if(DATA)renderMaps(DATA.settings);});
+loadSchemSweep();
 fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
   .then(d=>{
     const box=document.getElementById('schemLib');
