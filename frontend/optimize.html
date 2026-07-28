@@ -162,7 +162,7 @@
     <div class="g23" id="ssDev"></div>
     <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;victim analytic map(V(OUT), I_v — probe 전용 정보)과 XI_ESD forcing 소스 곡선(SOA 없는 참고용)도 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
-    <h3>소자별 radar<span class="info" title="스크럽 전류 기준 축값, ghost 다각형 = imin/imin·½/0/imax·½/imax.&#10;protection: V·I usage(방향별 vp/vn·ip/inn), V share(=V/V(force net)), I share, margin.&#10;victim: rule 수량별 usage + margin. 바깥=위험, 빨간 점선=100% 경계.&#10;※ 축이 의미를 가지려면 capacitance/leakage 등 size 종속 spec equation이 model에 추가 정의되어야 함 — 현재는 SOA usage 계열만 존재.">ⓘ</span></h3>
+    <h3>소자별 radar<span class="info" title="독립 spec 3계열 축 (바깥=위험, 빨간 점선=100% 경계, ghost=imin/½/0/½/imax):&#10;· V use / I use — 스크럽 전류에서의 SOA usage (방향별 vp/vn·ip/inn)&#10;· HBM±1kV — spec 전류(기본 1kV=1.33A, D9)를 주입했을 때의 SOA usage (양/음극)&#10;· cap/5pF — IO단 capacitance 예산(capLim) 분담. rail 소자(clamp)는 0&#10;victim: rule 수량별(VGS/VGD/VDS/VGB) usage + HBM± usage.">ⓘ</span></h3>
     <div class="radars" id="ssRadar"></div>
     <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
@@ -493,24 +493,31 @@ dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
     points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.red}],
     sym:true,xlabel:'V(양단) [V]'});
 }});
-// [renderer] 소자별 radar (ghost = 0/0.5/1/1.5/2A)
+// [renderer] 소자별 radar — 독립 spec 3계열 (사용자 확정 2026-07-28):
+//   SOA usage(스크럽) · HBM spec 전류(기본 1kV=1.33A)에서의 usage(양/음) · cap 예산 분담.
+//   share/margin류 파생 축은 정보량 0이라 제거.
 dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
+  const spec=(SS.esd_spec&&SS.esd_spec.default_amp)||1.33;
+  const kv=(SS.esd_spec&&SS.esd_spec.default_kv)||1;
+  const kP=dvIdxOf(c,spec), kN=dvIdxOf(c,-spec);
   if(d.role==='soa_monitor'){
     const rl=c.rules[d.model]||[];
-    const ax=k=>{const m=dvMon(d,c,k);
-      const vals=rl.map(r=>{if(!m||!m.stress)return 0;
-        const v=m.stress[r.quantity];return v>=0?v/r.max:v/r.min;});
-      return vals.concat([Math.max(0,1-Math.max(0,...vals))]);};
-    radar(el,d.key,rl.map(r=>r.quantity).concat(['margin']),ax(c.idx),dvGhosts(c,ax));
+    const uq=(k,q)=>{const m=dvMon(d,c,k);if(!m||!m.stress)return 0;
+      const v=m.stress[q.quantity];return v>=0?v/q.max:v/q.min;};
+    const worst=k=>Math.max(0,...rl.map(q=>uq(k,q)));
+    const ax=k=>rl.map(q=>uq(k,q)).concat([worst(kP),worst(kN)]);
+    radar(el,d.key,
+      rl.map(r=>r.quantity).concat(['HBM+'+kv+'kV','HBM−'+kv+'kV']),
+      ax(c.idx),dvGhosts(c,ax));
     return;
   }
-  const ax=k=>{const V=dvV(d,c,k),I=dvI(d,c,k)||0;
-    const uV=V>=0?V/d.soa.vp:V/d.soa.vn, uI=I>=0?I/d.soa.ip:I/d.soa.inn;
-    const vio=Math.abs(c.pts[k].v[c.sc.force]||0);
-    return [uV,uI,Math.abs(V)/(vio||1e-9),Math.abs(I)/(c.pts[k].I||1e-9),
-            Math.max(0,1-uV),Math.max(0,1-uI)];};
+  const u2=k=>{const u=dvUsage(d,c,k);return u?[Math.max(0,u.uV),Math.max(0,u.uI)]:[0,0];};
+  const uS=k=>{const u=dvUsage(d,c,k);return u?Math.max(0,u.u):0;};
+  const capU=(d.cap&&d.cap.on_io)?d.cap.c0/(SS.cap_lim||5e-12):0;  // IO 예산 분담 (rail 소자=0)
+  const ax=k=>u2(k).concat([uS(kP),uS(kN),capU]);
   radar(el,d.key+' · size '+f(d.soa.size,3),
-    ['V usage','I usage','V share','I share','V margin','I margin'],ax(c.idx),dvGhosts(c,ax));
+    ['V use','I use','HBM+'+kv+'kV','HBM−'+kv+'kV','cap/'+f((SS.cap_lim||5e-12)*1e12,0)+'pF'],
+    ax(c.idx),dvGhosts(c,ax));
 }});
 // [renderer] victim analytic map — I_v는 monitor에 없는 analytic probe 정보라 유일하게 유지.
 // (소자별 SOA map은 I-V device가 전 기능 포함하므로 삭제 — 사용자 지시 2026-07-28)

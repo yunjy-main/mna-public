@@ -80,6 +80,7 @@ IO_CAP_LIM = 5e-12
 # 관례 레벨(JS-001 class 계열): 0.5 / 1 / 2 / 4 kV — 설계는 해당 전류까지 생존해야 한다.
 A_PER_KV = 1.33
 HBM_LEVELS_KV = (0.5, 1.0, 2.0, 4.0)
+HBM_DEFAULT_KV = 1.0  # default spec 레벨 = HBM 1kV → 1.33A (사용자 지시 2026-07-28)
 
 
 def hbm_current(kv):

@@ -461,6 +461,8 @@ chk("cap: IO 합산 550fF ≤ capLim 5pF (usage 11%)", abs(io_total - 550e-15) <
     and io_total < M.IO_CAP_LIM, str(io_total))
 chk("I_esd spec: HBM 1kV=1.33A, 2kV=2.66A (D9)", abs(M.hbm_current(1) - 1.33) < 1e-12
     and abs(M.hbm_current(2) - 2.66) < 1e-12 and 2.0 in M.HBM_LEVELS_KV, "")
+chk("HBM default = 1kV (1.33A)", M.HBM_DEFAULT_KV == 1.0
+    and abs(M.hbm_current(M.HBM_DEFAULT_KV) - 1.33) < 1e-12, "")
 c_rev = M.cap_of(M.D1, 2.56, -5.0)   # 역바이어스 감소
 c_fwd = M.cap_of(M.D1, 2.56, 0.5)    # 순방향 증가 (FC 상한)
 chk("cap: C-V 단조(역감소·순증가)", c_rev < 250e-15 < c_fwd

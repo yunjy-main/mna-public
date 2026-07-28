@@ -659,6 +659,8 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
             "corner": corner, "model_mode": model_mode, "devices": devices,
             "cap_lim": M.IO_CAP_LIM, "io_cap_total": io_cap_total,
             "esd_spec": {"a_per_kv": M.A_PER_KV,
+                         "default_kv": M.HBM_DEFAULT_KV,
+                         "default_amp": M.hbm_current(M.HBM_DEFAULT_KV),
                          "levels": [{"kv": kv, "amp": M.hbm_current(kv)}
                                     for kv in M.HBM_LEVELS_KV]},
             "monitor_rules": monitor_rules, "scenarios": scenarios}
