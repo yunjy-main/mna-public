@@ -57,7 +57,7 @@
 
   <!-- ================= 2-0. Schematic device 시각화 (소자 리스트 단일 원천, renderer 패턴) ================= -->
   <div class="card" id="schemSweepCard">
-    <h2>1. MNA solving — schematic device 시각화<span class="info" title="소자 리스트 단일 원천 아키텍처: 모든 시각화 요소는 schematic에서 추출한 소자 리스트(저항 제외) × renderer 등록 패턴으로 자동 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 함께 증감.&#10;실측 model(esdvpnp=Device1, clamp=Device2, secondary는 면적 x1/10) 기반 MNA를 I=−Imax→+Imax로 sweep.&#10;차트의 세로 빨간 점선/가로선 = SOA 한계, first fail = SOA 첫 위반 전류.">ⓘ</span></h2>
+    <h2>1. MNA solving — schematic device 시각화<span class="info" title="소자 리스트 단일 원천 아키텍처: 모든 시각화 요소는 schematic에서 추출한 소자 리스트(저항 제외) × renderer 등록 패턴으로 자동 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 함께 증감.&#10;실측 model(esdvpnp=Device1, clamp=Device2, secondary는 면적 x1/10) 기반 MNA를 I=−Imax→+Imax로 sweep.&#10;x1/x2/L/Imax 입력 = 값의 원천(schematic은 size=x1 같은 바인딩만 정의) — 변경 즉시 회로도·sweep 자동 재해석.&#10;차트의 세로 빨간 점선/가로선 = SOA 한계, first fail = SOA 첫 위반 전류.">ⓘ</span></h2>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:4px">
       <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">x1 (diode)</label>
         <input id="x1init" type="number" step="any" value="2.56" style="width:76px"></div>
@@ -115,10 +115,6 @@
       <a href="spec">ESD Spec</a> <a href="meta">Meta/개체</a>
       <a href="ref/docs/victim_soa_model.html">victim SOA 문서</a> <a href="hub">전체 화면 목록</a>
     </div>
-    <div class="in">
-      <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
-      <div><label>victim gate</label><input value="OUT (diode-connected)" disabled></div>
-    </div>
     <h3>Rule 실험 (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
     <div class="in">
       <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
@@ -134,10 +130,17 @@
       <div><label>wC (x2 area)</label><input id="wC" type="number" step="any" value="1.0"></div>
       <div><label>wL (routing)</label><input id="wL" type="number" step="any" value="0.0"></div>
     </div>
-    <details><summary>수치 최적화</summary>
+    <h3>수치 최적화 (MNA optimizer 연계)</h3>
+    <div class="in">
+      <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
+      <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
+      <div><label>learning rate (MNA)</label><input id="mnaLr" type="number" step="any" value="0.06"></div>
+      <div><label>iterations (MNA)</label><input id="mnaIters" type="number" step="1" value="30"></div>
+    </div>
+    <details><summary>analytic 참고 실행(§5) 전용 설정 — MNA optimizer에는 미적용</summary>
       <div class="in" style="margin-top:6px">
-        <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
-        <div><label>μ Rule</label><input id="muRule" type="number" step="any" value="20"></div>
+        <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
+        <div><label>victim gate</label><input value="OUT (diode-connected)" disabled></div>
         <div><label>learning rate</label><input id="lr" type="number" step="any" value="0.03"></div>
         <div><label>iterations</label><input id="iters" type="number" step="1" value="300"></div>
         <div><label>log every</label><input id="logEvery" type="number" step="1" value="25"></div>
@@ -145,7 +148,7 @@
         <div><label>warm start</label><select id="warmStart"><option value="1">on (continuation)</option><option value="0">off (독립)</option></select></div>
       </div>
     </details>
-    <details><summary>모델 임시값 override — 자산 미확정/회로 상수 (기본값 = 서버 자산과 동일, 확정 시 모델로 이관)</summary>
+    <details><summary>모델 임시값 override — analytic 참고 실행(§5) 전용 (MNA는 schematic+실측 model 사용)</summary>
       <div class="hint" style="margin-top:4px">회로 상수 (사용자 확정 topology — circuit 화면 참조)</div>
       <div class="in">
         <div><label>Rio_rdl (Ω, R device)</label><input id="rio" type="number" step="any" value="0.1"></div>
@@ -784,7 +787,7 @@ function startMnaOpt(){
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     x1min:val('x1min'),x1max:val('x1max'),x2min:val('x2min'),x2max:val('x2max'),
     lmin:val('lmin'),lmax:val('lmax'),wA:val('wA'),wC:val('wC'),wL:val('wL'),
-    mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:'0.06',iters:'30'});
+    mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters')});
   fetch('api/optimize/mna?'+q.toString())
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{OPT=d;renderOptResult();
@@ -967,6 +970,11 @@ document.getElementById('ssScn').addEventListener('change',dvRenderAll);
 document.getElementById('ssCorner').addEventListener('change',loadSchemSweep); // corner 변경 = 재계산
 document.getElementById('specHbm').addEventListener('change',loadSchemSweep);
 document.getElementById('specCapLim').addEventListener('change',loadSchemSweep);
+// §1 설계값(x1/x2/L/Imax)은 표시용이 아니라 값 원천(schematic은 size=x1 바인딩만 정의) —
+// 변경 즉시 회로도 렌더 + MNA sweep 재해석 (활성 input=동작 연계 원칙, 사용자 지시)
+['x1init','x2init','linit','imax'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',()=>{loadSchematic();loadSchemSweep();});
+});
 document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 // 하단 overlay 슬라이더: 마스터 전류 조작 — 최적화 로드 시 islider까지,
 // 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.
