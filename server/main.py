@@ -373,8 +373,8 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
             {"name": "XRvss_rdl", "type": "cell: r · model metal", "nodes": "node A–VSS port", "param": "R=0.1Ω (리턴 경로)"},
             {"name": "XD_up", "type": "cell: d_up · model esdvpnp", "nodes": "N1→N2", "param": "size=x1={}".format(x1)},
             {"name": "XD_down", "type": "cell: d_down · model esdndsx", "nodes": "VSS→N1", "param": "size=x1 (음(−) 스트레스 경로, solver=model1 미러 D2)"},
-            {"name": "XRDD_un1", "type": "cell: r · model metal", "nodes": "N2–N3", "param": "R=rdd(L), up diode↔clamp, L 변수(D7)"},
-            {"name": "XRDD_dn1", "type": "cell: r · model metal", "nodes": "N3B–node A", "param": "R=rdd(L), down diode↔clamp, 공유 L(D7)"},
+            {"name": "XRDD_un1", "type": "cell: r · model metal", "nodes": "N2–N3", "param": "R=rdd(L,W), up diode↔clamp, L·W 변수(D7)"},
+            {"name": "XRDD_dn1", "type": "cell: r · model metal", "nodes": "N3B–node A", "param": "R=rdd(L,W), down diode↔clamp, 공유 L·W(D7)"},
             {"name": "XClamp", "type": "cell: clamp · model nfet_clamp", "nodes": "N3–N3B", "param": "size=x2={}".format(x2)},
             {"name": "XResd", "type": "cell: r · model rmres", "nodes": "IO–gate(IN)", "param": "R=500Ω (victim 보호)"},
             {"name": "XD_up2 / XD_down2", "type": "cell: d_up/d_down (2차 보호, 미바인딩)", "nodes": "IN열–VDD rail / VSS rail–IN열", "param": "esdvpnp / esdndsx"},
@@ -516,9 +516,16 @@ def optimize(request: Request):
 
 
 @app.get(PREFIX + "/api/schematic")
-def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
-              i: float = A_PER_KV, corner: str = "worst"):
-    """Real schematic SVG (schemdraw) with optional operating-point annotations."""
+def schematic(request: Request, i: float = A_PER_KV, corner: str = "worst"):
+    """Real schematic SVG (schemdraw) with optional operating-point annotations.
+    자유 파라미터는 registry 기반 pset (이슈 #11 — 기존 query 이름 호환)."""
+    from server.schematic import load_layout, build_svg
+    from server.netlist import extract_netlist
+    p, err = _pset_from_query(dict(request.query_params),
+                              _params_registry(extract_netlist(load_layout()[0])))
+    if err:
+        return err
+    x1, x2, L = p.get("x1", 2.56), p.get("x2", 1415.232), p.get("L", 350.0)
     err = _window_error(x1, x2)
     if err:
         return err
@@ -528,7 +535,7 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
     if 0 < i <= ifail:
-        rvdd = M.rdd_r(L)             # RDD_un1 (정본=model.rdd_r)
+        rvdd = M.rdd_r(L, p.get("W", M.RDD_W0))  # RDD_un1 (정본=model.rdd_r)
         rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
         vssr = i * M.RVSS_RDL         # node A (victim NMOS ref)
         vd = M.VofI(c1["pos"], i)
@@ -540,8 +547,7 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         vout, ivv = M.victim_probe(vio, n3v, VICTIM["resd"], VICTIM["von"], VICTIM["ronj"])
         op = {"IO": vio, "N1": n2v + vd, "N2": n2v, "N3": n3v, "N3B": n3b, "OUT": vout,
               "VSSR": vssr, "i": i, "iv": ivv}
-    from server.schematic import build_svg
-    return Response(build_svg(x1, x2, L, op), media_type="image/svg+xml",
+    return Response(build_svg(op=op, pset=p), media_type="image/svg+xml",
                     headers={"Cache-Control": "no-store"})
 
 

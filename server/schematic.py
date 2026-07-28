@@ -100,11 +100,11 @@ DEFAULT_LAYOUT = {
         {"type": "dot", "at": [-0.2, 0.0]},
         {"type": "line", "from": "N2", "to": [5.1, 6.0]},
         {"type": "resistor", "from": [5.1, 6.0], "to": "N3", "instance_id": "XRDD_un1"},
-        {"type": "rect", "corner1": [5.55, 5.55], "corner2": [6.65, 6.45], "instance": "XRDD_un1", "cell": "r", "model": "metal", "equation": "rdd(L)", "params": {"R": "rdd(L)", "L": "L"}},
+        {"type": "rect", "corner1": [5.55, 5.55], "corner2": [6.65, 6.45], "instance": "XRDD_un1", "cell": "r", "model": "metal", "equation": "rdd(L,W)", "params": {"R": "rdd(L,W)", "L": "L", "W": "W"}},
         {"type": "port", "at": [5.55, 6.0], "text": ""},
         {"type": "port", "at": [6.65, 6.0], "text": ""},
         {"type": "resistor", "from": [5.1, 0.0], "to": "N3B", "instance_id": "XRDD_dn1"},
-        {"type": "rect", "corner1": [5.55, -0.45], "corner2": [6.65, 0.45], "instance": "XRDD_dn1", "cell": "r", "model": "metal", "equation": "rdd(L)", "params": {"R": "rdd(L)", "L": "L"}},
+        {"type": "rect", "corner1": [5.55, -0.45], "corner2": [6.65, 0.45], "instance": "XRDD_dn1", "cell": "r", "model": "metal", "equation": "rdd(L,W)", "params": {"R": "rdd(L,W)", "L": "L", "W": "W"}},
         {"type": "port", "at": [5.55, 0.0], "text": ""},
         {"type": "port", "at": [6.65, 0.0], "text": ""},
         {"type": "zener", "from": "N3B", "to": "N3", "instance_id": "XClamp"},
@@ -377,14 +377,21 @@ def reset_layout():
         os.remove(LAYOUT_PATH)
 
 
-def build_svg(x1, x2, L=350.0, op=None, layout=None):
-    """Render the layout (saved/custom/default) to SVG. op = node voltages/currents."""
+def build_svg(x1=None, x2=None, L=None, op=None, layout=None, pset=None):
+    """Render the layout (saved/custom/default) to SVG. op = node voltages/currents.
+    라벨 치환은 pset(자유 파라미터 dict) 전 기호 + rvdd — x1/x2/L kwarg는 legacy."""
     if layout is None:
         layout, _ = load_layout()
     from server import model as _M
-    rvdd = _M.rdd_r(L)  # 금속 저항 정본 = model.rdd_r (인라인 공식 폐지, 이슈 #11)
-    subst = {"x1": "{:g}".format(x1), "x2": "{:g}".format(x2),
-             "L": "{:g}".format(L), "rvdd": "{:.3g}".format(rvdd)}
+    p = {k: v["default"] for k, v in _M.PARAM_META.items()}
+    for k, v in (("x1", x1), ("x2", x2), ("L", L)):
+        if v is not None:
+            p[k] = float(v)
+    if pset:
+        p.update(pset)
+    rvdd = _M.rdd_r(p["L"], p.get("W", _M.RDD_W0))  # 금속 정본 = model.rdd_r (이슈 #11)
+    subst = {k: "{:g}".format(v) for k, v in p.items()}
+    subst["rvdd"] = "{:.3g}".format(rvdd)
 
     nodes = {k: v for k, v in layout.get("nodes", {}).items()}
 

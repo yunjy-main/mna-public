@@ -519,9 +519,9 @@ rf = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=2, n=200,
 chk("opt freeze: L 전 iteration 불변", all(abs(h["L"] - 350.0) < 1e-9 for h in rf["history"])
     and abs(rf["final"]["L"] - 350.0) < 1e-9, str([h["L"] for h in rf["history"]]))
 chk("opt freeze: x1/x2는 여전히 이동", any(abs(h["x1"] - 2.56) > 1e-6 for h in rf["history"]), "")
-chk("opt freeze: descriptor frozen 플래그 (registry 순서 L,x1,x2)",
+chk("opt freeze: descriptor frozen 플래그 (registry 순서, W=강제 고정 E3)",
     [(v["key"], v["frozen"]) for v in rf["variables"]]
-    == [("L", True), ("x1", False), ("x2", False)],
+    == [("L", True), ("W", True), ("x1", False), ("x2", False)],
     str([(v["key"], v["frozen"]) for v in rf["variables"]]))
 _tot_f = 1 + 2 * 4 + max(1, round(M.N / 200))
 chk("opt freeze: 진행률 total = 1+iters×(활성+2)+가중", prog_f[-1] == (_tot_f, _tot_f),
@@ -573,37 +573,39 @@ r_w10 = assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
                            pset={"W": 10.0})
 chk("pset: 결과 echo (기본 W=5)", r_w5["pset"]["W"] == 5.0 and r_w10["pset"]["W"] == 10.0
     and r_w5["pset"]["L"] == 350.0, str(r_w5["pset"]))
-chk("pset: rdd(L)은 W 무관 (기호 미등장 — 발견=평가 일치)",
-    abs(r_w5["v"]["IO"] - r_w10["v"]["IO"]) < 1e-9,
-    str((r_w5["v"]["IO"], r_w10["v"]["IO"])))
 
-Lw = copy.deepcopy(DEFAULT_LAYOUT)
-for el in Lw["elements"]:
-    if isinstance(el, dict) and (el.get("params") or {}).get("R") == "rdd(L)":
-        el["params"]["R"] = "rdd(L,W)"
-nlw = extract_netlist(Lw)
-fpw = {p["name"] for p in free_params(nlw)}
-chk("발견: 바인딩 rdd(L,W) → W 자동 발견", fpw == {"L", "W", "x1", "x2"}, str(fpw))
-rw5 = assemble_and_solve(nlw, inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
-rw10 = assemble_and_solve(nlw, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
-                          pset={"W": 10.0})
+# S5: 기본 schematic 바인딩 = rdd(L,W) — W가 발견·평가 전 층에 흐른다
+fpw = {p["name"] for p in free_params(nl)}
+chk("발견: 기본 바인딩 rdd(L,W) → W 자동 발견", fpw == {"L", "W", "x1", "x2"}, str(fpw))
 chk("평가: W=10 → RDD 절반 → ΔV(IO)=1.33×0.5Ω",
-    rw10["converged"] and abs((rw5["v"]["IO"] - rw10["v"]["IO"]) - 1.33 * 0.5) < 0.05,
-    str((rw5["v"]["IO"], rw10["v"]["IO"])))
-chk("평가: W=5 기준 rdd(L,W)=rdd(L) 동치", abs(rw5["v"]["IO"] - r_w5["v"]["IO"]) < 1e-9, "")
+    r_w10["converged"] and abs((r_w5["v"]["IO"] - r_w10["v"]["IO"]) - 1.33 * 0.5) < 0.05,
+    str((r_w5["v"]["IO"], r_w10["v"]["IO"])))
+Lw = copy.deepcopy(DEFAULT_LAYOUT)  # (S3 테스트 재사용 — 기본과 동일해짐)
+nlw = extract_netlist(Lw)
+Lo = copy.deepcopy(DEFAULT_LAYOUT)  # 구형 rdd(L)로 되돌린 층 — W 미발견·미반영 확인
+for el in Lo["elements"]:
+    if isinstance(el, dict) and str((el.get("params") or {}).get("R", "")).replace(" ", "") == "rdd(L,W)":
+        el["params"]["R"] = "rdd(L)"
+nlo = extract_netlist(Lo)
+chk("발견: rdd(L)이면 W 미발견 (발견=평가 일치)",
+    {p["name"] for p in free_params(nlo)} == {"L", "x1", "x2"}, "")
+ro5 = assemble_and_solve(nlo, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
+                         pset={"W": 10.0})
+chk("평가: rdd(L)은 W 무관", abs(ro5["v"]["IO"] - r_w5["v"]["IO"]) < 1e-9,
+    str((ro5["v"]["IO"], r_w5["v"]["IO"])))
 
 # 11) PSET 파이프라인 S2 (이슈 #11): supported 자동 판정 + pset query 수집
 from server.main import _params_registry, _pset_from_query  # noqa: E402
 
 reg = _params_registry(nl)
-chk("S2 registry: 현 schematic 3기호 supported", {r["name"]: r["supported"] for r in reg}
-    == {"L": True, "x1": True, "x2": True}, str([(r["name"], r["supported"]) for r in reg]))
+chk("S2 registry: 현 schematic 4기호 전부 supported (화이트리스트 폐지)",
+    {r["name"]: r["supported"] for r in reg}
+    == {"L": True, "W": True, "x1": True, "x2": True},
+    str([(r["name"], r["supported"]) for r in reg]))
 regw = _params_registry(nlw)
-chk("S2 registry: rdd(L,W) → W supported 자동 (화이트리스트 폐지)",
-    {r["name"] for r in regw if r["supported"]} == {"L", "W", "x1", "x2"}, "")
 Lf = copy.deepcopy(DEFAULT_LAYOUT)
 for el in Lf["elements"]:
-    if isinstance(el, dict) and (el.get("params") or {}).get("R") == "rdd(L)":
+    if isinstance(el, dict) and str((el.get("params") or {}).get("R", "")).startswith("rdd"):
         el["params"]["R"] = "foo(T)"
         break
 regf = _params_registry(extract_netlist(Lf))
@@ -617,7 +619,7 @@ _, e3 = _pset_from_query({"L": "-5"}, reg)
 chk("S2 pset query: 무효값 422 (E5)", e3 is not None and e3.status_code == 422, "")
 ii2 = instance_info()
 chk("S2 instance_info: pset=발견 기호만 echo + R=파서 평가",
-    set(ii2["pset"]) == {"L", "x1", "x2"}
+    set(ii2["pset"]) == {"L", "W", "x1", "x2"}
     and abs(next(i for i in ii2["instances"] if i["instance"] == "XRDD_un1")["R"] - 0.5) < 1e-12,
     str(ii2.get("pset")))
 
@@ -638,6 +640,39 @@ try:
     chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", False, "예외 없음")
 except ValueError:
     chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", True, "")
+
+# 13) S5 리허설 (이슈 #11 완료 기준): 새 파라미터는 정본 3곳(schematic 바인딩 +
+#     PARAM_META + 물리식 등록)만으로 발견→supported→평가→optimizer 전 층 자동 — 배관 수정 0
+from server.netlist import params_registry  # noqa: E402
+
+M.PARAM_META["T"] = {"default": 2.0, "unit": "µm", "rule": (1.0, 4.0),
+                     "label": "T (금속 두께)", "dec": 2, "cost_w": 0.0,
+                     "freeze_default": True}
+M.BINDING_FUNCS["rddt"] = lambda L, T: M.rdd_r(L) * 2.0 / float(T)
+try:
+    Lr = copy.deepcopy(DEFAULT_LAYOUT)
+    for el in Lr["elements"]:
+        if isinstance(el, dict) and str((el.get("params") or {}).get("R", "")).replace(" ", "") == "rdd(L,W)":
+            el["params"]["R"] = "rddt(L,T)"
+            break
+    nlr = extract_netlist(Lr)
+    regr = {r["name"]: r for r in params_registry(nlr)}
+    chk("리허설: 새 기호 T 발견+supported+창 자동", "T" in regr
+        and regr["T"]["supported"] is True and regr["T"]["rule_lo"] == 1.0
+        and regr["T"]["freeze_default"] is True, str(regr.get("T")))
+    rt2 = assemble_and_solve(nlr, inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
+    rt4 = assemble_and_solve(nlr, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
+                             pset={"T": 4.0})
+    chk("리허설: T=4 → 해당 금속 R 절반 → ΔV(IO)=1.33×0.25Ω",
+        abs((rt2["v"]["IO"] - rt4["v"]["IO"]) - 1.33 * 0.25) < 0.03,
+        str((rt2["v"]["IO"], rt4["v"]["IO"])))
+    ro_t = optimize_mna(Lr, iters=1, n=200)
+    vT = next(v for v in ro_t["variables"] if v["key"] == "T")
+    chk("리허설: optimizer 변수에 T 자동 편입(창=META rule·잠금 가능)",
+        vT["lo"] == 1.0 and vT["hi"] == 4.0 and vT["lockable"] is True, str(vT))
+finally:
+    del M.PARAM_META["T"]
+    del M.BINDING_FUNCS["rddt"]
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))

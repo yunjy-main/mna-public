@@ -8,7 +8,7 @@ MNA(G·v=J, Newton)로 조립·해석한다.
 
 model equation은 임의 placeholder(사용자 허용 2026-07-27):
   diode/b2b/FET접합 = softplus 다이오드, clamp = 양방향 softplus(트리거 4V),
-  R = 선형(params.R 또는 rdd(L)). 크기 파라미터(x1/x2)는 아직 미반영.
+  R = 선형(params.R 또는 바인딩 식 rdd(L,W) — 파서 평가). size는 pset 기호 바인딩.
 
 enabled=False 소자는 stamping 제외(배선은 유지) — 색상은 표시 전용(P0-3).
 net 이름은 layout nodes/port "net" 선언에서 온다(P0-4). reference는 scenario.ground +
