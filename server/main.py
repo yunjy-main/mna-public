@@ -740,14 +740,37 @@ def instance_info(request: Request = None, corner: str = "worst"):
             if isinstance(R, str):  # 바인딩 식 — 파서 평가 (문자열 비교 하드코딩 폐지)
                 pb = parse_binding(R)
                 ent["R"] = eval_binding(pb, p) if (pb and binding_ok(R)) else None
+                ent["R_expr"] = R.replace(" ", "")
+                if pb and pb["kind"] == "func":  # metal model 식 정본 = 함수 docstring
+                    fn = M.BINDING_FUNCS.get(pb["fn"])
+                    ent["R_desc"] = ((fn.__doc__ or "").strip().splitlines() or [None])[0] \
+                        if fn else None
+                    ent["R_args"] = {s: p.get(s) for s in pb["symbols"]}
             else:
                 ent["R"] = R
+    # cell별 바인딩 식 집계 (subcircuit 페이지의 model 표시 원천)
+    cell_binds = {}
+    for d in nl["devices"]:
+        cid = d.get("cell")
+        if not cid:
+            continue
+        e = size_expr_of(d)
+        if e:
+            cell_binds.setdefault(cid, set()).add("size=" + e)
+        R = (d.get("params") or {}).get("R")
+        if isinstance(R, str):
+            cell_binds.setdefault(cid, set()).add("R=" + R.replace(" ", ""))
     cells = [{"id": c["id"], "name": c["name"], "models": c["models"],
+              "bindings": sorted(cell_binds.get(c["id"], [])),
               "instances": [i["instance"] for i in instances.values()
                             if i["cell"] == c["id"]]}
              for c in LIBRARY_CELLS]
+    # 바인딩 함수 model 식 (정본 = 함수 docstring 1행)
+    bind_docs = {k: ((v.__doc__ or "").strip().splitlines() or [""])[0]
+                 for k, v in M.BINDING_FUNCS.items()}
     return {"pset": p, "x1": p.get("x1"), "x2": p.get("x2"), "L": p.get("L"),
-            "corner": corner, "instances": list(instances.values()), "cells": cells}
+            "corner": corner, "instances": list(instances.values()), "cells": cells,
+            "binding_funcs": bind_docs}
 
 
 @app.get(PREFIX + "/api/analysis/sweep")

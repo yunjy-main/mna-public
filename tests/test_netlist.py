@@ -507,7 +507,7 @@ chk("opt: history/schema", len(ro["history"]) == 5
 chk("opt: 탐색 범위 유지", 0.3 < ro["final"]["x1"] < 4.7 and ro["final"]["L"] >= 1.0,
     str((ro["final"]["x1"], ro["final"]["L"])))
 # 진행률 콜백 (사용자 지시 2026-07-28): evaluate 단위, 초기 0 → 단조증가 → done==total
-_tot = 1 + 4 * 5 + max(1, round(M.N / 200))
+_tot = 1 + 4 * 6 + max(1, round(M.N / 200))  # 활성 4(L,W,x1,x2)+2
 chk("opt: progress 단조증가·완료 done==total", prog[0] == (0, _tot)
     and all(prog[i][0] < prog[i + 1][0] for i in range(len(prog) - 1))
     and prog[-1] == (_tot, _tot) and all(t == _tot for _, t in prog), str(prog[:3] + prog[-2:]))
@@ -519,14 +519,14 @@ rf = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=2, n=200,
 chk("opt freeze: L 전 iteration 불변", all(abs(h["L"] - 350.0) < 1e-9 for h in rf["history"])
     and abs(rf["final"]["L"] - 350.0) < 1e-9, str([h["L"] for h in rf["history"]]))
 chk("opt freeze: x1/x2는 여전히 이동", any(abs(h["x1"] - 2.56) > 1e-6 for h in rf["history"]), "")
-chk("opt freeze: descriptor frozen 플래그 (registry 순서, W=강제 고정 E3)",
+chk("opt freeze: descriptor frozen 플래그 (registry 순서, W=rule 창 있어 자유)",
     [(v["key"], v["frozen"]) for v in rf["variables"]]
-    == [("L", True), ("W", True), ("x1", False), ("x2", False)],
+    == [("L", True), ("W", False), ("x1", False), ("x2", False)],
     str([(v["key"], v["frozen"]) for v in rf["variables"]]))
-_tot_f = 1 + 2 * 4 + max(1, round(M.N / 200))
+_tot_f = 1 + 2 * 5 + max(1, round(M.N / 200))  # 활성 3(W,x1,x2)+2
 chk("opt freeze: 진행률 total = 1+iters×(활성+2)+가중", prog_f[-1] == (_tot_f, _tot_f),
     str(prog_f[-1]))
-for _bad_fz, _msg in ((("x1", "x2", "L"), "전 변수 고정"), (("bogus",), "미지 변수")):
+for _bad_fz, _msg in ((("x1", "x2", "L", "W"), "전 변수 고정"), (("bogus",), "미지 변수")):
     try:
         optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=1, freeze=_bad_fz)
         chk("opt freeze: {} 거부".format(_msg), False, "예외 없음")
@@ -622,24 +622,41 @@ chk("S2 instance_info: pset=발견 기호만 echo + R=파서 평가",
     set(ii2["pset"]) == {"L", "W", "x1", "x2"}
     and abs(next(i for i in ii2["instances"] if i["instance"] == "XRDD_un1")["R"] - 0.5) < 1e-12,
     str(ii2.get("pset")))
+# 정본 페이지 model 표시 (사용자 지시 2026-07-28: model 반영분이 instance/subcircuit에 보여야)
+rr = next(i for i in ii2["instances"] if i["instance"] == "XRDD_un1")
+chk("instance: metal model 식·인자 표시 데이터", rr["R_expr"] == "rdd(L,W)"
+    and "0.5" in rr["R_desc"] and rr["R_args"] == {"L": 350.0, "W": 5.0}, str(rr.get("R_desc")))
+cr = next(c for c in ii2["cells"] if any(b.startswith("R=rdd") for b in c["bindings"]))
+chk("subcircuit: cell 바인딩 집계 + 식 정본(docstring)", "R=rdd(L,W)" in cr["bindings"]
+    and "sheet" in ii2["binding_funcs"]["rdd"], str((cr["id"], cr["bindings"])))
+chk("W rule 창 [1,10] registry 반영",
+    next(r for r in reg if r["name"] == "W")["rule_lo"] == 1.0
+    and next(r for r in reg if r["name"] == "W")["rule_hi"] == 10.0, "")
 
 # 12) PSET 파이프라인 S3 (이슈 #11): optimizer N-차원 자동 구성
-r3 = optimize_mna(Lw, iters=1, n=200, windows={"x1": (1.0, 3.0)})
+r3 = optimize_mna(Lw, iters=1, n=200, windows={"x1": (1.0, 3.0)}, freeze=("L", "W"))
 v3 = {v["key"]: v for v in r3["variables"]}
 chk("S3 opt: rdd(L,W) → 변수 4개 자동 (registry 순서)",
     list(v3) == ["L", "W", "x1", "x2"], str(list(v3)))
-chk("S3 opt: rule 창 없는 W는 강제 고정 (E3, lockable=false)",
-    v3["W"]["frozen"] is True and v3["W"]["lockable"] is False
-    and v3["L"]["lockable"] is True, str(v3["W"]))
+chk("S3 opt: W rule 창 [1,10] META 반영 + 잠금 가능",
+    v3["W"]["lo"] == 1.0 and v3["W"]["hi"] == 10.0 and v3["W"]["lockable"] is True
+    and v3["W"]["frozen"] is True and v3["L"]["lockable"] is True, str(v3["W"]))
 chk("S3 opt: windows override 반영", v3["x1"]["lo"] == 1.0 and v3["x1"]["hi"] == 3.0, "")
-chk("S3 opt: 강제 고정 W는 전 history 불변(5.0)",
+chk("S3 opt: freeze W는 전 history 불변(5.0)",
     all(h["W"] == 5.0 for h in r3["history"]) and r3["final"]["W"] == 5.0, "")
 chk("S3 opt: pset echo", r3["pset"]["W"] == 5.0 and r3["pset"]["L"] == 350.0, str(r3["pset"]))
 try:
-    optimize_mna(Lw, iters=1, n=200, freeze=("x1", "x2", "L"))
-    chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", False, "예외 없음")
+    optimize_mna(Lw, iters=1, n=200, freeze=("x1", "x2", "L", "W"))
+    chk("S3 opt: 전 변수 freeze → 대상 없음 거부 (E4)", False, "예외 없음")
 except ValueError:
-    chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", True, "")
+    chk("S3 opt: 전 변수 freeze → 대상 없음 거부 (E4)", True, "")
+_wr = M.PARAM_META["W"].pop("rule")  # E3 회귀: rule 창 없으면 강제 고정
+try:
+    v3f = {v["key"]: v for v in optimize_mna(Lw, iters=1, n=200)["variables"]}
+    chk("S3 opt: rule 창 없으면 강제 고정 (E3, lockable=false)",
+        v3f["W"]["frozen"] is True and v3f["W"]["lockable"] is False, str(v3f["W"]))
+finally:
+    M.PARAM_META["W"]["rule"] = _wr
 
 # 13) S5 리허설 (이슈 #11 완료 기준): 새 파라미터는 정본 3곳(schematic 바인딩 +
 #     PARAM_META + 물리식 등록)만으로 발견→supported→평가→optimizer 전 층 자동 — 배관 수정 0

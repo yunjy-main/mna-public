@@ -62,7 +62,10 @@ fetch('api/instance/info?'+qp.toString())
         +' · pins: '+i.elements.map(e=>e.pins).join(' | ')
         +' · params: '+(Object.entries(i.params||{}).map(([k,v])=>k+'='+v).join(' · ')||'—')
         +(i.size_expr?(' · size='+i.size_expr+(i.soa?(' → '+f(i.soa.size,4)):'')):'')
-        +(i.R!==undefined?(' · R='+f(+i.R,3)+'Ω'):'')+'</div>';
+        +(i.R!==undefined?(' · R='+(i.R_expr?i.R_expr+' = ':'')+f(+i.R,3)+'Ω'):'')+'</div>';
+      if(i.R_desc) h+='<div class="kv2">metal model: '+i.R_desc
+        +(i.R_args?' · '+Object.entries(i.R_args).map(([k,v])=>k+'='+v+'µm').join(' · '):'')
+        +'</div>';
       if(i.soa) h+='<div class="kv2">SOA endpoint: vp '+f(i.soa.vp,3)+'V · ip '+f(i.soa.ip,3)
         +'A / vn '+f(i.soa.vn,3)+'V · inn '+f(i.soa.inn,4)+'A</div>';
       if(i.cap) h+='<div class="kv2">C0 = '+f(i.cap.c0*1e15,0)+'fF ('

@@ -52,6 +52,11 @@ fetch('api/instance/info')
         +'<div class="row"><div id="svg_'+c.id+'" style="min-width:120px">…</div>'
         +'<div><div class="kv2"><b>허용 model</b>: '
         +(c.models.length?c.models.join(' · '):'<span style="color:#8a94a0">제약 없음</span>')+'</div>'
+        +(c.bindings&&c.bindings.length?('<div class="kv2"><b>바인딩</b>: '+c.bindings.join(' · ')
+          +c.bindings.map(b=>{const m=b.match(/([A-Za-z_]\w*)\(/);
+            return (m&&d.binding_funcs&&d.binding_funcs[m[1]])
+              ?'<br><span style="color:#5b6673">'+m[1]+': '+d.binding_funcs[m[1]]+'</span>':'';})
+            .join('')+'</div>'):'')
         +'<div class="kv2"><b>instances</b> ('+c.instances.length+'): '
         +(c.instances.length?c.instances.map(n=>'<a href="instance#'+slug(n)+'">'+n+'</a>').join(' · ')
           :'<span style="color:#8a94a0">—</span>')+'</div></div></div>';
