@@ -238,6 +238,11 @@ def rdd_r(L, W=RDD_W0):
     return RDD_UN1 * (float(L) / 350.0) * (RDD_W0 / float(W))
 
 
+# 바인딩 함수 레지스트리 (이슈 #11 §2.2) — schematic의 func_expr(예: "rdd(L,W)")
+# 함수명 → 물리 함수. 새 물리식은 여기 등록하면 파서(발견=평가)가 자동 연결.
+BINDING_FUNCS = {"rdd": rdd_r}
+
+
 def series_vio(c1, c2, I, rio=RIO_RDL, rdd_un1=RDD_UN1, rdd_dn1=RDD_DN1, rvss=RVSS_RDL):
     return I * (rio + rdd_un1 + rdd_dn1 + rvss) + VofI(c1["pos"], I) + VofI(c2["pos"], I)
 

@@ -18,6 +18,7 @@ global=True ground만(P0-2). 전류원은 G에 기여하지 않으므로 시나�
 schematic.fet_anchors가 원천(P0-5). — 이슈 #9 P0 반영
 """
 import math
+import re
 
 from server.schematic import fet_anchors  # P0-5: 렌더러와 동일 기하 원천 (schemdraw)
 
@@ -285,11 +286,76 @@ def _clamp_iv(V, Gon=10.0, Von=0.7, Vtrig=4.0, Vt=0.05):
     return i1 - i2, g1 + g2
 
 
-def _res_R(dev, L):
+# ---------------- 바인딩 식 파서 (이슈 #11 §2.1) ----------------
+# 발견(free_params)과 평가(엔진)가 같은 파서를 공유한다 — 문자열 완전일치 매치 금지.
+# 문법: size_expr := SYM | SYM/NUMBER | NUMBER ; func_expr := FNAME(SYM,...)
+_BIND_FUNC_RE = re.compile(r"^([A-Za-z_]\w*)\(([^()]*)\)$")
+_BIND_SIZE_RE = re.compile(r"^([A-Za-z_]\w*)(?:/([0-9.]+))?$")
+
+
+def parse_binding(expr):
+    """바인딩 식 → {"kind": "const"|"size"|"func", "symbols": [...], ...} | None(해석 불가)."""
+    e = str(expr).replace(" ", "")
+    try:
+        return {"kind": "const", "value": float(e), "symbols": []}
+    except ValueError:
+        pass
+    m = _BIND_FUNC_RE.match(e)
+    if m:
+        syms = [s for s in m.group(2).split(",") if s]
+        if all(re.match(r"^[A-Za-z_]\w*$", s) for s in syms):
+            return {"kind": "func", "fn": m.group(1), "symbols": syms}
+        return None
+    m = _BIND_SIZE_RE.match(e)
+    if m:
+        return {"kind": "size", "base": m.group(1),
+                "div": float(m.group(2)) if m.group(2) else None,
+                "symbols": [m.group(1)]}
+    return None
+
+
+def eval_binding(parsed, pset):
+    """파싱된 바인딩을 pset(dict)에 대해 평가. size 기호 미존재 → None(호출부 기본값),
+    func 미등록/기호 미존재 → ValueError (예외 설계 E1)."""
+    from server import model as M
+    if parsed["kind"] == "const":
+        return parsed["value"]
+    if parsed["kind"] == "size":
+        v = pset.get(parsed["base"])
+        if v is None:
+            return None
+        return v / parsed["div"] if parsed["div"] else v
+    fn = M.BINDING_FUNCS.get(parsed["fn"])
+    if fn is None:
+        raise ValueError("미지 바인딩 함수: {} (이슈 #11 E1)".format(parsed["fn"]))
+    args = [pset.get(s) for s in parsed["symbols"]]
+    if any(a is None for a in args):
+        raise ValueError("바인딩 기호 값 없음: {}".format(parsed["symbols"]))
+    return fn(*args)
+
+
+def _pset(pset=None, **legacy):
+    """PSET 병합 — PARAM_META defaults ∪ legacy 이름 인자(동결 호환층, None 무시) ∪ pset.
+    모든 엔진 함수의 값 운반은 이 dict 하나 (이슈 #11 §1.2 — 이름 인자 신규 추가 금지)."""
+    from server import model as M
+    p = {k: v["default"] for k, v in M.PARAM_META.items()}
+    for k, v in legacy.items():
+        if v is not None:
+            p[k] = float(v)
+    if pset:
+        for k, v in pset.items():
+            p[k] = float(v)
+    return p
+
+
+def _res_R(dev, pset):
     prm = dev.get("params", {})
     R = prm.get("R", 1.0)
-    if isinstance(R, str):  # "rdd(L)"
-        return 0.5 * float(L) / 350.0
+    if isinstance(R, str):  # 바인딩 식 (예: "rdd(L)" → model.rdd_r) — 파서 평가
+        pb = parse_binding(R)
+        if not pb:
+            raise ValueError("해석 불가 R 바인딩: {}".format(R))
+        return eval_binding(pb, pset)
     return float(R)
 
 
@@ -347,49 +413,52 @@ def size_expr_of(dev):
 
 
 def free_params(nl):
-    """schematic에서 자유 파라미터 발견 — size 바인딩의 기호(x1, x2, ...) +
-    금속 rdd(L)의 L. 입력 UI·API 파라미터 목록의 단일 원천 (하드코딩 금지,
-    사용자 지시 2026-07-28: 새 기호가 회로도에 생기면 입력도 자동 증감)."""
+    """schematic에서 자유 파라미터 발견 — 모든 바인딩 식(size·R)을 파서로 해석해
+    등장 기호 전부. 입력 UI·API 파라미터 목록의 단일 원천 (하드코딩 금지,
+    사용자 지시 2026-07-28: 새 기호가 회로도에 생기면 입력도 자동 증감).
+    평가와 같은 파서 공유 (이슈 #11 §1.3 — 발견=평가 동일 문법)."""
     out = {}
+
+    def _found(sym, who, expr):
+        ent = out.setdefault(sym, {"devices": [], "exprs": set()})
+        ent["devices"].append(who)
+        ent["exprs"].add(expr)
+
     for key, d in device_keys(nl):
         e = size_expr_of(d)
         if not e:
             continue
-        base = e.split("/")[0]
-        ent = out.setdefault(base, {"devices": [], "exprs": set()})
-        ent["devices"].append(key)
-        ent["exprs"].add(e)
+        pb = parse_binding(e)
+        for s in (pb["symbols"] if pb else []):
+            _found(s, key, e)
     for d in nl["devices"]:
-        if d["kind"] == "resistor" and str((d.get("params") or {}).get("R")) == "rdd(L)":
-            ent = out.setdefault("L", {"devices": [], "exprs": set()})
-            ent["devices"].append(d.get("instance") or "R")
-            ent["exprs"].add("rdd(L)")
+        R = (d.get("params") or {}).get("R")
+        if d["kind"] == "resistor" and isinstance(R, str):
+            pb = parse_binding(R)
+            for s in (pb["symbols"] if pb else []):
+                _found(s, d.get("instance") or "R", str(R).replace(" ", ""))
     return [{"name": k, "devices": v["devices"], "exprs": sorted(v["exprs"])}
             for k, v in sorted(out.items())]
 
 
-def _size_of(dev, x1, x2):
-    """instance params.size 해석 — "x1"/"x2"/"x1/10"/숫자. 기본: diode류=x1, clamp=x2.
-    (secondary는 primary 면적 1/10 — 사용자 지시 2026-07-28)"""
-    base = x2 if dev.get("cell") == "clamp" else x1
+def _size_of(dev, pset):
+    """instance params.size 해석 — 바인딩 식(파서 공유)을 pset에 대해 평가.
+    기본: diode류=x1, clamp=x2. 미지 기호는 기본으로 후퇴(발견은 되나 엔진 미지원 —
+    supported=false 처리, 이슈 #11 E2). (secondary는 primary 면적 1/10)"""
+    base = pset.get("x2" if dev.get("cell") == "clamp" else "x1")
     s = (dev.get("params") or {}).get("size")
     if s is None:
         return base
     if isinstance(s, (int, float)):
         return float(s)
-    expr = str(s).replace(" ", "")
-    num = {"x1": x1, "x2": x2}.get(expr.split("/")[0])
-    if num is None:
+    pb = parse_binding(s)
+    if not pb or pb["kind"] == "func":
         return base
-    if "/" in expr:
-        try:
-            return num / float(expr.split("/")[1])
-        except ValueError:
-            return num
-    return num
+    v = eval_binding(pb, pset)
+    return base if v is None else v
 
 
-def measured_context(x1=2.56, x2=1415.232, corner="worst", n=None, cache=None):
+def measured_context(x1=None, x2=None, corner="worst", n=None, cache=None, pset=None):
     """device record → 실측 I(V) 평가기 resolver. 곡선은 server.model calib에서 유도.
 
     cell→모델: d_up/d_down/d_b2b = Device1(esdvpnp 제공 diode model — b2b·down도 동일
@@ -410,18 +479,20 @@ def measured_context(x1=2.56, x2=1415.232, corner="worst", n=None, cache=None):
             cache[key] = _mirror(f) if mirror else f
         return cache[key]
 
+    p = _pset(pset, x1=x1, x2=x2)
+
     def resolve(d):
         cell = d.get("cell")
         if cell in ("d_up", "d_down", "d_b2b"):
-            return curve(M.D1, _size_of(d, x1, x2))
+            return curve(M.D1, _size_of(d, p))
         if cell == "clamp":
-            return curve(M.D2, _size_of(d, x1, x2), mirror=True)
+            return curve(M.D2, _size_of(d, p), mirror=True)
         return None
 
     return resolve
 
 
-def soa_endpoints(nl, x1=2.56, x2=1415.232, corner="worst"):
+def soa_endpoints(nl, x1=None, x2=None, corner="worst", pset=None):
     """저항 제외 device별 실측 SOA endpoint {vp, ip, vn, inn, size} — **element 좌표계**.
 
     diode류=Device1·clamp=Device2를 해당 instance size로 평가. clamp는 곡선을
@@ -429,9 +500,10 @@ def soa_endpoints(nl, x1=2.56, x2=1415.232, corner="worst"):
     방향(주 도통)=Device2 pos branch 한계. 데이터 없는 소자=None."""
     from server import model as M
     out = {}
+    p = _pset(pset, x1=x1, x2=x2)
     for key, d in _device_keys(nl):
         cell = d.get("cell")
-        x = _size_of(d, x1, x2)
+        x = _size_of(d, p)
         if cell in ("d_up", "d_down", "d_b2b"):
             e = M.ep(M.D1, x, corner)
             out[key] = {"vp": e["vp"], "ip": e["ip"], "vn": e["vn"], "inn": e["inn"], "size": x}
@@ -443,11 +515,13 @@ def soa_endpoints(nl, x1=2.56, x2=1415.232, corner="worst"):
     return out
 
 
-def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
-                       max_iter=200, tol=1e-9, v0=None, model_ctx=None):
+def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=None,
+                       max_iter=200, tol=1e-9, v0=None, model_ctx=None, pset=None):
     """netlist → MNA 조립 + Newton. inject/ground는 net 이름.
     v0: unknowns 순서의 초기 전압 벡터 (continuation sweep warm-start용).
-    model_ctx: measured_context() resolver — device별 실측 I(V). None이면 placeholder."""
+    model_ctx: measured_context() resolver — device별 실측 I(V). None이면 placeholder.
+    pset: 자유 파라미터 dict (이슈 #11) — L kwarg는 동결 legacy 호환층."""
+    p = _pset(pset, L=L)
     names = nl["nets"]
     name_to_net = {v: k for k, v in names.items()}
     if inject not in name_to_net or ground not in name_to_net:
@@ -488,7 +562,7 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
                 V = vof(a, v) - vof(b, v)
                 meas = model_ctx(d) if model_ctx else None
                 if d["kind"] == "resistor":
-                    g = 1.0 / _res_R(d, L)
+                    g = 1.0 / _res_R(d, p)
                     Idev = g * V
                 elif meas is not None:  # 실측 곡선 (d_up/d_down/clamp)
                     Idev, g = meas(V)
@@ -565,7 +639,7 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
         if n in names:
             vmap[names[n]] = 0.0  # reference net — monitor 평가에 전 net 전압 필요
     return {
-        "inject": inject, "ground": ground, "I": I, "L": L,
+        "inject": inject, "ground": ground, "I": I, "L": p["L"], "pset": p,
         "unknowns": [names[n] for n in unknowns],
         "ref_nets": sorted(names[n] for n in ref if n in names),
         "v": vmap,
@@ -610,7 +684,7 @@ def soa_rules_for(model):
 IO_VIEW_NETS = ("IO", "N1", "IN")  # pad에서 바라본 노드 섬 (Rio_rdl·Resd 경유 lumped view)
 
 
-def device_caps(nl, x1=2.56, x2=1415.232):
+def device_caps(nl, x1=None, x2=None, pset=None):
     """저항 제외 device별 capacitance spec — model.CAP의 size 스케일 평가.
     {c0: V=0 값[F], vbi, mj, fc, size, on_io} — on_io=pad에서 보이는 소자
     (IO/N1/IN에 pin이 닿음). capLim 판정은 on_io 소자들의 합(모델 계층 IO_CAP_LIM).
@@ -620,6 +694,7 @@ def device_caps(nl, x1=2.56, x2=1415.232):
     names = nl["nets"]
     io_ids = set(i for i, nm in names.items() if nm in IO_VIEW_NETS)
     out = {}
+    ps = _pset(pset, x1=x1, x2=x2)
     for key, d in device_keys(nl):
         cell = d.get("cell")
         dev = M.D1 if cell in ("d_up", "d_down", "d_b2b") else (M.D2 if cell == "clamp" else None)
@@ -627,7 +702,7 @@ def device_caps(nl, x1=2.56, x2=1415.232):
             out[key] = None
             continue
         pins = ([d["a"], d["b"]] if "a" in d else list((d.get("terminals") or {}).values()))
-        x = _size_of(d, x1, x2)
+        x = _size_of(d, ps)
         p = M.CAP[dev["id"]]
         out[key] = {"c0": M.cap_of(dev, x, 0.0), "vbi": p["vbi"], "mj": p["mj"],
                     "fc": p["fc"], "size": x,
@@ -635,12 +710,13 @@ def device_caps(nl, x1=2.56, x2=1415.232):
     return out
 
 
-def device_curves(nl, x1=2.56, x2=1415.232, corner="worst", npts=41):
+def device_curves(nl, x1=None, x2=None, corner="worst", npts=41, pset=None):
     """저항 제외 device별 실측 특성곡선 {V,I} — I-V 차트의 참조선(궤적 vs 특성 대비).
     element 좌표계(clamp는 미러). 실측 데이터 없는 소자=None. (모델,size)별 캐시."""
     from server import model as M
     cache = {}
     out = {}
+    ps = _pset(pset, x1=x1, x2=x2)
     for key, d in device_keys(nl):
         cell = d.get("cell")
         if cell in ("d_up", "d_down", "d_b2b"):
@@ -650,7 +726,7 @@ def device_curves(nl, x1=2.56, x2=1415.232, corner="worst", npts=41):
         else:
             out[key] = None
             continue
-        x = _size_of(d, x1, x2)
+        x = _size_of(d, ps)
         ck = (dev["id"], round(x, 9), mirror)
         if ck not in cache:
             c = M.calib(dev, x, corner)
@@ -812,8 +888,8 @@ def device_currents(nl, sol, model_ctx=None):
     return out
 
 
-def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, imin=0.0,
-                   progress_cb=None, slim=False):
+def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=None, model_ctx=None, imin=0.0,
+                   progress_cb=None, slim=False, pset=None):
     """I=imin→imax continuation sweep + 매 point SOA 평가 (points는 I 오름차순).
 
     imin<0(양극 sweep, 사용자 지시 2026-07-28)이면 0에서 바깥쪽으로 양/음 두 갈래
@@ -823,9 +899,10 @@ def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None, i
     progress_cb: point 1개 완료마다 호출(실시간 진행률). slim: 고해상도(0.01A) sweep의
     응답 경량화 — 미사용 node 전압 v 생략 + device 값 5자리 반올림."""
     grid = [imin + (imax - imin) * k / float(n - 1) if n > 1 else imax for k in range(n)]
+    p = _pset(pset, L=L)
 
     def solve_point(i, v0):
-        sol = assemble_and_solve(nl, inject=force, ground=ground, I=i, L=L, v0=v0,
+        sol = assemble_and_solve(nl, inject=force, ground=ground, I=i, pset=p, v0=v0,
                                  model_ctx=model_ctx)
         mons = evaluate_soa_monitors(nl, sol)
         if not sol["converged"]:

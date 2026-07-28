@@ -550,6 +550,46 @@ chk("info: rdd(L) 저항 resolve", abs(by_i["XRDD_un1"]["R"] - 0.5) < 1e-12,
 chk("info: cells=LIBRARY_CELLS 전수 + instance 역링크", len(ii["cells"]) == len(LIBRARY_CELLS)
     and "XVictim" in next(c for c in ii["cells"] if c["id"] == "victim_n")["instances"], "")
 
+# 10) PSET 파이프라인 S1 (이슈 #11): 바인딩 파서(발견=평가 공유) + pset 단일 운반
+from server.netlist import parse_binding, eval_binding, free_params  # noqa: E402
+
+pb = parse_binding("rdd(L,W)")
+chk("파서: func_expr 기호 추출", pb["kind"] == "func" and pb["symbols"] == ["L", "W"], str(pb))
+chk("파서: size_expr 분수 평가", parse_binding("x1/10")["symbols"] == ["x1"]
+    and abs(eval_binding(parse_binding("x1/10"), {"x1": 2.56}) - 0.256) < 1e-12, "")
+chk("파서: 상수/해석불가 구분", parse_binding("2.5")["kind"] == "const"
+    and parse_binding("a+b") is None, "")
+chk("파서: rdd(L,W) 평가 = model.rdd_r", abs(eval_binding(pb, {"L": 350.0, "W": 10.0}) - 0.25) < 1e-12, "")
+try:
+    eval_binding(parse_binding("foo(T)"), {"T": 1.0})
+    chk("파서: 미지 바인딩 함수 거부 (E1)", False, "예외 없음")
+except ValueError:
+    chk("파서: 미지 바인딩 함수 거부 (E1)", True, "")
+
+r_w5 = assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
+r_w10 = assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
+                           pset={"W": 10.0})
+chk("pset: 결과 echo (기본 W=5)", r_w5["pset"]["W"] == 5.0 and r_w10["pset"]["W"] == 10.0
+    and r_w5["pset"]["L"] == 350.0, str(r_w5["pset"]))
+chk("pset: rdd(L)은 W 무관 (기호 미등장 — 발견=평가 일치)",
+    abs(r_w5["v"]["IO"] - r_w10["v"]["IO"]) < 1e-9,
+    str((r_w5["v"]["IO"], r_w10["v"]["IO"])))
+
+Lw = copy.deepcopy(DEFAULT_LAYOUT)
+for el in Lw["elements"]:
+    if isinstance(el, dict) and (el.get("params") or {}).get("R") == "rdd(L)":
+        el["params"]["R"] = "rdd(L,W)"
+nlw = extract_netlist(Lw)
+fpw = {p["name"] for p in free_params(nlw)}
+chk("발견: 바인딩 rdd(L,W) → W 자동 발견", fpw == {"L", "W", "x1", "x2"}, str(fpw))
+rw5 = assemble_and_solve(nlw, inject="IO", ground="VSS", I=1.33, model_ctx=ctx)
+rw10 = assemble_and_solve(nlw, inject="IO", ground="VSS", I=1.33, model_ctx=ctx,
+                          pset={"W": 10.0})
+chk("평가: W=10 → RDD 절반 → ΔV(IO)=1.33×0.5Ω",
+    rw10["converged"] and abs((rw5["v"]["IO"] - rw10["v"]["IO"]) - 1.33 * 0.5) < 0.05,
+    str((rw5["v"]["IO"], rw10["v"]["IO"])))
+chk("평가: W=5 기준 rdd(L,W)=rdd(L) 동치", abs(rw5["v"]["IO"] - r_w5["v"]["IO"]) < 1e-9, "")
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:
