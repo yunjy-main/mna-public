@@ -82,8 +82,6 @@
     <div class="g23" id="ssDev"></div>
     <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;victim analytic map(V(OUT), I_v — probe 전용 정보)과 XI_ESD forcing 소스 곡선(SOA 없는 참고용)도 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
-    <h3>소자별 radar<span class="info" title="독립 spec 3계열 축 (바깥=위험, 빨간 점선=100% 경계, ghost=imin/½/0/½/imax):&#10;· V use / I use — 스크럽 전류에서의 SOA usage (방향별 vp/vn·ip/inn)&#10;· HBM±1kV — spec 전류(기본 1kV=1.33A, D9)를 주입했을 때의 SOA usage (양/음극)&#10;· cap/5pF — IO단 capacitance 예산(capLim) 분담. rail 소자(clamp)는 0&#10;victim: rule 수량별(VGS/VGD/VDS/VGB) usage + HBM± usage.">ⓘ</span></h3>
-    <div class="radars" id="ssRadar"></div>
     <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
     <h3>소자별 metric · ranking<span class="info" title="chip: 소자별 V·I·usage·PASS/FAIL (스크럽 전류 기준).&#10;ranking: usage 내림차순 — 상단이 현재 지배 제약.">ⓘ</span></h3>
@@ -115,9 +113,15 @@
     <div class="err" id="err"></div>
     <div id="optResult" hidden style="margin-top:6px">
       <div class="hint" id="optSummary"></div>
+      <div style="margin:6px 0 4px">
+        <label class="hint">optimizer iteration = <b id="optItLab">—</b><span class="info" title="최적화 궤적 스크럽 — 아래 radar·차트 marker가 이 iteration의 설계 상태를 따라간다 (current 슬라이더의 최적화판).">ⓘ</span></label>
+        <input id="optIdx" class="iscrub" type="range" min="0" max="30" value="30" style="width:100%;--zero:0%">
+      </div>
       <div class="g23" style="margin-top:4px">
         <div id="optLoss"></div><div id="optVars"></div><div id="optWorst"></div>
       </div>
+      <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
+      <div class="radars" id="optRadar"></div>
       <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
     </div>
   </div>
@@ -457,16 +461,6 @@ function dvUsage(d,c,k){
   const uI=I===null?0:(I>=0?I/d.soa.ip:I/d.soa.inn);
   return {uV,uI,u:Math.max(uV,uI),worst:uV>=uI?'V':'I',valid:true};
 }
-function dvGhosts(c,ax){
-  const gs=[], seen={};
-  [c.imin,c.imin/2,0,c.imax/2,c.imax].forEach(g=>{
-    if(g<c.imin-1e-9||g>c.imax+1e-9) return;
-    const k=dvIdxOf(c,g);
-    if(seen[k]) return; seen[k]=1;
-    gs.push({vals:ax(k)});
-  });
-  return gs;
-}
 
 // [renderer] I-V device — X=V(양단), Y=**소자 분기전류**(없으면 I inj로 fallback,
 // 사용자 지시 2026-07-28). 소자 자신의 signed 한계: vp/vn 세로선 + ip/inn 가로선
@@ -544,32 +538,8 @@ dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
     points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.red}],
     sym:true,xlabel:'V(양단) [V]'});
 }});
-// [renderer] 소자별 radar — 독립 spec 3계열 (사용자 확정 2026-07-28):
-//   SOA usage(스크럽) · HBM spec 전류(기본 1kV=1.33A)에서의 usage(양/음) · cap 예산 분담.
-//   share/margin류 파생 축은 정보량 0이라 제거.
-dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
-  const spec=(SS.esd_spec&&SS.esd_spec.default_amp)||1.33;
-  const kv=(SS.esd_spec&&SS.esd_spec.default_kv)||1;
-  const kP=dvIdxOf(c,spec), kN=dvIdxOf(c,-spec);
-  if(d.role==='soa_monitor'){
-    const rl=c.rules[d.model]||[];
-    const uq=(k,q)=>{const m=dvMon(d,c,k);if(!m||!m.stress)return 0;
-      const v=m.stress[q.quantity];return v>=0?v/q.max:v/q.min;};
-    const worst=k=>Math.max(0,...rl.map(q=>uq(k,q)));
-    const ax=k=>rl.map(q=>uq(k,q)).concat([worst(kP),worst(kN)]);
-    radar(el,d.key,
-      rl.map(r=>r.quantity).concat(['HBM+'+kv+'kV','HBM−'+kv+'kV']),
-      ax(c.idx),dvGhosts(c,ax));
-    return;
-  }
-  const u2=k=>{const u=dvUsage(d,c,k);return u?[Math.max(0,u.uV),Math.max(0,u.uI)]:[0,0];};
-  const uS=k=>{const u=dvUsage(d,c,k);return u?Math.max(0,u.u):0;};
-  const capU=(d.cap&&d.cap.on_io)?d.cap.c0/(SS.cap_lim||5e-12):0;  // IO 예산 분담 (rail 소자=0)
-  const ax=k=>u2(k).concat([uS(kP),uS(kN),capU]);
-  radar(el,d.key+' · size '+f(d.soa.size,3),
-    ['V use','I use','HBM+'+kv+'kV','HBM−'+kv+'kV','cap/'+f((SS.cap_lim||5e-12)*1e12,0)+'pF'],
-    ax(c.idx),dvGhosts(c,ax));
-}});
+// (소자별 radar는 §2 optimizer 결과로 이동 — 사용자 확정 2026-07-28:
+//  radar는 trade-off 뷰 = optimizer 도구. MNA 층 판정은 gauge/metric/ranking이 담당.)
 // [renderer] victim analytic map — I_v는 monitor에 없는 analytic probe 정보라 유일하게 유지.
 // (소자별 SOA map은 I-V device가 전 기능 포함하므로 삭제 — 사용자 지시 2026-07-28)
 dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
@@ -817,16 +787,53 @@ function renderOptResult(){
     +' ('+i.worst_name+') '+(i.soa_pass?P('PASS'):F('FAIL'))
     +'<br>최적: x1='+f(fn.x1,3)+' · x2='+f(fn.x2,0)+' · L='+f(fn.L,0)+'µm · worst '+pct(fn.worst)
     +' ('+fn.worst_name+') '+(fn.soa_pass?P('PASS'):F('FAIL'))+' · cap '+pct(fn.cap_u);
+  const sl=document.getElementById('optIdx');
+  sl.max=d.history.length-1;
+  sl.value=d.history.length-1;
+  renderOptIter();
+}
+// optimizer iteration 스크럽 — 최적화가 동작한 흐름을 따라 radar·marker가 움직인다
+function renderOptIter(){
+  const d=OPT; if(!d) return;
   const h=d.history;
+  const idx=Math.max(0,Math.min(+document.getElementById('optIdx').value||0,h.length-1));
+  const cur=h[idx];
+  document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
+    +'  (x1='+f(cur.x1,3)+' · x2='+f(cur.x2,0)+' · L='+f(cur.L,0)+'µm · worst '+pct(cur.worst)+')';
+  const vl=[{x:cur.it}];
   lineChart(document.getElementById('optLoss'),{title:'loss',w:380,h:150,
-    series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],xlabel:'iter'});
+    series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],
+    points:[{x:cur.it,y:cur.loss,r:4,color:CB.red}],vlines:vl,xlabel:'iter'});
   lineChart(document.getElementById('optVars'),{title:'variables',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.x1),color:CB.blue,label:'x1'},
             {x:h.map(r=>r.it),y:h.map(r=>r.x2/1000),color:CB.green,label:'x2/1000'},
-            {x:h.map(r=>r.it),y:h.map(r=>r.L/100),color:CB.purple,label:'L/100µm'}],xlabel:'iter'});
+            {x:h.map(r=>r.it),y:h.map(r=>r.L/100),color:CB.purple,label:'L/100µm'}],
+    vlines:vl,xlabel:'iter'});
   lineChart(document.getElementById('optWorst'),{title:'worst SOA usage',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.worst),color:CB.red,label:'worst u'}],
-    hlines:[{y:1,color:CB.red,label:'SOA 경계'}],xlabel:'iter'});
+    hlines:[{y:1,color:CB.red,label:'SOA 경계'}],
+    points:[{x:cur.it,y:cur.worst,r:4,color:CB.red}],vlines:vl,xlabel:'iter'});
+  // 소자별 radar — ghost=초기(iter 0), 실선=현재 iteration (소자 리스트는 usage 키에서 동적)
+  const box=document.getElementById('optRadar'); box.innerHTML='';
+  const us=cur.usages||{}, us0=h[0].usages||{};
+  const names=[...new Set(Object.keys(us0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
+  const x1base=SS?SS.x1:d.initial.x1, clim=(SS&&SS.cap_lim)||d.cap_lim||5e-12;
+  const g=(uu,k)=>Math.max(0,uu[k]||0);
+  names.forEach(nm=>{
+    const el=document.createElement('div'); box.appendChild(el);
+    const isMon=Object.keys(us0).some(k=>k.startsWith(nm+'·VGS'));
+    if(isMon){
+      const qs=[...new Set(Object.keys(us0).filter(k=>k.startsWith(nm+'·'))
+        .map(k=>k.split('·')[1].slice(0,-1)))];
+      const ax=uu=>qs.map(q=>g(uu,nm+'·'+q+'+')).concat(qs.map(q=>g(uu,nm+'·'+q+'-')));
+      radar(el,nm,qs.map(q=>q+'+').concat(qs.map(q=>q+'−')),ax(us),[{vals:ax(us0)}]);
+    }else{
+      const dev=SS?(SS.devices||[]).find(x=>x.key===nm):null;
+      const capOf=x1v=>(dev&&dev.cap&&dev.cap.on_io)?dev.cap.c0*(x1v/x1base)/clim:0;
+      const ax=(uu,x1v)=>[g(uu,nm+'·V+'),g(uu,nm+'·I+'),g(uu,nm+'·V-'),g(uu,nm+'·I-'),capOf(x1v)];
+      radar(el,nm,['V+','I+','V−','I−','cap'],ax(us,cur.x1),[{vals:ax(us0,h[0].x1)}]);
+    }
+  });
 }
 document.getElementById('applyBtn').addEventListener('click',()=>{
   if(!OPT) return;
@@ -836,6 +843,7 @@ document.getElementById('applyBtn').addEventListener('click',()=>{
   loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
 });
 document.getElementById('startBtn').addEventListener('click',startMnaOpt);
+document.getElementById('optIdx').addEventListener('input',renderOptIter);
 document.getElementById('legacyBtn').addEventListener('click',start);
 document.getElementById('resetBtn').addEventListener('click',()=>location.reload());
 document.getElementById('islider').addEventListener('input',()=>{if(DATA)renderAll();});

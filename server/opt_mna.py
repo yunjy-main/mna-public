@@ -58,11 +58,11 @@ def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
             out["{}·I{}".format(key, tag)] = I / e["ip"] if I >= 0 else I / e["inn"]
         for m in evaluate_soa_monitors(nl, sol):
             if m["valid"] and m["checks"]:
-                u = 0.0
+                # rule 수량별로 기록 — optimizer radar가 iteration 흐름을 축별로 추적
                 for c in m["checks"]:
                     v = c["value"]
-                    u = max(u, v / c["max"] if v >= 0 else v / c["min"])
-                out["{}·SOA{}".format(m["instance"], tag)] = u
+                    out["{}·{}{}".format(m["instance"], c["quantity"], tag)] = (
+                        v / c["max"] if v >= 0 else v / c["min"])
             elif not m["valid"]:
                 out["{}·invalid{}".format(m["instance"], tag)] = 3.0
     out["cap(IO)"] = sum(c["c0"] for c in caps.values() if c and c["on_io"]) / cap_lim
@@ -92,9 +92,10 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
         pen = mu_soa * sum(_softplus(8.0 * (u - U_TARGET)) / 8.0 for u in us.values())
         rule = 0.0
         for v, (lo, hi) in zip((xx1, xx2, ll), bounds):
-            sc = 0.05 * (hi - lo)
-            rule += _softplus((lo - v) / sc) + _softplus((v - hi) / sc)
-        return cost + pen + mu_rule * 0.1 * rule, us
+            span = hi - lo
+            # 창립 rule 비대칭: min=가혹 FAIL(급경사), max=준-rule(완경사)
+            rule += _softplus((lo - v) / (0.01 * span)) + _softplus((v - hi) / (0.05 * span))
+        return cost + pen + mu_rule * rule, us
 
     def summarize(z, us):
         xx1, xx2, ll = to_x(z)
@@ -115,8 +116,11 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     mom = [0.0] * 3
     vel = [0.0] * 3
     b1, b2, eps_ = 0.9, 0.999, 1e-9
+    def _round_us(us):
+        return {k: round(u, 4) for k, u in us.items()}
+
     history = [{"it": 0, "loss": f0, "x1": initial["x1"], "x2": initial["x2"],
-                "L": initial["L"], "worst": initial["worst"]}]
+                "L": initial["L"], "worst": initial["worst"], "usages": _round_us(us0)}]
     for it in range(1, iters + 1):
         f_base, us_base = evaluate(z)
         grad = []
@@ -136,7 +140,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             best_f, best_z, best_us = f_new, list(z), us_new
         s = summarize(z, us_new)
         history.append({"it": it, "loss": f_new, "x1": s["x1"], "x2": s["x2"],
-                        "L": s["L"], "worst": s["worst"]})
+                        "L": s["L"], "worst": s["worst"], "usages": _round_us(us_new)})
     # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거
     xb1, xb2, lb = to_x(best_z)
     us_final = design_usages(nl, xb1, xb2, lb, corner, force, ground, i_spec, cap_lim,
