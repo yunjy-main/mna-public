@@ -590,6 +590,35 @@ chk("평가: W=10 → RDD 절반 → ΔV(IO)=1.33×0.5Ω",
     str((rw5["v"]["IO"], rw10["v"]["IO"])))
 chk("평가: W=5 기준 rdd(L,W)=rdd(L) 동치", abs(rw5["v"]["IO"] - r_w5["v"]["IO"]) < 1e-9, "")
 
+# 11) PSET 파이프라인 S2 (이슈 #11): supported 자동 판정 + pset query 수집
+from server.main import _params_registry, _pset_from_query  # noqa: E402
+
+reg = _params_registry(nl)
+chk("S2 registry: 현 schematic 3기호 supported", {r["name"]: r["supported"] for r in reg}
+    == {"L": True, "x1": True, "x2": True}, str([(r["name"], r["supported"]) for r in reg]))
+regw = _params_registry(nlw)
+chk("S2 registry: rdd(L,W) → W supported 자동 (화이트리스트 폐지)",
+    {r["name"] for r in regw if r["supported"]} == {"L", "W", "x1", "x2"}, "")
+Lf = copy.deepcopy(DEFAULT_LAYOUT)
+for el in Lf["elements"]:
+    if isinstance(el, dict) and (el.get("params") or {}).get("R") == "rdd(L)":
+        el["params"]["R"] = "foo(T)"
+        break
+regf = _params_registry(extract_netlist(Lf))
+tf = next(r for r in regf if r["name"] == "T")
+chk("S2 registry: 미지 함수 기호 — 발견되나 미지원 (E1/E2)", tf["supported"] is False
+    and tf["meta_defined"] is False and tf["default"] is None, str(tf))
+p2, e2 = _pset_from_query({"W": "10"}, regw)
+chk("S2 pset query: 값 반영 + META default 병합", e2 is None and p2["W"] == 10.0
+    and p2["L"] == 350.0 and p2["x1"] == 2.56, str(p2))
+_, e3 = _pset_from_query({"L": "-5"}, reg)
+chk("S2 pset query: 무효값 422 (E5)", e3 is not None and e3.status_code == 422, "")
+ii2 = instance_info()
+chk("S2 instance_info: pset=발견 기호만 echo + R=파서 평가",
+    set(ii2["pset"]) == {"L", "x1", "x2"}
+    and abs(next(i for i in ii2["instances"] if i["instance"] == "XRDD_un1")["R"] - 0.5) < 1e-12,
+    str(ii2.get("pset")))
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:

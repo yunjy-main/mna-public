@@ -334,6 +334,18 @@ def eval_binding(parsed, pset):
     return fn(*args)
 
 
+def binding_ok(expr):
+    """식을 엔진이 평가할 수 있는가 — supported 자동 판정의 원천 (이슈 #11 §1.4).
+    parse 실패 또는 미등록 함수(E1)=False. 화이트리스트(ENGINE_PARAMS) 대체."""
+    pb = parse_binding(expr)
+    if not pb:
+        return False
+    if pb["kind"] == "func":
+        from server import model as M
+        return pb["fn"] in M.BINDING_FUNCS
+    return True
+
+
 def _pset(pset=None, **legacy):
     """PSET 병합 — PARAM_META defaults ∪ legacy 이름 인자(동결 호환층, None 무시) ∪ pset.
     모든 엔진 함수의 값 운반은 이 dict 하나 (이슈 #11 §1.2 — 이름 인자 신규 추가 금지)."""

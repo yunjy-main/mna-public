@@ -381,7 +381,8 @@ def build_svg(x1, x2, L=350.0, op=None, layout=None):
     """Render the layout (saved/custom/default) to SVG. op = node voltages/currents."""
     if layout is None:
         layout, _ = load_layout()
-    rvdd = 0.5 * L / 350.0
+    from server import model as _M
+    rvdd = _M.rdd_r(L)  # 금속 저항 정본 = model.rdd_r (인라인 공식 폐지, 이슈 #11)
     subst = {"x1": "{:g}".format(x1), "x2": "{:g}".format(x2),
              "L": "{:g}".format(L), "rvdd": "{:.3g}".format(rvdd)}
 

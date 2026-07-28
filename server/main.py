@@ -114,6 +114,66 @@ def _window_error(x1, x2):
     return None
 
 
+def _params_registry(nl):
+    """자유 파라미터 레지스트리 (이슈 #11) — 발견(schematic 파서)+속성(PARAM_META) 병합.
+    supported 자동 판정: 등장하는 모든 바인딩 식이 평가 가능(E1)하고 META 정의(E2)일 때만
+    true — ENGINE_PARAMS 화이트리스트 폐지. default 발명 금지(META 없으면 None)."""
+    from server.netlist import free_params, binding_ok
+    params = []
+    for p in free_params(nl):
+        meta = M.PARAM_META.get(p["name"])
+        if meta and meta.get("dev") == "diode":
+            lo, hi = M.xwindow(M.D1)
+        elif meta and meta.get("dev") == "clamp":
+            lo, hi = M.xwindow(M.D2)
+        else:
+            lo, hi = (meta or {}).get("lo"), (meta or {}).get("hi")
+        rule = (meta or {}).get("rule") or (lo, hi)
+        params.append({"name": p["name"], "default": (meta or {}).get("default"),
+                       "unit": (meta or {}).get("unit", ""), "lo": lo, "hi": hi,
+                       "rule_lo": rule[0] if rule else None,
+                       "rule_hi": rule[1] if rule else None,
+                       "devices": p["devices"], "exprs": p["exprs"],
+                       "meta_defined": meta is not None,
+                       "supported": meta is not None and all(binding_ok(e) for e in p["exprs"])})
+    return params
+
+
+def _pset_from_query(q, registry):
+    """query dict → pset (이슈 #11 §2.4). 미지정=META default, 값은 min_valid 초과
+    필수(E5 — 0-나눗셈 등 무효값 차단). META 미정의 기호는 싣지 않음(E2).
+    반환 (pset, 오류응답|None)."""
+    p = {}
+    for it in registry:
+        name = it["name"]
+        meta = M.PARAM_META.get(name)
+        raw = q.get(name)
+        if raw is None or raw == "":
+            if meta is None:
+                continue
+            v = meta["default"]
+        else:
+            try:
+                v = float(raw)
+            except ValueError:
+                return None, PlainTextResponse("{}={} 숫자 아님".format(name, raw),
+                                               status_code=422)
+        mv = (meta or {}).get("min_valid", 0.0)
+        if not (v > mv):
+            return None, PlainTextResponse(
+                "{}={} 무효 — > {} 필요 (이슈 #11 E5)".format(name, v, mv), status_code=422)
+        p[name] = v
+    return p, None
+
+
+@app.get(PREFIX + "/api/params")
+def params_api():
+    """자유 파라미터 레지스트리 단일 엔드포인트 — 전 페이지 입력 렌더의 원천 (이슈 #11)."""
+    from server.schematic import load_layout
+    from server.netlist import extract_netlist
+    return {"params": _params_registry(extract_netlist(load_layout()[0]))}
+
+
 def _GofI(br, i):
     """Interpolate branch conductance at a given current (None beyond endpoint)."""
     I, G = br["I"], br["G"]
@@ -270,7 +330,7 @@ def circuit(x1: float = 2.56, x2: float = 1415.232, i: float = A_PER_KV, corner:
     op = None
     if 0 <= i <= ifail:
         v1, v2 = M.VofI(c1["pos"], i), M.VofI(c2["pos"], i)
-        rdd = 0.5 * 350.0 / 350.0  # 기준 L=350 → RDD_un1 = RDD_dn1 = 0.5Ω (표시용)
+        rdd = M.rdd_r(350.0)  # 기준 L=350 → RDD_un1 = RDD_dn1 = 0.5Ω (표시용, 정본=model)
         vssr = i * M.RVSS_RDL             # VSS rail node A (victim NMOS ref)
         n3b = vssr + i * M.RDD_DN1        # clamp bottom = node A + RDD_dn1 강하
         n3_abs = v2 + n3b                 # clamp top (victim PMOS source)
@@ -487,7 +547,7 @@ def schematic(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
     if 0 < i <= ifail:
-        rvdd = 0.5 * L / 350.0        # RDD_un1
+        rvdd = M.rdd_r(L)             # RDD_un1 (정본=model.rdd_r)
         rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
         vssr = i * M.RVSS_RDL         # node A (victim NMOS ref)
         vd = M.VofI(c1["pos"], i)
@@ -515,7 +575,7 @@ def schematic_table(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         return PlainTextResponse("corner must be worst|best", status_code=422)
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     ifail = min(c1["e"]["ip"], c2["e"]["ip"])
-    rvdd = 0.5 * L / 350.0        # RDD_un1
+    rvdd = M.rdd_r(L)             # RDD_un1 (정본=model.rdd_r)
     rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
     out = {"ifail": ifail, "I": [], "IO": [], "N1": [], "N2": [], "N3": [], "N3B": [],
            "OUT": [], "VSSR": [], "IV": []}
@@ -560,8 +620,9 @@ def schematic_library_cell(cell_id: str):
     return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
 
-def _model_ctx_or_err(model_mode, x1, x2, corner):
-    """model_mode 파라미터 → (model_ctx, 오류응답). measured면 D5 창·corner 검증."""
+def _model_ctx_or_err(model_mode, pset, corner):
+    """model_mode 파라미터 → (model_ctx, 오류응답). measured면 D5 창·corner 검증.
+    pset: 자유 파라미터 dict (이슈 #11 — 이름 인자 threading 폐지)."""
     from server.netlist import measured_context
     if model_mode == "placeholder":
         return None, None
@@ -569,10 +630,11 @@ def _model_ctx_or_err(model_mode, x1, x2, corner):
         return None, PlainTextResponse("model_mode must be measured|placeholder", status_code=422)
     if corner not in ("worst", "best"):
         return None, PlainTextResponse("corner must be worst|best", status_code=422)
-    err = _window_error(x1, x2)
+    err = _window_error(pset.get("x1", M.PARAM_META["x1"]["default"]),
+                        pset.get("x2", M.PARAM_META["x2"]["default"]))
     if err:
         return None, err
-    return measured_context(x1=x1, x2=x2, corner=corner), None
+    return measured_context(corner=corner, pset=pset), None
 
 
 @app.get(PREFIX + "/api/schematic/matrix")
@@ -587,7 +649,7 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
     inject/ground = net 이름(IO/VDD/VSS/MVSS/VSS2...), open 소자는 미조립."""
     from server.schematic import load_layout
     from server.netlist import extract_netlist, assemble_and_solve, evaluate_soa_monitors
-    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+    ctx, err = _model_ctx_or_err(model_mode, {"x1": x1, "x2": x2}, corner)
     if err:
         return err
     nl = extract_netlist(load_layout()[0])  # R15: 표시 중인 회로도(custom 포함)가 원천
@@ -634,23 +696,28 @@ def _slug(name):
 
 
 @app.get(PREFIX + "/api/instance/info")
-def instance_info(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
-                  corner: str = "worst"):
+def instance_info(request: Request = None, corner: str = "worst"):
     """instance/subcircuit 페이지 원천 — 전 소자(저항·open 포함) 메타 + model 시각화
-    데이터(실측 I-V 곡선·SOA endpoint·cap). sweep 없이 소자 정보만 (경량)."""
+    데이터(실측 I-V 곡선·SOA endpoint·cap). sweep 없이 소자 정보만 (경량).
+    자유 파라미터는 레지스트리 기반 pset (이슈 #11 — 기존 query 이름 호환)."""
     from server.schematic import load_layout, LIBRARY_CELLS
     from server.netlist import (extract_netlist, soa_endpoints, device_caps,
-                                device_curves, size_expr_of, soa_rules_for, device_keys)
+                                device_curves, size_expr_of, soa_rules_for, device_keys,
+                                parse_binding, eval_binding, binding_ok)
     if corner not in ("worst", "best"):
         return PlainTextResponse("corner must be worst|best", status_code=422)
-    err = _window_error(x1, x2)
+    nl = extract_netlist(load_layout()[0])
+    p, err = _pset_from_query(dict(request.query_params) if request is not None else {},
+                              _params_registry(nl))
     if err:
         return err
-    nl = extract_netlist(load_layout()[0])
+    err = _window_error(p["x1"], p["x2"])
+    if err:
+        return err
     names = nl["nets"]
-    eps = soa_endpoints(nl, x1=x1, x2=x2, corner=corner)
-    caps = device_caps(nl, x1=x1, x2=x2)
-    curves = device_curves(nl, x1=x1, x2=x2, corner=corner)
+    eps = soa_endpoints(nl, corner=corner, pset=p)
+    caps = device_caps(nl, pset=p)
+    curves = device_curves(nl, corner=corner, pset=p)
     key_of = {}
     for k, d in device_keys(nl):
         key_of[id(d)] = k
@@ -677,34 +744,44 @@ def instance_info(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
             ent["rules"] = soa_rules_for(d["model"])
         if d["kind"] == "resistor":
             R = (d.get("params") or {}).get("R")
-            ent["R"] = (0.5 * L / 350.0) if R == "rdd(L)" else R
+            if isinstance(R, str):  # 바인딩 식 — 파서 평가 (문자열 비교 하드코딩 폐지)
+                pb = parse_binding(R)
+                ent["R"] = eval_binding(pb, p) if (pb and binding_ok(R)) else None
+            else:
+                ent["R"] = R
     cells = [{"id": c["id"], "name": c["name"], "models": c["models"],
               "instances": [i["instance"] for i in instances.values()
                             if i["cell"] == c["id"]]}
              for c in LIBRARY_CELLS]
-    return {"x1": x1, "x2": x2, "L": L, "corner": corner,
-            "instances": list(instances.values()), "cells": cells}
+    return {"pset": p, "x1": p.get("x1"), "x2": p.get("x2"), "L": p.get("L"),
+            "corner": corner, "instances": list(instances.values()), "cells": cells}
 
 
 @app.get(PREFIX + "/api/analysis/sweep")
-def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
-                   x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
+def analysis_sweep(request: Request, imax: float = 2.0, n: int = 21,
+                   corner: str = "worst",
                    model_mode: str = "measured", imin: float = 0.0,
                    cap_lim_pf: float = None, hbm_kv: float = None, slim: int = 0):
     """6종 ordered rail 시나리오 × I=imin→Imax continuation sweep + 매 point SOA 평가
     (이슈 #10 §5 + 사용자 궁극 목표: 실측 model 연계, point마다 저항 제외 device_v).
     imin<0이면 양극 sweep(0에서 바깥쪽 두 갈래 continuation).
+    자유 파라미터(x1/x2/L/…)는 레지스트리 기반 pset으로 query에서 수집 —
+    이름 박힌 인자 폐지 (이슈 #11 §2.4, 기존 query 이름 호환).
     상태: non_convergence / unresolved_monitor_terminal / soa_fail / pass."""
     from server.schematic import load_layout
     from server.netlist import extract_netlist, sweep_scenario, RAIL_SCENARIOS
     if not (0 < imax <= 100) or not (2 <= n <= 801) or not (-100 <= imin < imax):
         return PlainTextResponse("imax∈(0,100], n∈[2,801], imin∈[-100,imax) 필요", status_code=422)
     from server.netlist import (device_keys, soa_endpoints, soa_rules_for, device_curves,
-                                device_caps, size_expr_of, free_params)
-    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+                                device_caps, size_expr_of)
+    nl = extract_netlist(load_layout()[0])
+    params = _params_registry(nl)
+    p, err = _pset_from_query(dict(request.query_params), params)
     if err:
         return err
-    nl = extract_netlist(load_layout()[0])
+    ctx, err = _model_ctx_or_err(model_mode, p, corner)
+    if err:
+        return err
     _SWEEP_PROG["done"], _SWEEP_PROG["total"] = 0, n * len(RAIL_SCENARIOS)
 
     def _tick():
@@ -712,15 +789,15 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     scenarios = []
     for force, ground in RAIL_SCENARIOS:
         try:
-            scenarios.append(sweep_scenario(nl, force, ground, imax=imax, n=n, L=L,
+            scenarios.append(sweep_scenario(nl, force, ground, imax=imax, n=n, pset=p,
                                             model_ctx=ctx, imin=imin,
                                             progress_cb=_tick, slim=bool(slim)))
         except ValueError as ex:
             scenarios.append({"force": force, "ground": ground, "error": str(ex)})
     # 소자 리스트 = frontend 시각화의 단일 원천 (key는 device_v/device_i와 동일)
-    eps = soa_endpoints(nl, x1=x1, x2=x2, corner=corner)
-    curves = device_curves(nl, x1=x1, x2=x2, corner=corner)
-    caps = device_caps(nl, x1=x1, x2=x2)
+    eps = soa_endpoints(nl, corner=corner, pset=p)
+    curves = device_curves(nl, corner=corner, pset=p)
+    caps = device_caps(nl, pset=p)
     devices = [{"key": k, "instance": d.get("instance"), "cell": d.get("cell"),
                 "model": d.get("model"), "kind": d["kind"], "role": d.get("role"),
                 "params": d.get("params", {}), "size_expr": size_expr_of(d),
@@ -730,30 +807,13 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
-    # 자유 파라미터 목록 — schematic 발견 + 모델 meta 병합 (§1 입력 동적 생성의 원천).
-    # supported=False면 회로도에 기호는 있으나 solve 엔진이 아직 모르는 파라미터 —
-    # frontend는 비활성 input으로 표기(활성=연계 원칙).
-    ENGINE_PARAMS = ("x1", "x2", "L")
-    params = []
-    for p in free_params(nl):
-        meta = M.PARAM_META.get(p["name"], {})
-        if meta.get("dev") == "diode":
-            lo, hi = M.xwindow(M.D1)
-        elif meta.get("dev") == "clamp":
-            lo, hi = M.xwindow(M.D2)
-        else:
-            lo, hi = meta.get("lo"), meta.get("hi")
-        rule = meta.get("rule") or (lo, hi)  # optimizer 탐색 창 (§3 행 원천)
-        params.append({"name": p["name"], "default": meta.get("default", 1.0),
-                       "unit": meta.get("unit", ""), "lo": lo, "hi": hi,
-                       "rule_lo": rule[0], "rule_hi": rule[1],
-                       "devices": p["devices"], "exprs": p["exprs"],
-                       "supported": p["name"] in ENGINE_PARAMS})
     io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
     # spec 입력(UI) 반영 — 미지정 시 model 기본값 (capLim 5pF, HBM 1kV)
     cap_lim = (cap_lim_pf * 1e-12) if (cap_lim_pf and cap_lim_pf > 0) else M.IO_CAP_LIM
     spec_kv = hbm_kv if (hbm_kv and hbm_kv > 0) else M.HBM_DEFAULT_KV
-    return {"imax": imax, "imin": imin, "n": n, "L": L, "x1": x1, "x2": x2,
+    # pset echo가 정본 — 개별 키(x1/x2/L)는 전환기 호환(E6, S4에서 제거)
+    return {"imax": imax, "imin": imin, "n": n, "pset": p,
+            "L": p.get("L"), "x1": p.get("x1"), "x2": p.get("x2"),
             "params": params,
             "corner": corner, "model_mode": model_mode, "devices": devices,
             "cap_lim": cap_lim, "io_cap_total": io_cap_total,
@@ -822,7 +882,7 @@ async def schematic_matrix_preview(request: Request, inject: str = "IO", ground:
     """POST된 layout(저장 전)을 netlist→MNA로 해석 — 편집 중 topology 확인용 (이슈 #9 P0).
     matrix와 동일하게 model_mode=measured 기본 (주어진 schematic+model → 동적 조립)."""
     from server.netlist import extract_netlist, assemble_and_solve, evaluate_soa_monitors
-    ctx, err = _model_ctx_or_err(model_mode, x1, x2, corner)
+    ctx, err = _model_ctx_or_err(model_mode, {"x1": x1, "x2": x2}, corner)
     if err:
         return err
     layout = await request.json()
@@ -897,7 +957,7 @@ async def schematic_preview(request: Request, x1: float = 2.56, x2: float = 1415
     op = None
     c1, c2 = _cal(M.D1, x1, corner), _cal(M.D2, x2, corner)
     if 0 < i <= min(c1["e"]["ip"], c2["e"]["ip"]):
-        rvdd = 0.5 * L / 350.0        # RDD_un1
+        rvdd = M.rdd_r(L)             # RDD_un1 (정본=model.rdd_r)
         rdd_dn1 = rvdd                # RDD_dn1 (동일 규칙·공유 L)
         vssr = i * M.RVSS_RDL         # node A
         vd = M.VofI(c1["pos"], i)
