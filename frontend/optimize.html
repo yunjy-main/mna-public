@@ -230,6 +230,15 @@ victim SOA는 U_overall = max(NMOS/PMOS terminal·oxide) — SG NFET/PFET, topol
     <div class="tw"><table id="itTable"></table></div>
   </div>
 </main>
+<!-- 하단 고정 overlay: injected current 슬라이더 — 어느 스크롤 위치에서든 그래프 연동 -->
+<div id="iovl" style="position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:rgba(255,255,255,.97);border-top:1px solid #cfd6df;
+  box-shadow:0 -2px 8px rgba(0,0,0,.08);padding:5px 14px;display:flex;gap:10px;align-items:center">
+  <span style="font-size:var(--fs-small);font-weight:700;white-space:nowrap">Injected current</span>
+  <input id="iovlR" type="range" min="0" max="1000" value="650" style="flex:1;margin:0">
+  <b id="iovlLab" style="font-size:var(--fs-small);min-width:62px;text-align:right">—</b>
+  <span id="iovlSt" style="font-size:var(--fs-tiny);min-width:150px;text-align:right"></span>
+</div>
 <script>
 'use strict';
 const CB={blue:MNA.C.s[0],orange:MNA.C.worst2,green:MNA.C.s[1],purple:MNA.C.s[2],sky:MNA.C.best2,gray:MNA.C.gray,red:MNA.C.fail,gold:MNA.C.gold};
@@ -353,6 +362,13 @@ function dvRenderAll(){
   if(!SS) return;
   const c=DV.ctx=dvCtx();
   document.getElementById('ssIlab').textContent=c?f(c.iNow,2):'—';
+  if(c){ // 하단 overlay 슬라이더 동기화 (드래그 중에는 위치 강제 이동 금지)
+    document.getElementById('iovlLab').textContent=f(c.iNow,2)+' A';
+    const st=document.getElementById('iovlSt');
+    st.textContent=c.sc.force+'→'+c.sc.ground+' · '+c.pNow.status;
+    st.style.color=c.pNow.status==='pass'?'#0b7a3b':'#b3261e';
+    if(!IOVL_LOCK) document.getElementById('iovlR').value=Math.round(c.iNow/(c.imax||1)*1000);
+  }
   DV.reg.forEach(r=>{
     const host=document.getElementById(r.host); if(!host) return;
     host.innerHTML='';
@@ -662,7 +678,28 @@ loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
 document.getElementById('ssBtn').addEventListener('click',loadSchemSweep);
 document.getElementById('ssScn').addEventListener('change',dvRenderAll);
 document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
+// 하단 overlay 슬라이더: 마스터 전류 조작 — 최적화 로드 시 islider까지,
+// 아니면 2-0 스크럽만 구동. rAF 스로틀로 드래그 중 재렌더 폭주 방지.
+let IOVL_LOCK=false, IOVL_RAF=0;
 loadSchemSweep();
+document.body.style.paddingBottom='46px'; // overlay에 본문이 가리지 않게
+document.getElementById('iovlR').addEventListener('input',()=>{
+  if(IOVL_RAF) return;
+  IOVL_RAF=requestAnimationFrame(()=>{
+    IOVL_RAF=0; IOVL_LOCK=true;
+    const fr=+document.getElementById('iovlR').value/1000;
+    if(DATA){
+      const sl=document.getElementById('islider');
+      sl.value=Math.round(fr*(+sl.max));
+      renderAll();               // §2 전체 + (내부 동기화로) 2-0까지 갱신
+    }else if(SS){
+      const sl=document.getElementById('ssIdx');
+      sl.value=Math.round(fr*(+sl.max));
+      dvRenderAll();             // 2-0 소자 시각화 갱신
+    }
+    IOVL_LOCK=false;
+  });
+});
 fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
   .then(d=>{
     const box=document.getElementById('schemLib');
