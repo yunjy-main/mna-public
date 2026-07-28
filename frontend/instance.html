@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>mna — Instances</title>
+<link rel="stylesheet" href="static/style.css">
+<style>
+  .inst{border:1px solid #c6ccd4;border-radius:4px;padding:8px 10px;margin:8px 0;scroll-margin-top:8px}
+  .inst:target{border-color:#1f5f99;box-shadow:0 0 0 2px #1f5f9933}
+  .inst.open{color:#8a94a0}
+  .toc{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:var(--fs-small);margin:4px 0 8px}
+  .kv2{font-size:var(--fs-small);margin:2px 0}
+  .g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-width:820px}
+  .info{cursor:help;color:#8a94a0;font-size:11px;margin-left:4px;border-bottom:1px dotted #b0b6bf}
+</style>
+</head>
+<body>
+<header data-app="mna-esd-solver">
+  <h1>Instances — schematic 전 소자 정본</h1>
+  <span class="sub">instance별 model·parameter·특성 시각화 (앵커: #instance)</span>
+  <a href="hub">화면 목록 ▤</a>
+</header>
+<main>
+  <div class="card">
+    <div class="short cap" style="margin:0 0 6px">
+      바로가기: <a href="./">Optimizer</a> <a href="circuit">Circuit/MNA</a>
+      <a href="subcircuit">Subcircuit Set</a> <a href="models">Device/SOA</a>
+    </div>
+    <div class="cap" id="hdr">불러오는 중…</div>
+    <div class="toc" id="toc"></div>
+    <div id="list"></div>
+  </div>
+</main>
+<script src="static/charts.js"></script>
+<script>
+'use strict';
+const f=MNA.f, pct=MNA.pct, lineChart=MNA.lineChart;
+const slug=s=>String(s).replace(/[^0-9A-Za-z가-힣]+/g,'_');
+const qp=new URLSearchParams(location.search);
+const q='x1='+(qp.get('x1')||2.56)+'&x2='+(qp.get('x2')||1415.232)
+  +'&L='+(qp.get('L')||350)+'&corner='+(qp.get('corner')||'worst');
+
+fetch('api/instance/info?'+q)
+  .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+  .then(d=>{
+    document.getElementById('hdr').textContent=
+      d.instances.length+' instances · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm · corner='+d.corner
+      +' — 카드/Subcircuit 클릭으로 진입 시 해당 섹션이 강조됩니다.';
+    const toc=document.getElementById('toc');
+    toc.innerHTML=d.instances.map(i=>'<a href="#'+i.slug+'">'+i.instance+'</a>').join('');
+    const list=document.getElementById('list');
+    d.instances.forEach(i=>{
+      const sec=document.createElement('div');
+      sec.className='inst'+(i.open?' open':'');
+      sec.id=i.slug;
+      let h='<b style="font-size:var(--fs-h2)">'+i.instance+'</b> '
+        +'<span style="color:#8a94a0">'+i.elements.map(e=>e.kind).join('·')
+        +' · cell <a href="subcircuit#'+(i.cell||'')+'">'+(i.cell||'—')+'</a>'
+        +(i.role?' · '+i.role:'')+(i.open?' · open(미조립)':'')+'</span>'
+        +'<div class="kv2">model: <b>'+(i.model||'—')+'</b>'
+        +' · pins: '+i.elements.map(e=>e.pins).join(' | ')
+        +' · params: '+(Object.entries(i.params||{}).map(([k,v])=>k+'='+v).join(' · ')||'—')
+        +(i.size_expr?(' · size='+i.size_expr+(i.soa?(' → '+f(i.soa.size,4)):'')):'')
+        +(i.R!==undefined?(' · R='+f(+i.R,3)+'Ω'):'')+'</div>';
+      if(i.soa) h+='<div class="kv2">SOA endpoint: vp '+f(i.soa.vp,3)+'V · ip '+f(i.soa.ip,3)
+        +'A / vn '+f(i.soa.vn,3)+'V · inn '+f(i.soa.inn,4)+'A</div>';
+      if(i.cap) h+='<div class="kv2">C0 = '+f(i.cap.c0*1e15,0)+'fF ('
+        +(i.cap.on_io?'IO 예산':'rail')+') · Vbi '+i.cap.vbi+'V · mj '+i.cap.mj+'</div>';
+      if(i.rules) h+='<div class="kv2">SOA rules: '+i.rules.map(r=>
+        r.quantity+'∈['+r.min+', '+r.max+']V').join(' · ')+'</div>';
+      sec.innerHTML=h;
+      if(i.curve){ // 실측 특성곡선 + SOA endpoint 안전영역 (element 좌표계)
+        const g2=document.createElement('div'); g2.className='g2'; sec.appendChild(g2);
+        const cdiv=document.createElement('div'); g2.appendChild(cdiv);
+        const vl=[], hl=[], pts=[];
+        if(i.soa){
+          vl.push({x:i.soa.vp,color:'#b3261e',label:'vp '+f(i.soa.vp,2)},
+                  {x:i.soa.vn,color:'#b3261e',label:'vn '+f(i.soa.vn,2)});
+          hl.push({y:i.soa.ip,color:'#e0663a',label:'ip '+f(i.soa.ip,2)+'A'},
+                  {y:i.soa.inn,color:'#e0663a',label:'inn '+f(i.soa.inn,3)+'A'});
+          pts.push({x:i.soa.vp,y:0,r:0,color:'none'},{x:i.soa.vn,y:0,r:0,color:'none'});
+        }
+        lineChart(cdiv,{title:'I-V 특성 ('+(i.model||i.cell)+' · '+f((i.soa||{}).size||0,3)+')',
+          w:390,h:190,sym:true,
+          series:[{x:i.curve.V,y:i.curve.I,color:'#1f5f99',label:'measured'}],
+          vlines:vl,hlines:hl,points:pts,
+          shadeRect:i.soa?[i.soa.vn,i.soa.inn,i.soa.vp,i.soa.ip]:null,
+          xlabel:'V(양단, element 방향) [V]'});
+        if(i.cap){ // C-V 곡선 (생성 모델)
+          const cv=document.createElement('div'); g2.appendChild(cv);
+          const xs=[],ys=[];
+          for(let v=-8;v<=1.0+1e-9;v+=0.1){
+            const veff=Math.min(v,i.cap.fc*i.cap.vbi);
+            xs.push(v); ys.push(i.cap.c0*1e15/Math.pow(1-veff/i.cap.vbi,i.cap.mj));
+          }
+          lineChart(cv,{title:'C-V (접합 모델)',w:390,h:190,origin:true,
+            series:[{x:xs,y:ys,color:'#00796b',label:'C [fF]'}],xlabel:'V [V]'});
+        }
+      }
+      list.appendChild(sec);
+    });
+    if(location.hash){ // 렌더 후 해시 재설정 — 스크롤 + :target 강조 재평가
+      const h=location.hash; location.hash=''; location.hash=h;
+    }
+  })
+  .catch(e=>{document.getElementById('hdr').textContent='오류: '+(e.message||e);});
+</script>
+</body>
+</html>

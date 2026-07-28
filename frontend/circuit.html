@@ -116,7 +116,9 @@ function load(){
       box.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start';
       d.cells.forEach(c=>{
         const cell=document.createElement('div');
-        cell.style.cssText='display:flex;flex-direction:column;align-items:flex-start;border:1px solid #d0d5db;padding:3px 5px;background:#fff';
+        cell.style.cssText='display:flex;flex-direction:column;align-items:flex-start;border:1px solid #d0d5db;padding:3px 5px;background:#fff;cursor:pointer';
+        cell.title='클릭: Subcircuit 페이지의 '+c.name+' 섹션으로 이동';
+        cell.addEventListener('click',()=>{location.href='subcircuit#'+c.id;});
         const cv=document.createElement('div');
         const ml=document.createElement('ul');
         ml.style.cssText='font-size:10px;color:#5b6673;line-height:1.3;margin:2px 0 0;padding-left:14px';

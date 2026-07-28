@@ -505,6 +505,25 @@ chk("opt: history/schema", len(ro["history"]) == 5
 chk("opt: 탐색 범위 유지", 0.3 < ro["final"]["x1"] < 4.7 and ro["final"]["L"] >= 1.0,
     str((ro["final"]["x1"], ro["final"]["L"])))
 
+# 9) instance/subcircuit 정본 페이지 원천 (사용자 지시 2026-07-28): /api/instance/info
+from server.main import instance_info, _slug  # noqa: E402
+from server.schematic import LIBRARY_CELLS  # noqa: E402
+
+ii = instance_info()
+chk("info: 19 instances 전수(저항·open 포함)", len(ii["instances"]) == 19
+    and sum(1 for i in ii["instances"] if i["open"]) == 4, str(len(ii["instances"])))
+chk("info: slug 앵커 규칙(영숫자·한글 외 '_')", _slug("XI_ESD (IO→VSS)") == "XI_ESD_IO_VSS_"
+    and all(i["slug"] == _slug(i["instance"]) for i in ii["instances"]), "")
+by_i = {i["instance"]: i for i in ii["instances"]}
+chk("info: diode에 soa/cap/curve 병합", by_i["XD_up"]["soa"] is not None
+    and by_i["XD_up"]["cap"] is not None and len(by_i["XD_up"]["curve"]["V"]) > 10, "")
+chk("info: monitor에 SOA rules", by_i["XVictim"]["rules"] is not None
+    and any(r["quantity"] == "VDS" for r in by_i["XVictim"]["rules"]), "")
+chk("info: rdd(L) 저항 resolve", abs(by_i["XRDD_un1"]["R"] - 0.5) < 1e-12,
+    str(by_i["XRDD_un1"].get("R")))
+chk("info: cells=LIBRARY_CELLS 전수 + instance 역링크", len(ii["cells"]) == len(LIBRARY_CELLS)
+    and "XVictim" in next(c for c in ii["cells"] if c["id"] == "victim_n")["instances"], "")
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:

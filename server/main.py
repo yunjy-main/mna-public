@@ -627,6 +627,65 @@ def analysis_sweep_progress():
             "pct": (100.0 * _SWEEP_PROG["done"] / t) if t else 0.0}
 
 
+def _slug(name):
+    """instance/cell명 → 앵커 id (영숫자·한글 외 '_') — frontend와 동일 규칙."""
+    import re
+    return re.sub(r"[^0-9A-Za-z가-힣]+", "_", str(name))
+
+
+@app.get(PREFIX + "/api/instance/info")
+def instance_info(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
+                  corner: str = "worst"):
+    """instance/subcircuit 페이지 원천 — 전 소자(저항·open 포함) 메타 + model 시각화
+    데이터(실측 I-V 곡선·SOA endpoint·cap). sweep 없이 소자 정보만 (경량)."""
+    from server.schematic import load_layout, LIBRARY_CELLS
+    from server.netlist import (extract_netlist, soa_endpoints, device_caps,
+                                device_curves, size_expr_of, soa_rules_for, device_keys)
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    err = _window_error(x1, x2)
+    if err:
+        return err
+    nl = extract_netlist(load_layout()[0])
+    names = nl["nets"]
+    eps = soa_endpoints(nl, x1=x1, x2=x2, corner=corner)
+    caps = device_caps(nl, x1=x1, x2=x2)
+    curves = device_curves(nl, x1=x1, x2=x2, corner=corner)
+    key_of = {}
+    for k, d in device_keys(nl):
+        key_of[id(d)] = k
+    instances = {}
+    for d in nl["devices"]:
+        inst = d.get("instance") or d["kind"]
+        ent = instances.setdefault(inst, {
+            "instance": inst, "slug": _slug(inst), "cell": d.get("cell"),
+            "model": d.get("model"), "role": d.get("role"), "open": d["open"],
+            "params": d.get("params", {}), "size_expr": size_expr_of(d),
+            "elements": [], "soa": None, "cap": None, "curve": None, "rules": None})
+        if d["kind"] in ("pfet", "nfet"):
+            pins = "d={} g={} s={}".format(names[d["drain"]], names[d["gate"]],
+                                           names[d["source"]])
+        else:
+            pins = "{} – {}".format(names[d["a"]], names[d["b"]])
+        ent["elements"].append({"kind": d["kind"], "pins": pins})
+        k = key_of.get(id(d))
+        if k is not None and ent["soa"] is None:
+            ent["soa"] = eps.get(k)
+            ent["cap"] = caps.get(k)
+            ent["curve"] = curves.get(k)
+        if d.get("role") == "soa_monitor" and d.get("model"):
+            ent["rules"] = soa_rules_for(d["model"])
+        if d["kind"] == "resistor":
+            R = (d.get("params") or {}).get("R")
+            ent["R"] = (0.5 * L / 350.0) if R == "rdd(L)" else R
+    cells = [{"id": c["id"], "name": c["name"], "models": c["models"],
+              "instances": [i["instance"] for i in instances.values()
+                            if i["cell"] == c["id"]]}
+             for c in LIBRARY_CELLS]
+    return {"x1": x1, "x2": x2, "L": L, "corner": corner,
+            "instances": list(instances.values()), "cells": cells}
+
+
 @app.get(PREFIX + "/api/analysis/sweep")
 def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
                    x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
@@ -850,6 +909,16 @@ def optimize_page():
 @app.get(PREFIX + "/circuit")
 def circuit_page():
     return _page("circuit.html")
+
+
+@app.get(PREFIX + "/subcircuit")
+def subcircuit_page():
+    return _page("subcircuit.html")
+
+
+@app.get(PREFIX + "/instance")
+def instance_page():
+    return _page("instance.html")
 
 
 @app.get(PREFIX + "/spec")
