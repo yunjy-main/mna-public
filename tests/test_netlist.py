@@ -403,11 +403,19 @@ chk("device_v 11종(저항 제외)", len(dv) == 11 and "XD_up" in dv and "XClamp
     and "XI_ESD (IO→VSS)" in dv and not any(k.startswith("XR") for k in dv), str(sorted(dv)))
 chk("device_v XD_up = diode 강하", abs(dv["XD_up"] - (rm["v"]["N1"] - rm["v"]["N2"])) < 1e-12, "")
 
-# 실측 sweep: first-fail 전류가 물리 스케일 (IO→VSS 1.0A VGS)
+# 실측 sweep: first-fail 전류가 물리 스케일 (IO→VSS 0.9A VGS —
+# secondary x1/10·b2b esdvpnp 바인딩 후 IN 전압 상승으로 1.0→0.9A, 2026-07-28)
 swm = sweep_scenario(nl, "IO", "VSS", imax=2.0, n=21, model_ctx=ctx)
-chk("measured sweep first fail I=1.0 VGS", swm["first_soa_fail"] is not None
-    and abs(swm["first_soa_fail"]["current"] - 1.0) < 1e-9
+chk("measured sweep first fail I=0.9 VGS", swm["first_soa_fail"] is not None
+    and abs(swm["first_soa_fail"]["current"] - 0.9) < 1e-9
     and swm["first_soa_fail"]["quantity"] == "VGS", str(swm["first_soa_fail"]))
+
+# 주어진 모델 바인딩 규칙: b2b=esdvpnp(D1) 동일 곡선, secondary=면적 1/10
+by_inst = {d["instance"]: d for d in nl["devices"]}
+chk("b2b→esdvpnp 곡선 공유", ctx(by_inst["XD_b2b_m"]) is ctx(by_inst["XD_up"]), "")
+chk("secondary 면적 1/10 (전류 감소)", ctx(by_inst["XD_up2"])(1.5)[0] < 0.25 * ctx(by_inst["XD_up"])(1.5)[0],
+    "p={} s={}".format(ctx(by_inst["XD_up"])(1.5)[0], ctx(by_inst["XD_up2"])(1.5)[0]))
+chk("down diode 동일 모델(D1)", ctx(by_inst["XD_down"]) is ctx(by_inst["XD_up"]), "")
 chk("measured sweep 전 point 수렴", all(p["converged"] for p in swm["points"]), "")
 chk("sweep point에 device_v 포함", all("device_v" in p and len(p["device_v"]) == 11
                                        for p in swm["points"]), "")

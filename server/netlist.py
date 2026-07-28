@@ -332,24 +332,58 @@ def _mirror(f):
 
 
 def measured_context(x1=2.56, x2=1415.232, corner="worst"):
-    """cell id → 실측 I(V) 평가기 dict. 곡선은 server.model calib(D1/D2)에서 유도."""
+    """device record → 실측 I(V) 평가기 resolver. 곡선은 server.model calib에서 유도.
+
+    cell→모델: d_up/d_down/d_b2b = Device1(esdvpnp 제공 diode model — b2b도 동일 곡선,
+    사용자 지시 2026-07-28), clamp = Device2 미러. size는 instance params.size로
+    해석("x1"/"x2"/"x1/10" 등 — secondary는 primary 면적 1/10, 사용자 지시), 미지정
+    cell 기본값은 diode=x1, clamp=x2. (cell, size)별 곡선 캐시."""
     from server import model as M
+    cache = {}
 
-    def merged(dev, x):
-        c = M.calib(dev, x, corner)
-        Vs = c["neg"]["V"][::-1] + c["pos"]["V"][1:]
-        Is = c["neg"]["I"][::-1] + c["pos"]["I"][1:]
-        return _pwl_iv(Vs, Is)
+    def curve(dev, x, mirror=False):
+        key = (dev["id"], round(float(x), 9), mirror)
+        if key not in cache:
+            c = M.calib(dev, x, corner)
+            Vs = c["neg"]["V"][::-1] + c["pos"]["V"][1:]
+            Is = c["neg"]["I"][::-1] + c["pos"]["I"][1:]
+            f = _pwl_iv(Vs, Is)
+            cache[key] = _mirror(f) if mirror else f
+        return cache[key]
 
-    d1 = merged(M.D1, x1)
-    return {"d_up": d1, "d_down": d1, "clamp": _mirror(merged(M.D2, x2))}
+    def size_of(dev, base):
+        s = (dev.get("params") or {}).get("size")
+        if s is None:
+            return base
+        if isinstance(s, (int, float)):
+            return float(s)
+        expr = str(s).replace(" ", "")
+        num = {"x1": x1, "x2": x2}.get(expr.split("/")[0])
+        if num is None:
+            return base
+        if "/" in expr:
+            try:
+                return num / float(expr.split("/")[1])
+            except ValueError:
+                return num
+        return num
+
+    def resolve(d):
+        cell = d.get("cell")
+        if cell in ("d_up", "d_down", "d_b2b"):
+            return curve(M.D1, size_of(d, x1))
+        if cell == "clamp":
+            return curve(M.D2, size_of(d, x2), mirror=True)
+        return None
+
+    return resolve
 
 
 def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
                        max_iter=200, tol=1e-9, v0=None, model_ctx=None):
     """netlist → MNA 조립 + Newton. inject/ground는 net 이름.
     v0: unknowns 순서의 초기 전압 벡터 (continuation sweep warm-start용).
-    model_ctx: measured_context() 결과 — cell별 실측 I(V). None이면 placeholder."""
+    model_ctx: measured_context() resolver — device별 실측 I(V). None이면 placeholder."""
     names = nl["nets"]
     name_to_net = {v: k for k, v in names.items()}
     if inject not in name_to_net or ground not in name_to_net:
@@ -388,7 +422,7 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
             if d["kind"] in ("resistor", "diode", "zener"):
                 a, b = d["a"], d["b"]
                 V = vof(a, v) - vof(b, v)
-                meas = (model_ctx or {}).get(d.get("cell"))
+                meas = model_ctx(d) if model_ctx else None
                 if d["kind"] == "resistor":
                     g = 1.0 / _res_R(d, L)
                     Idev = g * V
