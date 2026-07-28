@@ -90,6 +90,7 @@ PARAM_META = {
     "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (0.64, 3.84)},
     "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 2628.288)},
     "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0)},
+    "W": {"default": 5.0, "unit": "µm"},  # RDD 금속 폭 — rdd_r(L,W) 기준 5µm (rule 창 미정)
 }
 
 
@@ -229,6 +230,12 @@ RIO_RDL, RVDD_RDL, RVSS_RDL = 0.1, 0.1, 0.1
 RIO = RIO_RDL  # 하위 호환 별칭
 RDD_UN1 = 0.5  # up diode ↔ clamp 금속 (구 Rvdd; L=350 기준값, L 변수는 optimizer.rvdd_of)
 RDD_DN1 = 0.5  # down diode ↔ clamp 금속 (동일 규칙·공유 L)
+RDD_W0 = 5.0   # 금속 기준 폭 [µm] — 0.5Ω/350µm는 W=5µm 기준 (사용자 지시 2026-07-28)
+
+
+def rdd_r(L, W=RDD_W0):
+    """RDD 금속 저항 [Ω] — sheet 스케일: 0.5Ω × (L/350µm) × (5µm/W)."""
+    return RDD_UN1 * (float(L) / 350.0) * (RDD_W0 / float(W))
 
 
 def series_vio(c1, c2, I, rio=RIO_RDL, rdd_un1=RDD_UN1, rdd_dn1=RDD_DN1, rvss=RVSS_RDL):
