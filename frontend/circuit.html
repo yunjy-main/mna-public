@@ -32,8 +32,10 @@
   <div class="card">
     <h2>1. 회로도 (schemdraw, 동작점 주석 포함)</h2>
     <div id="schem" style="max-width:880px"></div>
-    <div class="cap" style="margin-top:6px;border-top:1px dashed #b0b6bf;padding-top:4px">Subcircuit Set (중복 없는 cell 세트)</div>
-    <div id="schemLib" style="max-width:880px"></div>
+    <details style="margin-top:6px;border-top:1px dashed #b0b6bf;padding-top:4px">
+      <summary class="cap" style="cursor:pointer">Subcircuit Set (중복 없는 cell 세트) — 펼치기</summary>
+      <div id="schemLib" style="max-width:880px"></div>
+    </details>
     <div class="cap">파란 주석 = node 전압, 청록 = 전류. 교차선은 접점(dot) 없으면 미연결. R 계열(Rio_rdl/RDD_un1/RDD_dn1/Rvss_rdl/Resd)도 device.</div>
     <details>
       <summary>회로도 레이아웃 편집 (JSON) <span class="hint" id="layoutState"></span></summary>

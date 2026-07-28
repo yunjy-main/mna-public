@@ -619,7 +619,8 @@ def schematic_matrix(inject: str = "IO", ground: str = "VSS", i: float = 1.33, L
 @app.get(PREFIX + "/api/analysis/sweep")
 def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
                    x1: float = 2.56, x2: float = 1415.232, corner: str = "worst",
-                   model_mode: str = "measured", imin: float = 0.0):
+                   model_mode: str = "measured", imin: float = 0.0,
+                   cap_lim_pf: float = None, hbm_kv: float = None):
     """6종 ordered rail 시나리오 × I=imin→Imax continuation sweep + 매 point SOA 평가
     (이슈 #10 §5 + 사용자 궁극 목표: 실측 model 연계, point마다 저항 제외 device_v).
     imin<0이면 양극 sweep(0에서 바깥쪽 두 갈래 continuation).
@@ -655,12 +656,16 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
     io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
+    # spec 입력(UI) 반영 — 미지정 시 model 기본값 (capLim 5pF, HBM 1kV)
+    cap_lim = (cap_lim_pf * 1e-12) if (cap_lim_pf and cap_lim_pf > 0) else M.IO_CAP_LIM
+    spec_kv = hbm_kv if (hbm_kv and hbm_kv > 0) else M.HBM_DEFAULT_KV
     return {"imax": imax, "imin": imin, "n": n, "L": L, "x1": x1, "x2": x2,
             "corner": corner, "model_mode": model_mode, "devices": devices,
-            "cap_lim": M.IO_CAP_LIM, "io_cap_total": io_cap_total,
+            "cap_lim": cap_lim, "io_cap_total": io_cap_total,
+            "cap_pass": io_cap_total <= cap_lim,
             "esd_spec": {"a_per_kv": M.A_PER_KV,
-                         "default_kv": M.HBM_DEFAULT_KV,
-                         "default_amp": M.hbm_current(M.HBM_DEFAULT_KV),
+                         "default_kv": spec_kv,
+                         "default_amp": M.hbm_current(spec_kv),
                          "levels": [{"kv": kv, "amp": M.hbm_current(kv)}
                                     for kv in M.HBM_LEVELS_KV]},
             "monitor_rules": monitor_rules, "scenarios": scenarios}
