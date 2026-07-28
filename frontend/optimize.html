@@ -826,43 +826,34 @@ function renderOptIter(){
   //    소자 행 = usage 키 전수. spec/SOA 열은 종류(rule/spec/SOA)를 밝혀 표기.
   //    미러 소자(XD_up·V+ ↔ XD_down·V− 등)의 동일 값은 대칭 시나리오+공유 곡선의 물리 결과.
   let html='<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')
-    +')</th><th>diff</th><th>spec/SOA</th><th>판정</th></tr>';
+    +')</th><th>diff</th><th>type</th><th>spec/SOA</th><th>판정</th></tr>';
   const VER=v=>v===null?'<span style="color:#8a94a0">—</span>'
     :(v?'<b style="color:#0a7d38">PASS</b>':'<b style="color:#b3261e">FAIL</b>');
-  const drow=(name,at,bt,dtext,col,spec,verdict)=>{
+  const drow=(name,at,bt,dtext,col,type,spec,verdict)=>{
     html+='<tr><td>'+name+'</td><td>'+at+'</td><td>'+bt
       +'</td><td style="color:'+(col||'#5b6673')+';font-weight:700">'+dtext
-      +'</td><td>'+(spec===undefined?'—':spec)+'</td><td>'+VER(verdict===undefined?null:verdict)+'</td></tr>';};
-  const numRow=(name,a,b,dec,unit,lower,spec,verdict)=>{
+      +'</td><td>'+(type||'—')+'</td><td>'+(spec===undefined||spec===null?'—':spec)
+      +'</td><td>'+VER(verdict===undefined?null:verdict)+'</td></tr>';};
+  const numRow=(name,a,b,dec,unit,lower,type,spec,verdict)=>{
     if(a===undefined||b===undefined) return;
     const dd=b-a, rel=Math.abs(a)>1e-12?' ('+(dd>=0?'+':'')+(dd/Math.abs(a)*100).toFixed(1)+'%)':'';
     drow(name,f(a,dec)+unit,f(b,dec)+unit,(dd>=0?'+':'')+f(dd,dec)+unit+rel,
-      lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',spec,verdict);
+      lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',type,spec,verdict);
   };
   const fmtF=v=>Math.abs(v)>=1e-12?f(v*1e12,2)+'pF':f(v*1e15,0)+'fF';  // F 단위 공학 표기
-  // 1) 설계변수·size — 소자 size는 변수 바인딩(x1/x1÷10/x2)의 파생값이므로
-  //    변수 상위 행과 소자별 size 행의 중복 대신 **바인딩별 1행**(멤버 명시)로 통합.
-  //    소자 바인딩이 없는 변수(L=저항 파라미터, 소자 리스트 제외)만 자체 행 유지.
-  const bind={};  // size 식 → 멤버 소자 (서버 size_expr — 기본 바인딩 포함 단일 원천)
+  // size 바인딩 식 (서버 size_expr — 기본 바인딩 포함 단일 원천)
+  const exprOf={};
   ((SS&&SS.devices)||[]).forEach(dv=>{
-    const s=dv.size_expr||(dv.params&&dv.params.size);
-    if(s)(bind[s]=bind[s]||[]).push(dv.key);});
-  const sizeOf=(dd,ms)=>{for(const m of ms){const v=(dd[m]||{}).size;if(v!==undefined)return v;}};
-  Object.keys(bind).sort().forEach(expr=>{
-    const ms=bind[expr];
-    const a=sizeOf(d0,ms), b=sizeOf(dc,ms);
-    const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩(x1/x2)이면 rule 창 부착
-    numRow('size='+expr+' ⇐ '+ms.join('·'), a, b, 4, '', false,
-      vd?('rule '+vd.lo+' ~ '+vd.hi):('파생 = '+expr),
-      vd?(b>=vd.lo&&b<=vd.hi):undefined);
-  });
+    exprOf[dv.key]=dv.size_expr||(dv.params&&dv.params.size)||null;});
+  // 1) 설계변수 중 소자 바인딩 없는 것(L) — type=size, 값=rule 창
   (d.variables||[]).forEach(vd=>{
-    if(bind[vd.key]) return;  // 소자 바인딩 행이 대표 — 상위 중복 행 생략 (사용자 지적)
+    const bound=Object.values(exprOf).some(e=>e===vd.key);
+    if(bound) return;  // 소자별 size 행이 대표
     numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
-      'rule '+vd.lo+' ~ '+vd.hi+vd.unit,
+      'size','rule '+vd.lo+' ~ '+vd.hi+vd.unit,
       cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
   });
-  // 2) 집계 spec — usage 키 중 '·' 없는 항목을 detail[동일 키]로 표시
+  // 2) 집계 spec — usage 키 중 '·' 없는 항목을 detail[동일 키]로 표시 (type=spec)
   Object.keys(u0).filter(k=>!k.includes('·')).forEach(k=>{
     const a0=d0[k], ac=dc[k];
     if(!a0||!ac||a0.value===undefined) return;
@@ -871,14 +862,21 @@ function renderOptIter(){
       ((ac.value>=a0.value?'+':'')+fu(ac.value-a0.value).replace('-','−')+' ('
         +(((uc[k]||0)-(u0[k]||0))*100).toFixed(1)+'%p)'),
       ac.value<=a0.value?'#0a7d38':'#b3261e',
-      (ac.kind||'spec')+' ≤ '+fu(ac.lim), ac.value<=ac.lim);
+      ac.kind||'spec','≤ '+fu(ac.lim), ac.value<=ac.lim);
   });
   // 3) 목적함수
-  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true);
-  // 4) 소자별 — usage 키 전수 동적: spec/SOA = TO-BE 시점의 signed SOA 한계(값÷usage)
+  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true,'—');
+  // 4) 소자별 — size 행(각 소자 개별, 바인딩 밝혀 적기) + usage 행 전수 동적
   const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
   devs.forEach(devk=>{
-    // (소자별 size 행은 상단 바인딩 행으로 정규화 — 파생값 중복 제거, 사용자 지적)
+    const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
+    if(s0!==undefined){
+      const expr=exprOf[devk];
+      const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
+      numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
+        'size', vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null),
+        vd?(sc>=vd.lo&&sc<=vd.hi):undefined);
+    }
     Object.keys(u0).filter(k=>k.startsWith(devk+'·')).forEach(k=>{
       const q=k.split('·')[1];
       const unit=q.startsWith('I')?'A':'V';
@@ -891,7 +889,7 @@ function renderOptIter(){
         ((ub-ua)>=0?'+':'')+((ub-ua)*100).toFixed(1)+'%p'
           +((va!==undefined&&vb!==undefined)?' ('+((vb-va)>=0?'+':'')+f(vb-va,3)+unit+')':''),
         ub<=ua?'#0a7d38':'#b3261e',
-        sp===null?'—':'SOA '+(vb>=0?'≤ ':'≥ ')+sp, ub<=1.0);
+        'SOA', sp===null?null:(vb>=0?'≤ ':'≥ ')+sp, ub<=1.0);
     });
   });
   document.getElementById('optDiff').innerHTML=html;
