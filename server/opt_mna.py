@@ -46,6 +46,14 @@ def _logbar(v, lo, hi, eps=1e-3):
     return -math.log(eps) + (eps - u) / eps
 
 
+def _wallq(v, lo, hi, k=500.0):
+    """창 밖 이차 복원벽 (μb-독립 백스톱) — 내부 힘 0(margin 소모 무방해),
+    이탈 시 위반량에 비례한 복원력. ε-연장 기울기가 μb에 비례해 μb가 작으면
+    이탈하던 결함(발견: μb=0.002에서 W=13.6) 교정."""
+    u = (v - hi) / (hi - lo)
+    return k * u * u if u > 0 else 0.0
+
+
 def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
                   warm=None, calib_cache=None, n=OPT_N):
     """candidate pset의 (usage dict, detail dict) — schematic 소자 전부(±I_spec) + cap.
@@ -102,7 +110,7 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
                  windows=None, weights=None,
                  mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
                  progress_cb=None, freeze=(), pset=None,
-                 barrier="log", mu_bar=0.05):
+                 barrier="log", mu_bar=0.01):
     """승계된 초기조건 pset에서 spec(HBM 레벨·capLim) 하의 Adam 최적화 (N-차원 자동).
 
     설계변수 = registry supported 파라미터 (순서 = registry 정본 순서).
@@ -170,8 +178,11 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
             val, span = pv[v["key"]], v["hi"] - v["lo"]
             # min쪽은 항상 가혹 FAIL 급경사 (창립 비대칭 유지)
             rule += mu_rule * _softplus((v["lo"] - val) / (0.01 * span))
-            if barrier == "log":  # max쪽: margin 최대 소모 + limit 발산 벽
-                rule += mu_bar * _logbar(val, v["lo"], v["hi"])
+            if barrier == "log":  # max쪽: margin 최대 소모 + limit 벽
+                # 내부 log(잔여 margin≈μb/F 제어) + 창 밖 이차 복원벽(μb-독립,
+                # 내부 힘 0 — softplus 백스톱은 내부 꼬리가 소모를 막았음)
+                rule += (mu_bar * _logbar(val, v["lo"], v["hi"])
+                         + mu_rule * _wallq(val, v["lo"], v["hi"]))
             else:                 # max쪽: 기존 준-rule 완경사
                 rule += mu_rule * _softplus((val - v["hi"]) / (0.05 * span))
         _tick()
@@ -225,7 +236,11 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
         if f_new < best_f:
             best_f, best_z, best_us, best_it = f_new, list(z), us_new, it
         history.append(_hist(it, f_new, summarize(z, us_new), us_new, det_new))
-    # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거
+    # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거.
+    # 탐색 중 이차 복원벽 안쪽의 미세 grazing(<0.002 창폭)이 있을 수 있어 창으로 클램프
+    # — 납품 설계는 rule 창을 정확히 준수한다.
+    for i in active:  # z=1.0 ⇔ v=hi
+        best_z[i] = min(best_z[i], 1.0)
     us_final, det_final = design_usages(nl, to_p(best_z), corner, force, ground,
                                         i_spec, cap_lim, warm={}, calib_cache={}, n=M.N)
     _tick(w_final)

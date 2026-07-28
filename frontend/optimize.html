@@ -123,7 +123,7 @@
         <input id="muRule" type="number" step="any" value="20"></div>
       <div><label>max barrier<span class="info" title="log(기본): 내부 log barrier −μb·ln((hi−v)/span) — 창 내부에서 힘이 미미해 margin을 끝까지 소모하고 limit에서 발산(불가침). 잔여 margin ≈ μb/F.&#10;softplus: 기존 준-rule 완경사 — 경계 접근 자체에 비용(경계 앞 여유를 남김).">ⓘ</span></label>
         <select id="mnaBarrier"><option value="log" selected>log (margin 소모)</option><option value="softplus">softplus (준-rule)</option></select></div>
-      <div><label>μ barrier (log)</label><input id="muBar" type="number" step="any" value="0.05"></div>
+      <div><label>μ barrier (log)</label><input id="muBar" type="number" step="any" value="0.01"></div>
       <div><label>learning rate (MNA)</label><input id="mnaLr" type="number" step="any" value="0.06"></div>
       <div><label>iterations (MNA)</label><input id="mnaIters" type="number" step="1" value="30"></div>
     </div>

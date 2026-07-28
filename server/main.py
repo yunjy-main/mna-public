@@ -861,7 +861,7 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
                      ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
                      mu_soa: float = 12.0, mu_rule: float = 20.0,
                      lr: float = 0.06, iters: int = 30, freeze: str = None,
-                     barrier: str = "log", mu_bar: float = 0.05):
+                     barrier: str = "log", mu_bar: float = 0.01):
     """Schematic MNA 기반 optimizer (궁극 목표 마지막 조각) — loss 평가기가
     analytic 직렬 모델이 아니라 표시 중 회로도의 netlist MNA(±HBM spec 전류).
     설계변수는 registry에서 N-차원 자동 구성 (이슈 #11 §2.5) — 초기값=pset(query),

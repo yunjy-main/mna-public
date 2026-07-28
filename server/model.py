@@ -96,8 +96,8 @@ PARAM_META = {
            "label": "x2 (clamp size)", "dec": 1, "cost_w": 1.0, "freeze_default": False},
     "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0),
           "label": "L (RDD 금속)", "dec": 1, "cost_w": 0.0, "freeze_default": True},
-    # W: RDD 금속 폭 — rdd_r(L,W) 기준 5µm. rule 창 [1,10]µm (사용자 확정 2026-07-28)
-    "W": {"default": 5.0, "unit": "µm", "rule": (1.0, 10.0),
+    # W: RDD 금속 폭 — rdd_r(L,W) 기준 5µm. rule 창 [1,12]µm (사용자 확정 2026-07-28)
+    "W": {"default": 5.0, "unit": "µm", "rule": (1.0, 12.0),
           "label": "W (RDD 금속 폭)", "dec": 2, "cost_w": 0.0, "freeze_default": True},
 }
 
