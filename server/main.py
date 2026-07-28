@@ -764,6 +764,20 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
             "monitor_rules": monitor_rules, "scenarios": scenarios}
 
 
+_OPT_PROG = {"done": 0, "total": 0}  # MNA optimizer 실시간 진행률 (sweep과 동일 패턴)
+
+
+@app.get(PREFIX + "/api/optimize/mna/progress")
+def optimize_mna_progress():
+    t = _OPT_PROG["total"]
+    return {"done": _OPT_PROG["done"], "total": t,
+            "pct": (100.0 * _OPT_PROG["done"] / t) if t else 0.0}
+
+
+def _opt_tick(done, total):
+    _OPT_PROG["done"], _OPT_PROG["total"] = done, total
+
+
 @app.get(PREFIX + "/api/optimize/mna")
 def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
                      corner: str = "worst", force: str = "IO", ground: str = "VSS",
@@ -783,13 +797,15 @@ def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         return PlainTextResponse("corner must be worst|best", status_code=422)
     if not (1 <= iters <= 200):
         return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
+    _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
     try:
         return optimize_mna(load_layout()[0], x1, x2, L, corner=corner,
                             force=force, ground=ground, hbm_kv=hbm_kv,
                             cap_lim=cap_lim_pf * 1e-12,
                             x1min=x1min, x1max=x1max, x2min=x2min, x2max=x2max,
                             lmin=lmin, lmax=lmax, wA=wA, wC=wC, wL=wL,
-                            mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters)
+                            mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
+                            progress_cb=_opt_tick)
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 

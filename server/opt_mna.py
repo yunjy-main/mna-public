@@ -87,12 +87,24 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
                  hbm_kv=1.0, cap_lim=5e-12,
                  x1min=0.64, x1max=3.84, x2min=1415.232, x2max=2628.288,
                  lmin=70.0, lmax=1400.0, wA=1.0, wC=1.0, wL=0.0,
-                 mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N):
-    """승계된 초기조건 (x1,x2,L)에서 spec(HBM 레벨·capLim) 하의 Adam 최적화."""
+                 mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
+                 progress_cb=None):
+    """승계된 초기조건 (x1,x2,L)에서 spec(HBM 레벨·capLim) 하의 Adam 최적화.
+    progress_cb(done, total): evaluate 1회=1단위 — 초기 1 + iter당 5(기준+FD 3+갱신)
+    + 최종 정밀 재평가(저해상도 대비 격자 비율만큼 가중)."""
     nl = extract_netlist(layout)
     i_spec = M.hbm_current(hbm_kv)
     warm, ccache = {}, {}
     bounds = ((x1min, x1max), (x2min, x2max), (lmin, lmax))
+    w_final = max(1, round(M.N / max(1, n)))
+    prog = {"done": 0, "total": 1 + iters * 5 + w_final}
+
+    def _tick(k=1):
+        prog["done"] += k
+        if progress_cb:
+            progress_cb(prog["done"], prog["total"])
+    if progress_cb:
+        progress_cb(0, prog["total"])
 
     def to_x(z):
         v = [lo + zi * (hi - lo) for zi, (lo, hi) in zip(z, bounds)]
@@ -109,6 +121,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             span = hi - lo
             # 창립 rule 비대칭: min=가혹 FAIL(급경사), max=준-rule(완경사)
             rule += _softplus((lo - v) / (0.01 * span)) + _softplus((v - hi) / (0.05 * span))
+        _tick()
         return cost + pen + mu_rule * rule, us, det
 
     def summarize(z, us):
@@ -161,6 +174,7 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     xb1, xb2, lb = to_x(best_z)
     us_final, det_final = design_usages(nl, xb1, xb2, lb, corner, force, ground,
                                         i_spec, cap_lim, warm={}, calib_cache={}, n=M.N)
+    _tick(w_final)
     final = summarize(best_z, us_final)
     final["loss"] = best_f
     final["detail"] = det_final

@@ -74,7 +74,7 @@
       <span class="hint" id="ssInfo"></span>
     </div>
     <div style="margin:4px 0 6px">
-      <label class="hint">I = <b id="ssIlab">—</b> A<span class="info" title="스크럽 전류 — 모든 tracing dot·radar·SOA map·gauge·metric이 이 전류에 연동. 하단 overlay 슬라이더와 동기화.">ⓘ</span></label>
+      <label class="hint">I = <b id="ssIlab">—</b> A<span class="info" title="스크럽 전류 — 모든 tracing dot·gauge·ranking이 이 전류에 연동. 하단 overlay 슬라이더와 동기화.">ⓘ</span></label>
       <input id="ssIdx" class="iscrub" type="range" min="0" max="40" value="26" style="width:100%">
     </div>
     <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, 빨간 dot=스크럽 동작점.">ⓘ</span></h3>
@@ -83,8 +83,7 @@
     <div class="g23" id="ssMon"></div>
     <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
-    <h3>소자별 metric · ranking<span class="info" title="chip: 소자별 V·I·usage·PASS/FAIL (스크럽 전류 기준).&#10;ranking: usage 내림차순 — 상단이 현재 지배 제약.">ⓘ</span></h3>
-    <div class="chips" id="ssMetric"></div>
+    <h3>소자별 ranking<span class="info" title="usage 내림차순 — 상단이 현재 지배 제약 (스크럽 전류 기준).&#10;각 행: V·I 절대값 + usage% + PASS/FAIL + 바(중앙 빨간 눈금 = 100% SOA 경계).&#10;한계 데이터 없는 소자(전류원)는 하단 회색 — V·I만 표시.">ⓘ</span></h3>
     <div class="rank" id="ssRank" style="margin-top:4px"></div>
   </div>
 
@@ -686,24 +685,28 @@ dvRegister({host:'ssGauge', applies:d=>d.soa||d.role==='soa_monitor', render:(el
     gauge(el,'I usage',u.uI,1,undefined,{valueText:f(dvI(d,c,c.idx)||0,3)+' A'});
   }
 }});
-// [renderer] 소자별 summary metric chip
-dvRegister({host:'ssMetric', applies:()=>true, render:(el,d,c)=>{
-  const V=dvV(d,c,c.idx), I=dvI(d,c,c.idx), u=dvUsage(d,c,c.idx);
-  el.className='chip '+(u?(u.u>1?'bad':'ok'):'mid');
-  el.textContent=d.key+': V='+f(V,3)+'V'+(I!==null?' · I='+f(I,3)+'A':'')
-    +(u?' · u='+pct(u.u)+(u.u<=1?' PASS':' FAIL'):' · (한계 데이터 없음)');
-}});
-// [renderer·집계] usage ranking — 소자 리스트에서 동적 정렬
+// [renderer·집계] 소자별 ranking — usage 내림차순 + V·I 절대값 + 판정.
+// (metric chip은 ranking으로 통합 — 사용자 지시 2026-07-28: usage·판정 3중 표기 제거.
+//  한계 데이터 없는 소자(전류원)는 하단 회색으로 V·I만 표기.)
 dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
-  const items=DV.devs.map(d=>{const u=dvUsage(d,c,c.idx);
-    return u?[d.key+(u.worst?' ('+u.worst+')':''),u.u]:null;})
-    .filter(Boolean).sort((a,b)=>b[1]-a[1]);
-  host.innerHTML=items.map(it=>{const bad=it[1]>1;
-    return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'
-      +(bad?MNA.C.fail:MNA.C.pass)+'">'+pct(it[1])+'</span></div>'
-      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'
+  const withU=[], noU=[];
+  DV.devs.forEach(d=>{
+    const u=dvUsage(d,c,c.idx), I=dvI(d,c,c.idx);
+    const vi='V='+f(dvV(d,c,c.idx),3)+'V'+(I!==null?' · I='+f(I,3)+'A':'');
+    if(u) withU.push({name:d.key+(u.worst?' ('+u.worst+')':''), vi, u:u.u});
+    else noU.push({name:d.key, vi,
+      note:(d.soa||d.role==='soa_monitor')?'무효(unresolved)':'한계 없음'});
+  });
+  withU.sort((a,b)=>b.u-a.u);
+  host.innerHTML=withU.map(it=>{const bad=it.u>1;
+    return '<div class="gauge"><div class="lbl"><span>'+it.name
+      +' <span style="color:#8a94a0">'+it.vi+'</span></span><span style="color:'
+      +(bad?MNA.C.fail:MNA.C.pass)+'">'+pct(it.u)+(bad?' FAIL':' PASS')+'</span></div>'
+      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it.u/2))*100+'%;background:'
       +(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:'+CB.red+'"></i></div></div>';
-  }).join('');
+  }).join('')
+  +noU.map(it=>'<div class="gauge" style="color:#8a94a0"><div class="lbl"><span>'
+    +it.name+' <span>'+it.vi+'</span></span><span>'+it.note+'</span></div></div>').join('');
 }});
 
 let SS_POLL=null, SS_SEQ=0;  // single-flight — 연속 변경 시 최신 sweep만 유효
@@ -906,9 +909,17 @@ let OPT=null;
 function startMnaOpt(){
   const st=document.getElementById('status'), err=document.getElementById('err');
   const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
-  st.textContent='MNA 최적화 중… (iter마다 유한차분×±spec 전류 solve — 수십 초)';
+  st.textContent='MNA 최적화 시작…';
   err.textContent='';
   document.getElementById('startBtn').disabled=true;
+  // 실시간 진행률 (sweep과 동일 패턴 — 서버 progress 엔드포인트 400ms 폴링)
+  let optDone=false;
+  const OP=setInterval(()=>{
+    fetch('api/optimize/mna/progress').then(r=>r.json()).then(pp=>{
+      if(!optDone&&pp.total) st.textContent='MNA 최적화 중 '+pp.pct.toFixed(0)+'% ('
+        +pp.done+'/'+pp.total+' eval · 유한차분×±spec 전류 solve)…';
+    }).catch(()=>{});
+  },400);
   const q=new URLSearchParams({x1:pv('x1'),x2:pv('x2'),L:pv('L'),
     corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
@@ -920,7 +931,8 @@ function startMnaOpt(){
     .then(d=>{OPT=d;renderOptResult();
       st.textContent='MNA 최적화 완료 ('+d.iters+' iters) — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';})
     .catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
-    .finally(()=>{document.getElementById('startBtn').disabled=false;});
+    .finally(()=>{optDone=true;clearInterval(OP);
+      document.getElementById('startBtn').disabled=false;});
 }
 function renderOptResult(){
   const d=OPT; if(!d) return;

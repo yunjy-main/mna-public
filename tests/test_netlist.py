@@ -495,7 +495,9 @@ chk("병렬 시 diode 강하 감소", 0.5 < (rp["v"]["N1"] - rp["v"]["N2"]) < M.
 # 8) MNA 기반 optimizer (궁극 목표 마지막 조각): loss 평가기 = schematic MNA
 from server.opt_mna import optimize_mna  # noqa: E402
 
-ro = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=4, n=200)
+prog = []
+ro = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=4, n=200,
+                  progress_cb=lambda d, t: prog.append((d, t)))
 chk("opt: 초기 HBM 1kV FAIL(victim 지배)", ro["initial"]["soa_pass"] is False
     and "XVictim" in str(ro["initial"]["worst_name"]), str(ro["initial"]["worst_name"]))
 chk("opt: worst usage 감소 방향", ro["final"]["worst"] < ro["initial"]["worst"],
@@ -504,6 +506,11 @@ chk("opt: history/schema", len(ro["history"]) == 5
     and all(k in ro["final"] for k in ("x1", "x2", "L", "worst", "soa_pass", "usages")), "")
 chk("opt: 탐색 범위 유지", 0.3 < ro["final"]["x1"] < 4.7 and ro["final"]["L"] >= 1.0,
     str((ro["final"]["x1"], ro["final"]["L"])))
+# 진행률 콜백 (사용자 지시 2026-07-28): evaluate 단위, 초기 0 → 단조증가 → done==total
+_tot = 1 + 4 * 5 + max(1, round(M.N / 200))
+chk("opt: progress 단조증가·완료 done==total", prog[0] == (0, _tot)
+    and all(prog[i][0] < prog[i + 1][0] for i in range(len(prog) - 1))
+    and prog[-1] == (_tot, _tot) and all(t == _tot for _, t in prog), str(prog[:3] + prog[-2:]))
 
 # 9) instance/subcircuit 정본 페이지 원천 (사용자 지시 2026-07-28): /api/instance/info
 from server.main import instance_info, _slug  # noqa: E402
