@@ -346,6 +346,38 @@ def binding_ok(expr):
     return True
 
 
+def params_registry(nl):
+    """자유 파라미터 레지스트리 (이슈 #11) — 발견(파서)+PARAM_META 속성 병합.
+    supported = 등장하는 모든 바인딩 식이 평가 가능(E1) ∧ META 정의(E2).
+    default 발명 금지(META 없으면 None). 이 리스트의 순서(이름 정렬)가
+    optimizer 변수 순서·UI 렌더 순서의 정본."""
+    from server import model as M
+    params = []
+    for p in free_params(nl):
+        meta = M.PARAM_META.get(p["name"])
+        if meta and meta.get("dev") == "diode":
+            lo, hi = M.xwindow(M.D1)
+        elif meta and meta.get("dev") == "clamp":
+            lo, hi = M.xwindow(M.D2)
+        else:
+            lo, hi = (meta or {}).get("lo"), (meta or {}).get("hi")
+        rule = (meta or {}).get("rule") or ((lo, hi) if lo is not None else None)
+        params.append({
+            "name": p["name"], "default": (meta or {}).get("default"),
+            "unit": (meta or {}).get("unit", ""),
+            "label": (meta or {}).get("label", p["name"]),
+            "dec": (meta or {}).get("dec", 3),
+            "cost_w": (meta or {}).get("cost_w", 0.0),
+            "freeze_default": bool((meta or {}).get("freeze_default")),
+            "lo": lo, "hi": hi,
+            "rule_lo": rule[0] if rule else None,
+            "rule_hi": rule[1] if rule else None,
+            "devices": p["devices"], "exprs": p["exprs"],
+            "meta_defined": meta is not None,
+            "supported": meta is not None and all(binding_ok(e) for e in p["exprs"])})
+    return params
+
+
 def _pset(pset=None, **legacy):
     """PSET 병합 — PARAM_META defaults ∪ legacy 이름 인자(동결 호환층, None 무시) ∪ pset.
     모든 엔진 함수의 값 운반은 이 dict 하나 (이슈 #11 §1.2 — 이름 인자 신규 추가 금지)."""

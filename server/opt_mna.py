@@ -2,22 +2,25 @@
 """Schematic MNA 기반 optimizer — 궁극 목표의 마지막 조각 (사용자 지시 2026-07-28).
 
 loss 평가기가 analytic 직렬 모델이 아니라 **회로도에서 추출한 netlist의 MNA**다:
-candidate (x1, x2, L)마다 실측 곡선을 재보정(저해상도 격자 n)해 선택 시나리오의
-±I_spec(HBM 레벨) 두 극성에서 solve하고, schematic 소자 프레임워크의 usage
-(soa_endpoints·victim monitor rule·IO cap 예산)로 penalty를 만든다.
+candidate pset(자유 파라미터 dict)마다 실측 곡선을 재보정(저해상도 격자 n)해
+선택 시나리오의 ±I_spec(HBM 레벨) 두 극성에서 solve하고, schematic 소자
+프레임워크의 usage(soa_endpoints·victim monitor rule·IO cap 예산)로 penalty를 만든다.
 
-  loss = cost(면적) + μSOA·Σ softplus(usage−1) + μRule·(창 위반)
+  loss = cost(자원) + μSOA·Σ softplus(usage−target) + μRule·(창 위반)
 
-경사는 forward 유한차분(3변수), 갱신은 Adam(정규화 좌표). calib은 (모델, size)
-캐시를 호출 간 공유해 유한차분의 재보정을 회피한다. 최종 결과는 §1 MNA solving에
-그대로 적용 가능한 (x1, x2, L)이다.
+설계변수는 이름 하드코딩이 아니라 **registry(schematic 발견+PARAM_META)에서 N-차원
+자동 구성**된다 (이슈 #11 §2.5): 창=META rule(override 가능), cost 가중치=META cost_w,
+rule 창 없는 파라미터는 변수화 불가 → 강제 고정(E3). 경사는 활성 변수만 forward
+유한차분, 갱신은 Adam(정규화 좌표). calib은 (모델, size) 캐시를 호출 간 공유해
+유한차분의 재보정을 회피한다. 최종 결과는 §1 MNA solving에 그대로 적용 가능한 pset이다.
 """
 import math
 
 from server import model as M
 from server.netlist import (extract_netlist, assemble_and_solve, measured_context,
                             soa_endpoints, device_caps, device_voltages,
-                            device_currents, evaluate_soa_monitors)
+                            device_currents, evaluate_soa_monitors,
+                            params_registry, _pset)
 
 OPT_N = 500     # loss 평가용 calib 격자 (판정·표시는 정밀 N=4000 경로 그대로)
 FD_H = 2e-3     # 정규화 좌표 forward 차분 스텝
@@ -32,22 +35,22 @@ def _softplus(z):
     return math.log1p(math.exp(z))
 
 
-def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
+def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
                   warm=None, calib_cache=None, n=OPT_N):
-    """candidate 설계의 (usage dict, detail dict) — schematic 소자 전부(±I_spec) + cap.
+    """candidate pset의 (usage dict, detail dict) — schematic 소자 전부(±I_spec) + cap.
 
     usage는 loss용 비율, detail은 표시용 절대값(사용자 지시: % 병기 절대값):
       detail[소자] = {size, vp/vn/ip/inn, V±/I± 원시값} · victim은 rule 수량별 stress[V].
-      detail["cap"] = {total[F], lim[F]}.
+      detail["cap(IO)"] = {value[F], lim[F]}.
     비수렴/monitor 무효는 큰 usage(3.0)로 penalty (해 신뢰 불가)."""
-    ctx = measured_context(x1, x2, corner, n=n, cache=calib_cache)
-    eps = soa_endpoints(nl, x1, x2, corner)
-    caps = device_caps(nl, x1, x2)
+    ctx = measured_context(corner=corner, n=n, cache=calib_cache, pset=pset)
+    eps = soa_endpoints(nl, corner=corner, pset=pset)
+    caps = device_caps(nl, pset=pset)
     out, detail = {}, {}
     warm = warm if warm is not None else {}
     for sgn, tag in ((1.0, "+"), (-1.0, "-")):
-        sol = assemble_and_solve(nl, inject=force, ground=ground, I=sgn * i_spec, L=L,
-                                 model_ctx=ctx, v0=warm.get(tag))
+        sol = assemble_and_solve(nl, inject=force, ground=ground, I=sgn * i_spec,
+                                 pset=pset, model_ctx=ctx, v0=warm.get(tag))
         if not sol["converged"]:
             out["nonconv" + tag] = 3.0
             continue
@@ -83,28 +86,43 @@ def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
     return out, detail
 
 
-def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
-                 hbm_kv=1.0, cap_lim=5e-12,
-                 x1min=0.64, x1max=3.84, x2min=1415.232, x2max=2628.288,
-                 lmin=70.0, lmax=1400.0, wA=1.0, wC=1.0, wL=0.0,
+def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
+                 ground="VSS", hbm_kv=1.0, cap_lim=5e-12,
+                 windows=None, weights=None,
                  mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
-                 progress_cb=None, freeze=()):
-    """승계된 초기조건 (x1,x2,L)에서 spec(HBM 레벨·capLim) 하의 Adam 최적화.
+                 progress_cb=None, freeze=(), pset=None):
+    """승계된 초기조건 pset에서 spec(HBM 레벨·capLim) 하의 Adam 최적화 (N-차원 자동).
+
+    설계변수 = registry supported 파라미터 (순서 = registry 정본 순서).
+    windows/weights: {name: (lo,hi)}/{name: w} override — 미지정 시 META rule/cost_w.
+    freeze: 고정 변수 이름들 — gradient 마스크(FD·update 생략, 값은 회로 평가의 상수).
+    rule 창 없는 변수는 강제 고정(E3, lockable=false). x1/x2/L kwarg는 동결 legacy.
     progress_cb(done, total): evaluate 1회=1단위 — 초기 1 + iter당 (활성변수+2)
-    (기준+활성 FD+갱신) + 최종 정밀 재평가(저해상도 대비 격자 비율만큼 가중).
-    freeze: 고정 변수 이름들 — gradient 마스크(FD 생략+update 생략, 값은 회로
-    평가의 상수로 유지). 자유도별 lr이 아니라 마스크가 곧 lr=0과 동치."""
-    var_keys = ("x1", "x2", "L")
+    + 최종 정밀 재평가(격자 비율 가중)."""
+    nl = extract_netlist(layout)
+    reg = [r for r in params_registry(nl) if r["supported"]]
+    p0 = _pset(pset, x1=x1, x2=x2, L=L)
+    var_spec = []
+    for r in reg:
+        ov = (windows or {}).get(r["name"])
+        lo, hi = ov if ov else (r["rule_lo"], r["rule_hi"])
+        if lo is not None and hi is not None and not (hi > lo):
+            raise ValueError("{} 창 무효: {} ~ {}".format(r["name"], lo, hi))
+        forced = lo is None or hi is None  # E3: rule 창 없음 → 변수화 불가
+        var_spec.append({"key": r["name"], "name": r["label"], "lo": lo, "hi": hi,
+                         "unit": r["unit"], "dec": r["dec"], "kind": "rule",
+                         "cost_w": (weights or {}).get(r["name"], r["cost_w"]),
+                         "frozen": forced or (r["name"] in freeze),
+                         "lockable": not forced})
+    keys = [v["key"] for v in var_spec]
     for k in freeze:
-        if k not in var_keys:
-            raise ValueError("freeze 대상 아님: {} (가능: {})".format(k, "/".join(var_keys)))
-    active = [i for i, k in enumerate(var_keys) if k not in freeze]
+        if k not in keys:
+            raise ValueError("freeze 대상 아님: {} (가능: {})".format(k, "/".join(keys)))
+    active = [i for i, v in enumerate(var_spec) if not v["frozen"]]
     if not active:
         raise ValueError("모든 설계변수가 고정 — 최적화 대상이 없습니다")
-    nl = extract_netlist(layout)
     i_spec = M.hbm_current(hbm_kv)
     warm, ccache = {}, {}
-    bounds = ((x1min, x1max), (x2min, x2max), (lmin, lmax))
     w_final = max(1, round(M.N / max(1, n)))
     prog = {"done": 0, "total": 1 + iters * (len(active) + 2) + w_final}
 
@@ -115,49 +133,59 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     if progress_cb:
         progress_cb(0, prog["total"])
 
-    def to_x(z):
-        v = [lo + zi * (hi - lo) for zi, (lo, hi) in zip(z, bounds)]
-        return max(v[0], 1e-3), max(v[1], 1.0), max(v[2], 1.0)
+    def to_p(z):
+        p = dict(p0)
+        for i in active:
+            v = var_spec[i]
+            p[v["key"]] = max(v["lo"] + z[i] * (v["hi"] - v["lo"]), 1e-3)
+        return p
 
     def evaluate(z, n_eval=n):
-        xx1, xx2, ll = to_x(z)
-        us, det = design_usages(nl, xx1, xx2, ll, corner, force, ground, i_spec, cap_lim,
+        pv = to_p(z)
+        us, det = design_usages(nl, pv, corner, force, ground, i_spec, cap_lim,
                                 warm=warm, calib_cache=ccache, n=n_eval)
-        cost = wA * xx1 / x1max + wC * xx2 / x2max + wL * ll / lmax
+        cost = sum(v["cost_w"] * pv[v["key"]] / v["hi"] for v in var_spec if v["hi"])
         pen = mu_soa * sum(_softplus(8.0 * (u - U_TARGET)) / 8.0 for u in us.values())
         rule = 0.0
-        for v, (lo, hi) in zip((xx1, xx2, ll), bounds):
-            span = hi - lo
+        for i in active:
+            v = var_spec[i]
+            val, span = pv[v["key"]], v["hi"] - v["lo"]
             # 창립 rule 비대칭: min=가혹 FAIL(급경사), max=준-rule(완경사)
-            rule += _softplus((lo - v) / (0.01 * span)) + _softplus((v - hi) / (0.05 * span))
+            rule += (_softplus((v["lo"] - val) / (0.01 * span))
+                     + _softplus((val - v["hi"]) / (0.05 * span)))
         _tick()
         return cost + pen + mu_rule * rule, us, det
 
     def summarize(z, us):
-        xx1, xx2, ll = to_x(z)
+        pv = to_p(z)
         worst_name = max(us, key=lambda k: us[k]) if us else None
-        return {"x1": xx1, "x2": xx2, "L": ll,
-                "worst": us.get(worst_name, 0.0), "worst_name": worst_name,
-                "cap_u": us.get("cap(IO)", 0.0),
-                "soa_pass": all(u < 1.0 for u in us.values()),
-                "usages": {k: round(u, 4) for k, u in
-                           sorted(us.items(), key=lambda kv: -kv[1])[:8]}}
+        s = {v["key"]: pv[v["key"]] for v in var_spec}
+        s.update({"worst": us.get(worst_name, 0.0), "worst_name": worst_name,
+                  "cap_u": us.get("cap(IO)", 0.0),
+                  "soa_pass": all(u < 1.0 for u in us.values()),
+                  "usages": {k: round(u, 4) for k, u in
+                             sorted(us.items(), key=lambda kv: -kv[1])[:8]}})
+        return s
 
-    z = [min(1.2, max(-0.2, (v - lo) / (hi - lo)))
-         for v, (lo, hi) in zip((x1, x2, L), bounds)]
+    def _hist(it, loss, s, us, det):
+        row = {"it": it, "loss": loss, "worst": s["worst"],
+               "usages": {k: round(u, 4) for k, u in us.items()}, "detail": det}
+        for k in keys:
+            row[k] = s[k]
+        return row
+
+    z = [0.0] * len(var_spec)
+    for i, v in enumerate(var_spec):
+        if v["lo"] is not None and v["hi"] is not None:
+            z[i] = min(1.2, max(-0.2, (p0[v["key"]] - v["lo"]) / (v["hi"] - v["lo"])))
     f0, us0, det0 = evaluate(z)
     initial = summarize(z, us0)
     initial["loss"] = f0
     best_f, best_z, best_us, best_it = f0, list(z), us0, 0
-    mom = [0.0] * 3
-    vel = [0.0] * 3
+    mom = [0.0] * len(var_spec)
+    vel = [0.0] * len(var_spec)
     b1, b2, eps_ = 0.9, 0.999, 1e-9
-    def _round_us(us):
-        return {k: round(u, 4) for k, u in us.items()}
-
-    history = [{"it": 0, "loss": f0, "x1": initial["x1"], "x2": initial["x2"],
-                "L": initial["L"], "worst": initial["worst"],
-                "usages": _round_us(us0), "detail": det0}]
+    history = [_hist(0, f0, initial, us0, det0)]
     for it in range(1, iters + 1):
         f_base, us_base, _d0 = evaluate(z)
         grad = {}  # 활성 변수만 FD — 고정 변수는 probe·update 모두 생략(마스크)
@@ -175,13 +203,9 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
         f_new, us_new, det_new = evaluate(z)
         if f_new < best_f:
             best_f, best_z, best_us, best_it = f_new, list(z), us_new, it
-        s = summarize(z, us_new)
-        history.append({"it": it, "loss": f_new, "x1": s["x1"], "x2": s["x2"],
-                        "L": s["L"], "worst": s["worst"],
-                        "usages": _round_us(us_new), "detail": det_new})
+        history.append(_hist(it, f_new, summarize(z, us_new), us_new, det_new))
     # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거
-    xb1, xb2, lb = to_x(best_z)
-    us_final, det_final = design_usages(nl, xb1, xb2, lb, corner, force, ground,
+    us_final, det_final = design_usages(nl, to_p(best_z), corner, force, ground,
                                         i_spec, cap_lim, warm={}, calib_cache={}, n=M.N)
     _tick(w_final)
     final = summarize(best_z, us_final)
@@ -189,14 +213,11 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     final["detail"] = det_final
     return {"initial": initial, "final": final, "history": history,
             "best_it": best_it,  # 최적해 iteration — 마지막 step이 아닐 수 있음(Adam 관성)
-            # 설계변수 descriptor — AS-IS/TO-BE 표의 동적 생성 원천 (하드코딩 금지)
-            "variables": [
-                {"key": "x1", "name": "x1 (diode size)", "lo": x1min, "hi": x1max,
-                 "unit": "", "dec": 3, "kind": "rule", "frozen": "x1" in freeze},
-                {"key": "x2", "name": "x2 (clamp size)", "lo": x2min, "hi": x2max,
-                 "unit": "", "dec": 1, "kind": "rule", "frozen": "x2" in freeze},
-                {"key": "L", "name": "L (RDD 금속)", "lo": lmin, "hi": lmax,
-                 "unit": "µm", "dec": 1, "kind": "rule", "frozen": "L" in freeze},
-            ],
+            "pset": p0,
+            # 설계변수 descriptor — AS-IS/TO-BE 표·§3 행 동적 생성 원천 (하드코딩 금지)
+            "variables": [{"key": v["key"], "name": v["name"], "lo": v["lo"],
+                           "hi": v["hi"], "unit": v["unit"], "dec": v["dec"],
+                           "kind": v["kind"], "frozen": v["frozen"],
+                           "lockable": v["lockable"]} for v in var_spec],
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
             "force": force, "ground": ground, "corner": corner, "iters": iters}

@@ -86,11 +86,19 @@ HBM_DEFAULT_KV = 1.0  # default spec 레벨 = HBM 1kV → 1.33A (사용자 지�
 # 기본값·창은 모델 계층인 여기서 공급한다 (2-소자 시절 x1/x2 하드코딩 청산, 2026-07-28).
 # dev가 있으면 창=xwindow(해당 device), 없으면 lo/hi 직접.
 PARAM_META = {
-    # rule: optimizer 탐색 창(비대칭 barrier 기준) — 측정 유효창(xwindow)과 구분
-    "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (0.64, 3.84)},
-    "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 2628.288)},
-    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0)},
-    "W": {"default": 5.0, "unit": "µm"},  # RDD 금속 폭 — rdd_r(L,W) 기준 5µm (rule 창 미정)
+    # 자유 파라미터 속성의 정본 (이슈 #11 §2.2) — rule: optimizer 탐색 창(비대칭 barrier,
+    # 측정 유효창 xwindow와 구분·없으면 변수화 불가=강제 고정 E3), label/dec: 표시,
+    # cost_w: loss 자원 cost 기본 가중치, freeze_default: 자물쇠 기본,
+    # min_valid: API 값 하한(초과 필수, E5 — 기본 0)
+    "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (0.64, 3.84),
+           "label": "x1 (diode size)", "dec": 3, "cost_w": 1.0, "freeze_default": False},
+    "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 2628.288),
+           "label": "x2 (clamp size)", "dec": 1, "cost_w": 1.0, "freeze_default": False},
+    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0),
+          "label": "L (RDD 금속)", "dec": 1, "cost_w": 0.0, "freeze_default": True},
+    # W: RDD 금속 폭 — rdd_r(L,W) 기준 5µm. rule 창 미정 → optimizer 강제 고정(E3)
+    "W": {"default": 5.0, "unit": "µm", "label": "W (RDD 금속 폭)", "dec": 2,
+          "cost_w": 0.0, "freeze_default": True},
 }
 
 

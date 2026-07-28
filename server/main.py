@@ -115,28 +115,9 @@ def _window_error(x1, x2):
 
 
 def _params_registry(nl):
-    """자유 파라미터 레지스트리 (이슈 #11) — 발견(schematic 파서)+속성(PARAM_META) 병합.
-    supported 자동 판정: 등장하는 모든 바인딩 식이 평가 가능(E1)하고 META 정의(E2)일 때만
-    true — ENGINE_PARAMS 화이트리스트 폐지. default 발명 금지(META 없으면 None)."""
-    from server.netlist import free_params, binding_ok
-    params = []
-    for p in free_params(nl):
-        meta = M.PARAM_META.get(p["name"])
-        if meta and meta.get("dev") == "diode":
-            lo, hi = M.xwindow(M.D1)
-        elif meta and meta.get("dev") == "clamp":
-            lo, hi = M.xwindow(M.D2)
-        else:
-            lo, hi = (meta or {}).get("lo"), (meta or {}).get("hi")
-        rule = (meta or {}).get("rule") or (lo, hi)
-        params.append({"name": p["name"], "default": (meta or {}).get("default"),
-                       "unit": (meta or {}).get("unit", ""), "lo": lo, "hi": hi,
-                       "rule_lo": rule[0] if rule else None,
-                       "rule_hi": rule[1] if rule else None,
-                       "devices": p["devices"], "exprs": p["exprs"],
-                       "meta_defined": meta is not None,
-                       "supported": meta is not None and all(binding_ok(e) for e in p["exprs"])})
-    return params
+    """자유 파라미터 레지스트리 — 정본은 netlist.params_registry (이슈 #11)."""
+    from server.netlist import params_registry
+    return params_registry(nl)
 
 
 def _pset_from_query(q, registry):
@@ -841,35 +822,58 @@ def _opt_tick(done, total):
 
 
 @app.get(PREFIX + "/api/optimize/mna")
-def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
-                     corner: str = "worst", force: str = "IO", ground: str = "VSS",
-                     hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
-                     x1min: float = 0.64, x1max: float = 3.84,
-                     x2min: float = 1415.232, x2max: float = 2628.288,
-                     lmin: float = 70.0, lmax: float = 1400.0,
-                     wA: float = 1.0, wC: float = 1.0, wL: float = 0.0,
+def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
+                     ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
                      mu_soa: float = 12.0, mu_rule: float = 20.0,
-                     lr: float = 0.06, iters: int = 30, freeze: str = "L"):
+                     lr: float = 0.06, iters: int = 30, freeze: str = None):
     """Schematic MNA 기반 optimizer (궁극 목표 마지막 조각) — loss 평가기가
     analytic 직렬 모델이 아니라 표시 중 회로도의 netlist MNA(±HBM spec 전류).
-    §2 경계 카드의 승계 초기조건(x1/x2/L·corner·scenario)과 spec으로 호출된다."""
+    설계변수는 registry에서 N-차원 자동 구성 (이슈 #11 §2.5) — 초기값=pset(query),
+    창=<name>_min/<name>_max, cost 가중치=w_<name>, freeze=쉼표 목록
+    (미지정 시 META freeze_default). legacy 이름(x1min…lmax·wA/wC/wL)은 전환기 별칭."""
     from server.schematic import load_layout
     from server.opt_mna import optimize_mna
+    from server.netlist import extract_netlist
     if corner not in ("worst", "best"):
         return PlainTextResponse("corner must be worst|best", status_code=422)
     if not (1 <= iters <= 200):
         return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
-    # freeze: 쉼표 구분 변수 이름 — 고정(gradient 마스크). 기본 L(사용자 확정 2026-07-28).
-    fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
+    layout = load_layout()[0]
+    reg = _params_registry(extract_netlist(layout))
+    q = dict(request.query_params)
+    # 전환기 legacy 별칭 (S4 frontend 신규약 전환 후 제거, E6)
+    _LEGACY = {"x1min": "x1_min", "x1max": "x1_max", "x2min": "x2_min", "x2max": "x2_max",
+               "lmin": "L_min", "lmax": "L_max", "wA": "w_x1", "wC": "w_x2", "wL": "w_L"}
+    for old, new in _LEGACY.items():
+        if old in q and new not in q:
+            q[new] = q[old]
+    p, err = _pset_from_query(q, reg)
+    if err:
+        return err
+    windows, weights = {}, {}
+    for r in reg:
+        if not r["supported"]:
+            continue
+        lo, hi = q.get(r["name"] + "_min"), q.get(r["name"] + "_max")
+        w = q.get("w_" + r["name"])
+        try:
+            if lo is not None and hi is not None:
+                windows[r["name"]] = (float(lo), float(hi))
+            if w is not None:
+                weights[r["name"]] = float(w)
+        except ValueError:
+            return PlainTextResponse("{} 창/가중치 숫자 아님".format(r["name"]), status_code=422)
+    if freeze is None:  # 미지정 → META freeze_default (L·W 등 layout 결정 물리량)
+        fz = tuple(r["name"] for r in reg if r["supported"] and r["freeze_default"])
+    else:
+        fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
     try:
-        return optimize_mna(load_layout()[0], x1, x2, L, corner=corner,
-                            force=force, ground=ground, hbm_kv=hbm_kv,
-                            cap_lim=cap_lim_pf * 1e-12,
-                            x1min=x1min, x1max=x1max, x2min=x2min, x2max=x2max,
-                            lmin=lmin, lmax=lmax, wA=wA, wC=wC, wL=wL,
+        return optimize_mna(layout, corner=corner, force=force, ground=ground,
+                            hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
+                            windows=windows, weights=weights,
                             mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
-                            progress_cb=_opt_tick, freeze=fz)
+                            progress_cb=_opt_tick, freeze=fz, pset=p)
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 

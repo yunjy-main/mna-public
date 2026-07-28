@@ -519,8 +519,10 @@ rf = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=2, n=200,
 chk("opt freeze: L 전 iteration 불변", all(abs(h["L"] - 350.0) < 1e-9 for h in rf["history"])
     and abs(rf["final"]["L"] - 350.0) < 1e-9, str([h["L"] for h in rf["history"]]))
 chk("opt freeze: x1/x2는 여전히 이동", any(abs(h["x1"] - 2.56) > 1e-6 for h in rf["history"]), "")
-chk("opt freeze: descriptor frozen 플래그", [v["frozen"] for v in rf["variables"]]
-    == [False, False, True], str([(v["key"], v["frozen"]) for v in rf["variables"]]))
+chk("opt freeze: descriptor frozen 플래그 (registry 순서 L,x1,x2)",
+    [(v["key"], v["frozen"]) for v in rf["variables"]]
+    == [("L", True), ("x1", False), ("x2", False)],
+    str([(v["key"], v["frozen"]) for v in rf["variables"]]))
 _tot_f = 1 + 2 * 4 + max(1, round(M.N / 200))
 chk("opt freeze: 진행률 total = 1+iters×(활성+2)+가중", prog_f[-1] == (_tot_f, _tot_f),
     str(prog_f[-1]))
@@ -618,6 +620,24 @@ chk("S2 instance_info: pset=발견 기호만 echo + R=파서 평가",
     set(ii2["pset"]) == {"L", "x1", "x2"}
     and abs(next(i for i in ii2["instances"] if i["instance"] == "XRDD_un1")["R"] - 0.5) < 1e-12,
     str(ii2.get("pset")))
+
+# 12) PSET 파이프라인 S3 (이슈 #11): optimizer N-차원 자동 구성
+r3 = optimize_mna(Lw, iters=1, n=200, windows={"x1": (1.0, 3.0)})
+v3 = {v["key"]: v for v in r3["variables"]}
+chk("S3 opt: rdd(L,W) → 변수 4개 자동 (registry 순서)",
+    list(v3) == ["L", "W", "x1", "x2"], str(list(v3)))
+chk("S3 opt: rule 창 없는 W는 강제 고정 (E3, lockable=false)",
+    v3["W"]["frozen"] is True and v3["W"]["lockable"] is False
+    and v3["L"]["lockable"] is True, str(v3["W"]))
+chk("S3 opt: windows override 반영", v3["x1"]["lo"] == 1.0 and v3["x1"]["hi"] == 3.0, "")
+chk("S3 opt: 강제 고정 W는 전 history 불변(5.0)",
+    all(h["W"] == 5.0 for h in r3["history"]) and r3["final"]["W"] == 5.0, "")
+chk("S3 opt: pset echo", r3["pset"]["W"] == 5.0 and r3["pset"]["L"] == 350.0, str(r3["pset"]))
+try:
+    optimize_mna(Lw, iters=1, n=200, freeze=("x1", "x2", "L"))
+    chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", False, "예외 없음")
+except ValueError:
+    chk("S3 opt: 강제 고정+전 변수 freeze → 대상 없음 거부 (E3+E4)", True, "")
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
