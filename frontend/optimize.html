@@ -131,36 +131,45 @@
     </div>
   </div>
 
-  <!-- ================= 2-0. Schematic MNA sweep (회로도 소자 동적 그래프) ================= -->
+  <!-- ================= 2-0. Schematic device 시각화 (소자 리스트 단일 원천, renderer 패턴) ================= -->
   <div class="card" id="schemSweepCard">
-    <h2>2-0. Schematic MNA sweep — 회로도 소자별 전압 (실측 model, I=0→Imax)</h2>
+    <h2>2-0. Schematic device 시각화 — 소자 리스트 단일 원천 (실측 model, I=0→Imax)</h2>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:4px">
       <div><label style="display:block;font-size:var(--fs-tiny);color:#5b6673">scenario (force→gnd)</label>
         <select id="ssScn"></select></div>
       <button id="ssBtn">sweep 재계산</button>
       <span class="hint" id="ssInfo"></span>
     </div>
-    <div class="hint">그래프는 schematic에 표현된 소자(저항 제외)에서 자동 생성 — 회로도에서 소자를
-      추가/삭제/비활성화하면 그래프도 따라 증감합니다. 세로 점선 = first SOA fail 전류.</div>
+    <div style="margin:4px 0 6px">
+      <label class="hint">스크럽 전류 I = <b id="ssIlab">—</b> A — tracing dot·radar·map·gauge·metric 전부 연동</label>
+      <input id="ssIdx" type="range" min="0" max="40" value="26" style="width:100%">
+    </div>
+    <div class="hint">아래 모든 시각화 요소는 schematic 소자 리스트(저항 제외)와 renderer 등록
+      패턴으로 생성 — 회로도에서 소자를 추가/삭제/비활성화하면 전 요소가 자동 증감. 세로 점선 = first SOA fail.</div>
+    <h3>소자별 V·I vs 주입전류 (tracing dot = 스크럽 전류)</h3>
     <div class="g23" id="ssDev"></div>
-    <div class="hint" style="margin-top:6px">victim monitor stress — signed 실측 rule (한계선 회색)</div>
+    <h3>victim monitor stress — signed 실측 rule</h3>
     <div class="g23" id="ssMon"></div>
+    <h3>소자별 radar (스크럽 전류 기준 · ghost 0/0.5/1/1.5/2A)</h3>
+    <div class="radars" id="ssRadar"></div>
+    <h3>소자별 SOA map (instance size의 실측 endpoint · 궤적 = sweep · 방향별 vp/ip↔vn/inn)</h3>
+    <div class="g23" id="ssMap"></div>
+    <h3>소자별 gauge (V/I usage)</h3>
+    <div class="g23" id="ssGauge"></div>
+    <h3>소자별 summary metric + usage ranking</h3>
+    <div class="chips" id="ssMetric"></div>
+    <div class="rank" id="ssRank" style="margin-top:4px"></div>
   </div>
 
   <!-- ================= 2. 시각화 ================= -->
   <div class="card" id="vizCard" hidden>
     <h2>2. 시각화</h2>
 
-    <h3>2-1. Subject radar charts (바깥=위험 · 100% 점선 경계 · ghost 0/0.5/1/1.5/2A)</h3>
-    <div class="hint">non-victim (protection / 전체)</div>
+    <h3>2-1. Integrated radar (바깥=위험 · 100% 점선 경계 · ghost 0/0.5/1/1.5/2A)</h3>
+    <div class="hint">최적화 변수(x1/x2/L) 종합 뷰 — 소자별 radar는 §2-0에서 schematic 소자
+      리스트로 동적 생성</div>
     <div class="radars">
       <div id="radarInt"></div>
-      <div id="radarA"></div>
-      <div id="radarC"></div>
-    </div>
-    <div class="hint" style="margin-top:6px">victim</div>
-    <div class="radars">
-      <div id="radarB"></div>
     </div>
 
     <h3>2-2. Precomputed x1(diode) sweep: injected current 0 → Imax</h3>
@@ -172,11 +181,9 @@
     <h3>2-4. Constraint tightness ranking</h3>
     <div class="rank" id="rank"></div>
 
-    <h3>2-5. Protection / victim V-I SOA map (schematic 소자에서 동적 생성)</h3>
-    <div class="hint">non-victim (protection) — 한계선은 최적화 변수(x1/x2) 바인딩 소자만
-      (secondary x1/10·b2b는 한계 데이터 없음 → 2-0 전압 그래프로 관측)</div>
-    <div class="g23" id="mapsNV"></div>
-    <div class="hint" style="margin-top:6px">victim</div>
+    <h3>2-5. Victim V-I SOA map (analytic probe — I_v)</h3>
+    <div class="hint">소자별 SOA map은 §2-0에서 schematic 소자 리스트로 동적 생성(instance
+      size별 실측 endpoint). 여기는 analytic victim probe(I_v)의 종합 map만 유지.</div>
     <div class="g23">
       <div id="mapV"></div>
     </div>
@@ -325,64 +332,171 @@ function updateSchemAnn(I){
   set('i','I='+(+I).toFixed(2)+'A');
   set('iv','I_v='+(1000*ip(t.IV)).toFixed(2)+'mA');
 }
-// ---------- 2-0. Schematic MNA sweep — 회로도 소자 동적 그래프 ----------
-let SS=null, SSDEV=null, SSLIM=null;
+// ---------- 2-0. Schematic device 시각화 — 소자 리스트 단일 원천 + renderer 등록 패턴 ----------
+// 아키텍처(사용자 지시 2026-07-28): 소자 리스트(DV.devs)는 sweep API의 devices
+// (=schematic 추출, device_v/device_i와 동일 key)와 1:1. 시각화 요소는
+// dvRegister({host, applies, render[, after]})로 "등록"만 하면 되고, dvRenderAll의
+// 단일 루프(소자 × renderer)가 DOM을 생성한다 — 소자 증감 시 전 요소 자동 연동.
+let SS=null;
+const DV={devs:[], ctx:null, reg:[]};
+function dvRegister(spec){DV.reg.push(spec);}
+function dvCtx(){
+  const sc=SS.scenarios[+document.getElementById('ssScn').value||0];
+  if(!sc||sc.error) return null;
+  const idx=Math.min(+document.getElementById('ssIdx').value||0, sc.points.length-1);
+  return {sc, pts:sc.points, I:sc.points.map(p=>p.I), idx,
+          iNow:sc.points[idx].I, pNow:sc.points[idx],
+          ffI:sc.first_soa_fail?sc.first_soa_fail.current:null,
+          rules:SS.monitor_rules||{}, imax:SS.imax};
+}
+function dvRenderAll(){
+  if(!SS) return;
+  const c=DV.ctx=dvCtx();
+  document.getElementById('ssIlab').textContent=c?f(c.iNow,2):'—';
+  DV.reg.forEach(r=>{
+    const host=document.getElementById(r.host); if(!host) return;
+    host.innerHTML='';
+    if(!c){host.textContent='시나리오 오류';return;}
+    DV.devs.filter(d=>r.applies(d)).forEach(d=>{
+      const cell=document.createElement('div'); host.appendChild(cell); r.render(cell,d,c);});
+    if(r.after) r.after(host,c);
+  });
+}
+// 공용 계산 — 소자 전압/전류/usage (signed endpoint: 방향별 vp/ip ↔ vn/inn)
+function dvV(d,c,k){return c.pts[k].device_v[d.key];}
+function dvI(d,c,k){const i=c.pts[k].device_i[d.key];return (i===undefined||i===null)?null:i;}
+function dvMon(d,c,k){return (c.pts[k].monitors||[]).find(m=>m.instance===d.instance);}
+function dvUsage(d,c,k){
+  if(d.role==='soa_monitor'){
+    const m=dvMon(d,c,k);
+    if(!m||!m.stress) return null;
+    let u=0,worst='';
+    (c.rules[d.model]||[]).forEach(r=>{const v=m.stress[r.quantity];
+      const uq=v>=0?v/r.max:v/r.min;
+      if(uq>u){u=uq;worst=r.quantity;}});
+    return {u,worst,valid:m.valid};
+  }
+  if(!d.soa) return null;
+  const V=dvV(d,c,k), I=dvI(d,c,k);
+  const uV=V>=0?V/d.soa.vp:V/d.soa.vn;
+  const uI=I===null?0:(I>=0?I/d.soa.ip:I/d.soa.inn);
+  return {uV,uI,u:Math.max(uV,uI),worst:uV>=uI?'V':'I',valid:true};
+}
+function dvGhosts(c,ax){
+  const gs=[];
+  [0,0.5,1.0,1.5,2.0].forEach(g=>{if(g<=c.imax+1e-9)
+    gs.push({vals:ax(Math.round(g/c.imax*(c.pts.length-1)))});});
+  return gs;
+}
+
+// [renderer] 소자별 V·I 곡선 + tracing dot
+dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
+  const series=[{x:c.I,y:c.I.map((_,k)=>dvV(d,c,k)),color:CB.blue,label:'V'}];
+  if(c.I.some((_,k)=>dvI(d,c,k)!==null))
+    series.push({x:c.I,y:c.I.map((_,k)=>dvI(d,c,k)||0),color:CB.green,label:'I (A)'});
+  lineChart(el,{title:d.key,w:380,h:150,series,
+    points:[{x:c.iNow,y:dvV(d,c,c.idx),r:4.5,color:CB.red}],
+    vlines:c.ffI!==null?[{x:c.ffI}]:[],xlabel:'I inj (A)'});
+}});
+// [renderer] victim monitor stress + signed 한계선 + tracing dot
+dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
+  const rl=c.rules[d.model]||[], lim=q=>rl.find(r=>r.quantity===q);
+  const pick=q=>{const xs=[],ys=[];c.pts.forEach(p=>{
+    const m=(p.monitors||[]).find(m=>m.instance===d.instance);
+    if(m&&m.stress){xs.push(p.I);ys.push(m.stress[q]);}});return{xs,ys};};
+  const QS=['VGS','VGD','VDS'], QC=[CB.blue,CB.green,CB.purple];
+  const s=QS.map((q,i)=>{const pr=pick(q);return{x:pr.xs,y:pr.ys,color:QC[i],label:q};})
+    .filter(t=>t.x.length);
+  if(!s.length){el.className='hint';el.textContent=d.key+': monitor 무효(unresolved/비수렴)';return;}
+  const hl=[], g=lim('VGS'), t=lim('VDS');
+  if(g) hl.push({y:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{y:g.min,color:CB.gray});
+  if(t) hl.push({y:t.max,color:CB.orange,label:'VDS ±'+t.max});
+  const m0=dvMon(d,c,c.idx);
+  lineChart(el,{title:d.key+' stress',w:380,h:170,series:s,hlines:hl,
+    points:(m0&&m0.stress)?QS.map((q,i)=>({x:c.iNow,y:m0.stress[q],r:4,color:QC[i]})):[],
+    vlines:c.ffI!==null?[{x:c.ffI}]:[],xlabel:'I inj (A)'});
+}});
+// [renderer] 소자별 radar (ghost = 0/0.5/1/1.5/2A)
+dvRegister({host:'ssRadar', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
+  if(d.role==='soa_monitor'){
+    const rl=c.rules[d.model]||[];
+    const ax=k=>{const m=dvMon(d,c,k);
+      const vals=rl.map(r=>{if(!m||!m.stress)return 0;
+        const v=m.stress[r.quantity];return v>=0?v/r.max:v/r.min;});
+      return vals.concat([Math.max(0,1-Math.max(0,...vals))]);};
+    radar(el,d.key,rl.map(r=>r.quantity).concat(['margin']),ax(c.idx),dvGhosts(c,ax));
+    return;
+  }
+  const ax=k=>{const V=dvV(d,c,k),I=dvI(d,c,k)||0;
+    const uV=V>=0?V/d.soa.vp:V/d.soa.vn, uI=I>=0?I/d.soa.ip:I/d.soa.inn;
+    const vio=Math.abs(c.pts[k].v[c.sc.force]||0);
+    return [uV,uI,Math.abs(V)/(vio||1e-9),Math.abs(I)/(c.pts[k].I||1e-9),
+            Math.max(0,1-uV),Math.max(0,1-uI)];};
+  radar(el,d.key+' · size '+f(d.soa.size,3),
+    ['V usage','I usage','V share','I share','V margin','I margin'],ax(c.idx),dvGhosts(c,ax));
+}});
+// [renderer] 소자별 SOA map — 스크럽 동작점 + sweep 궤적, 방향별 한계
+dvRegister({host:'ssMap', applies:d=>!!d.soa, render:(el,d,c)=>{
+  const V=dvV(d,c,c.idx), I=dvI(d,c,c.idx)||0, neg=V<0;
+  MNA.soaMap(el,{title:d.key+(neg?' (역방향 vn/inn)':''),
+    V:Math.abs(V), I:Math.abs(I),
+    Vlim:neg?-d.soa.vn:d.soa.vp, Ilim:neg?-d.soa.inn:d.soa.ip,
+    pairs:c.pts.map(p=>({V:Math.abs(p.device_v[d.key]),I:Math.abs(p.device_i[d.key]||0)})),
+    fmtI:v=>f(v,3)+'A', xlabel:'|V| ['+d.key+']'});
+}});
+// [renderer] 소자별 gauge
+dvRegister({host:'ssGauge', applies:d=>d.soa||d.role==='soa_monitor', render:(el,d,c)=>{
+  const u=dvUsage(d,c,c.idx);
+  el.insertAdjacentHTML('beforeend','<div class="hint" style="font-weight:700">'
+    +d.key+' · '+(d.model||d.cell)+'</div>');
+  if(!u){el.insertAdjacentHTML('beforeend','<div class="hint">무효(unresolved/비수렴)</div>');return;}
+  if(d.role==='soa_monitor'){gauge(el,'SOA usage (worst '+(u.worst||'—')+')',u.u,1);}
+  else{
+    gauge(el,'V usage',u.uV,1,undefined,{valueText:f(dvV(d,c,c.idx),3)+' V'});
+    gauge(el,'I usage',u.uI,1,undefined,{valueText:f(dvI(d,c,c.idx)||0,3)+' A'});
+  }
+}});
+// [renderer] 소자별 summary metric chip
+dvRegister({host:'ssMetric', applies:()=>true, render:(el,d,c)=>{
+  const V=dvV(d,c,c.idx), I=dvI(d,c,c.idx), u=dvUsage(d,c,c.idx);
+  el.className='chip '+(u?(u.u>1?'bad':'ok'):'mid');
+  el.textContent=d.key+': V='+f(V,3)+'V'+(I!==null?' · I='+f(I,3)+'A':'')
+    +(u?' · u='+pct(u.u)+(u.u<=1?' PASS':' FAIL'):' · (한계 데이터 없음)');
+}});
+// [renderer·집계] usage ranking — 소자 리스트에서 동적 정렬
+dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
+  const items=DV.devs.map(d=>{const u=dvUsage(d,c,c.idx);
+    return u?[d.key+(u.worst?' ('+u.worst+')':''),u.u]:null;})
+    .filter(Boolean).sort((a,b)=>b[1]-a[1]);
+  host.innerHTML=items.map(it=>{const bad=it[1]>1;
+    return '<div class="gauge"><div class="lbl"><span>'+it[0]+'</span><span style="color:'
+      +(bad?MNA.C.fail:MNA.C.pass)+'">'+pct(it[1])+'</span></div>'
+      +'<div class="bar"><i style="width:'+Math.max(0,Math.min(1,it[1]/2))*100+'%;background:'
+      +(bad?CB.red:CB.blue)+'"></i><i style="left:50%;width:2px;background:'+CB.red+'"></i></div></div>';
+  }).join('');
+}});
+
 function loadSchemSweep(){
   const info=document.getElementById('ssInfo');
   info.textContent='sweep 중…';
-  const base='x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
+  const q='imax='+encodeURIComponent(val('imax'))+'&n=41'
+    +'&x1='+encodeURIComponent(val('x1init'))+'&x2='+encodeURIComponent(val('x2init'))
     +'&L='+encodeURIComponent(val('linit'))+'&corner=worst';
-  Promise.all([
-    fetch('api/analysis/sweep?imax='+encodeURIComponent(val('imax'))+'&n=41&'+base)
-      .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();}),
-    fetch('api/schematic/matrix?i=1.33&'+base)
-      .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();}),
-  ]).then(([d,mx])=>{
-    SS=d; SSDEV=mx.devices;
-    SSLIM={};
-    (mx.monitors||[]).forEach(m=>(m.checks||[]).forEach(c=>{SSLIM[c.quantity]={min:c.min,max:c.max};}));
-    const sel=document.getElementById('ssScn'), prev=sel.value;
-    sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
-    if(prev && +prev<d.scenarios.length) sel.value=prev;
-    renderSchemSweep();
-    if(DATA) renderMaps(DATA.settings), renderRadars(cur().final);
-    info.textContent=d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
-      +' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
-  }).catch(e=>{info.textContent='오류: '+(e.message||e);});
-}
-function renderSchemSweep(){
-  if(!SS) return;
-  const sc=SS.scenarios[+document.getElementById('ssScn').value||0];
-  const box=document.getElementById('ssDev'), mbox=document.getElementById('ssMon');
-  box.innerHTML=''; mbox.innerHTML='';
-  if(!sc||sc.error){box.textContent='시나리오 오류: '+(sc?sc.error:'없음');return;}
-  const pts=sc.points, I=pts.map(p=>p.I);
-  const ffI=sc.first_soa_fail?sc.first_soa_fail.current:null;
-  const vl=ffI!==null?[{x:ffI}]:[];
-  // 소자 목록은 schematic이 원천 (device_v 키) — 동적 생성
-  Object.keys(pts[0].device_v).forEach(k=>{
-    const div=document.createElement('div'); box.appendChild(div);
-    lineChart(div,{title:k,w:380,h:150,
-      series:[{x:I,y:pts.map(p=>p.device_v[k]),color:CB.blue,label:'V(양단)'}],
-      vlines:vl,xlabel:'I (A)'});
-  });
-  // victim monitor stress + signed 한계선
-  const n_mon=(pts[0].monitors||[]).length;
-  for(let mi=0;mi<n_mon;mi++){
-    const inst=pts[0].monitors[mi].instance;
-    const pick=q=>{const xs=[],ys=[];pts.forEach(p=>{const m=p.monitors[mi];
-      if(m&&m.stress){xs.push(p.I);ys.push(m.stress[q]);}});return {xs,ys};};
-    const hl=[];
-    if(SSLIM.VGS) hl.push({y:SSLIM.VGS.max,color:CB.gray,label:'VGS/VGD max '+SSLIM.VGS.max},
-                          {y:SSLIM.VGS.min,color:CB.gray,label:'min '+SSLIM.VGS.min});
-    if(SSLIM.VDS) hl.push({y:SSLIM.VDS.max,color:CB.orange,label:'VDS ±'+SSLIM.VDS.max});
-    const s=['VGS','VGD','VDS'].map((q,qi)=>{const pr=pick(q);
-      return {x:pr.xs,y:pr.ys,color:[CB.blue,CB.green,CB.purple][qi],label:q};})
-      .filter(t=>t.x.length);
-    const div=document.createElement('div'); mbox.appendChild(div);
-    if(s.length){lineChart(div,{title:inst+' stress',w:380,h:170,series:s,hlines:hl,vlines:vl,xlabel:'I (A)'});}
-    else{div.className='hint';div.textContent=inst+': 이 시나리오에서 monitor 무효(unresolved/비수렴) — stress 없음';}
-  }
+  fetch('api/analysis/sweep?'+q)
+    .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
+    .then(d=>{
+      SS=d; DV.devs=d.devices||[];   // 소자 리스트 = schematic 추출과 1:1 (단일 원천)
+      const sel=document.getElementById('ssScn'), prev=sel.value;
+      sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
+      if(prev && +prev<d.scenarios.length) sel.value=prev;
+      const sl=document.getElementById('ssIdx');
+      sl.max=d.n-1;
+      if(+sl.value>d.n-1) sl.value=d.n-1;
+      dvRenderAll();
+      info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
+        +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
+        +' · x1='+d.x1+' · x2='+d.x2+' · L='+d.L+'µm';
+    }).catch(e=>{info.textContent='오류: '+(e.message||e);});
 }
 
 function renderAll(){
@@ -390,6 +504,11 @@ function renderAll(){
   document.getElementById('ival').value=e.I.toFixed(2);
   document.getElementById('currentScrubLabel').textContent='Injected current: '+e.I.toFixed(2)+' A';
   updateSchemAnn(e.I);
+  if(SS){ // §2-0 스크럽을 최적화 슬라이더와 동기화 (tracing dot 연동)
+    const sl=document.getElementById('ssIdx');
+    sl.value=Math.max(0,Math.min(+sl.max,Math.round(e.I/SS.imax*(+sl.max))));
+    dvRenderAll();
+  }
   renderRadars(fin);renderSweep();renderGauges(fin,p);renderRank(fin);
   renderMaps(p);renderIter();renderMetrics(fin,p);renderTable();
 }
@@ -402,28 +521,11 @@ function ghostSets(ax){
   return gs;
 }
 function renderRadars(fin){
-  // v4 1:1 축 세트 (placeholder 축은 실계산 물리량으로 대체: Ron effect=전압 분담, Cap/Leak share=계수 기반 usage)
+  // 변수(x1/x2/L) 종합 축 — v4 1:1 (Ron effect=전압 분담, Cap=계수 기반 usage)
   const axInt=r=>[r.x1pos,r.x2pos,r.lpos,r.uV,r.uBI,r.uVD,r.uVC,r.uCap1];
-  const axA=r=>[r.x1pos,r.uVD,r.uID,(r.vd||0)/(r.vio||1),r.uCap1,r.uLeak1,Math.max(0,r.x1pos),Math.max(0,1-r.x1pos)];
-  const axB=r=>[r.uV,r.uBI,Math.max(0,1-r.uV),Math.max(0,1-r.uBI),r.uRV,r.vio/(r.limNterm||3.1)];
-  const axC=r=>[r.x2pos,r.uVC,r.uIC,(r.vc||0)/(r.vio||1),r.uCap2,r.uLeak2,Math.max(0,r.x2pos),Math.max(0,1-r.x2pos)];
+  // 소자별 radar는 §2-0 renderer 패턴에서 동적 생성 — 여기는 변수 종합 뷰만
   radar(document.getElementById('radarInt'),'Integrated',
     ['x1 pos','x2 pos','L pos','Victim V','Victim I','Up V','Clamp V','Cap'],axInt(fin),ghostSets(axInt));
-  // subject 라벨·존재 여부는 schematic 소자 목록(SSDEV)에서 동적 결정 —
-  // 해당 소자가 회로도에서 빠지면 radar도 사라진다
-  const dl=SSDEV||[], el=id=>document.getElementById(id);
-  const names=filt=>dl.filter(d=>!d.open&&filt(d)).map(d=>d.instance).join(' · ');
-  const tA=names(d=>(d.cell==='d_up'||d.cell==='d_down')&&(d.params||{}).size==='x1');
-  const tB=names(d=>d.role==='soa_monitor');
-  const tC=names(d=>d.cell==='clamp');
-  const axesDC=['Area pos','V usage','I usage','Ron effect','Cap share','Leak share','Min margin','Max margin'];
-  if(tA||!dl.length) radar(el('radarA'),(tA||'A: up diode')+' — x1',axesDC,axA(fin),ghostSets(axA));
-  else el('radarA').innerHTML='';
-  if(tB||!dl.length) radar(el('radarB'),(tB||'victim'),
-    ['V usage','I usage','V margin','I margin','Rail drop','PAD stress'],axB(fin),ghostSets(axB));
-  else el('radarB').innerHTML='';
-  if(tC||!dl.length) radar(el('radarC'),(tC||'clamp')+' — x2',axesDC,axC(fin),ghostSets(axC));
-  else el('radarC').innerHTML='';
 }
 function renderSweep(){ // v4 2-2: x1 절대값 + min/max rule 라인 + PASS/FAIL 점 + 현재 marker
   const s=DATA.sweep,p=DATA.settings,e=cur();
@@ -443,31 +545,24 @@ function renderGauges(fin,p){
   gauge(L,'x1 size window',fin.x1pos,1,'window',{valueText:'x1='+f(fin.x1),minLabel:'min '+p.x1min,maxLabel:'max '+p.x1max,pass:fin.x1>=p.x1min&&fin.x1<=p.x1max});
   gauge(L,'x2 size window',fin.x2pos,1,'window',{valueText:'x2='+f(fin.x2,1),minLabel:'min '+p.x2min,maxLabel:'max '+p.x2max,pass:fin.x2>=p.x2min&&fin.x2<=p.x2max});
   gauge(L,'L (RDD 공유) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
-  grp(L,'Up diode (model1)');
-  gauge(L,'voltage SOA',fin.uVD,1,undefined,{valueText:f(fin.vd)+' / '+f(fin.vt2d)+' V',maxLabel:'Vt2 '+f(fin.vt2d,2)});
-  gauge(L,'current SOA',fin.uID,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2d,2)+' A',maxLabel:'It2 '+f(fin.it2d,2)});
-  grp(L,'Clamp (model2)');
-  gauge(L,'voltage SOA',fin.uVC,1,undefined,{valueText:f(fin.vc)+' / '+f(fin.vt2c)+' V',maxLabel:'Vt2 '+f(fin.vt2c,2)});
-  gauge(L,'current SOA',fin.uIC,1,undefined,{valueText:f(e.I,2)+' / '+f(fin.it2c,2)+' A',maxLabel:'It2 '+f(fin.it2c,2)});
+  // 소자별 V/I SOA gauge는 §2-0에서 schematic 소자 리스트로 동적 생성
   grp(L,'Metal (R device)');
   gauge(L,'V drop',fin.uRV,1);
   gauge(L,'EM current',fin.uEM,1);
   gauge(L,'Joule heating',fin.uPJ,1);
   gauge(L,'Routing resource',fin.uRes,1);
-  // ---- 우: victim (type별 그룹) ----
-  grp(R,'Victim 종합 (inverter)');
+  // ---- 우: victim (analytic probe 종합 — schematic monitor gauge는 §2-0) ----
+  grp(R,'Victim 종합 (analytic probe)');
   gauge(R,'voltage SOA — U overall ('+fin.vWorst+')',fin.uV,1,undefined,{valueText:f(fin.vnds)+' / '+f(fin.limNterm,1)+' V',maxLabel:'U=100% at limit'});
   gauge(R,'current SOA (I_v)',fin.uBI,1,undefined,{valueText:f(1000*fin.iv,2)+' / '+f(1000*p.bILim,0)+' mA'});
   grp(R,'NMOS (SG '+p.vTopo+')');
   gauge(R,'terminal',fin.uVNt,1);
   gauge(R,'gate oxide',fin.uVNo,1);
-  grp(R,'PMOS (SG '+p.vTopo+')');
-  gauge(R,'terminal',fin.uVPt,1);
-  gauge(R,'gate oxide',fin.uVPo,1);
 }
 function renderRank(fin){
-  const items=[['Victim SOA U ('+fin.vWorst+')',fin.uV],['Victim I',fin.uBI],['Diode I',fin.uID],['Diode V',fin.uVD],
-    ['Clamp I',fin.uIC],['Clamp V',fin.uVC],['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],
+  // 소자별 usage ranking은 §2-0(schematic 소자 리스트)에서 동적 — 여기는 변수·rule·metal·analytic victim
+  const items=[['Victim SOA U ('+fin.vWorst+', analytic)',fin.uV],['Victim I',fin.uBI],
+    ['Metal Vdrop',fin.uRV],['Metal EM',fin.uEM],['Metal Joule',fin.uPJ],
     ['Metal res',fin.uRes],['x1 pos',fin.x1pos],['x2 pos',fin.x2pos],['L pos',fin.lpos]].sort((a,b)=>b[1]-a[1]);
   document.getElementById('rank').innerHTML=items.map(it=>{
     const bad=it[1]>1||it[1]<0;
@@ -476,28 +571,12 @@ function renderRank(fin){
   }).join('');
 }
 function renderMaps(p){
-  // v4 drawSOAMap 계승 — 단, 소자 목록은 schematic(SSDEV)에서 동적 생성.
-  // 궤적: 2-0 sweep(선택 시나리오)의 per-device 전압, 한계: 최적화 변수 바인딩(x1/x2).
+  // 소자별 SOA map은 §2-0 renderer 패턴에서 동적 생성 — 여기는 analytic victim probe만
   const s=DATA.sweep,e=cur(),fin=e.final;
-  const mA=v=>f(1000*v,2)+'mA', A=v=>f(v,3)+'A';
-  MNA.soaMap(document.getElementById('mapV'),{title:'XVictim (V(OUT), I_v)',
+  const mA=v=>f(1000*v,2)+'mA';
+  MNA.soaMap(document.getElementById('mapV'),{title:'XVictim (V(OUT), I_v — analytic)',
     V:fin.vnds, I:fin.iv, Vlim:fin.limNterm, Ilim:p.bILim,
     pairs:s.map(q=>({V:q.final.vnds,I:q.final.iv})), fmtI:mA, xlabel:'V(OUT) [V]'});
-  const box=document.getElementById('mapsNV'); box.innerHTML='';
-  const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
-  (SSDEV||[]).filter(d=>!d.open&&!d.role).forEach(d=>{
-    const sz=(d.params||{}).size;
-    const lim=(d.cell==='d_up'||d.cell==='d_down')&&sz==='x1'?{V:fin.vt2d,I:fin.it2d}
-            :(d.cell==='clamp'&&sz==='x2'?{V:fin.vt2c,I:fin.it2c}:null);
-    if(!lim) return; // 한계 데이터 없는 소자(secondary/b2b/소스)는 2-0에서 전압 관측
-    const pairs=(sc&&!sc.error)?sc.points.map(q=>({V:Math.abs(q.device_v[d.instance]||0),I:q.I})):[];
-    const now=pairs.length?pairs[Math.min(pairs.length-1,
-      Math.round(e.I/DATA.settings.imax*(pairs.length-1)))]:{V:0,I:0};
-    const div=document.createElement('div'); box.appendChild(div);
-    MNA.soaMap(div,{title:d.instance+' ('+(d.model||d.cell)+')',
-      V:now.V, I:now.I, Vlim:lim.V, Ilim:lim.I, pairs:pairs, fmtI:A,
-      xlabel:'|V| ['+d.instance+']'});
-  });
 }
 function renderIter(){
   const h=cur().history,p=DATA.settings;
@@ -579,9 +658,10 @@ document.getElementById('ival').addEventListener('change',e=>{
 P.forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',updateEquations);});
 updateEquations();
 loadSchematic(); // 섹션 0: 로드 즉시 회로도 + 주석 테이블
-// 2-0: schematic MNA sweep — 최적화 실행 없이도 로드 즉시 동적 그래프
+// 2-0: schematic device 시각화 — 최적화 실행 없이도 로드 즉시 동작
 document.getElementById('ssBtn').addEventListener('click',loadSchemSweep);
-document.getElementById('ssScn').addEventListener('change',()=>{renderSchemSweep();if(DATA)renderMaps(DATA.settings);});
+document.getElementById('ssScn').addEventListener('change',dvRenderAll);
+document.getElementById('ssIdx').addEventListener('input',dvRenderAll);
 loadSchemSweep();
 fetch('api/schematic/library').then(r=>{if(!r.ok)throw new Error(r.status);return r.json();})
   .then(d=>{

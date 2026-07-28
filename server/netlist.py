@@ -331,13 +331,33 @@ def _mirror(f):
     return g
 
 
+def _size_of(dev, x1, x2):
+    """instance params.size 해석 — "x1"/"x2"/"x1/10"/숫자. 기본: diode류=x1, clamp=x2.
+    (secondary는 primary 면적 1/10 — 사용자 지시 2026-07-28)"""
+    base = x2 if dev.get("cell") == "clamp" else x1
+    s = (dev.get("params") or {}).get("size")
+    if s is None:
+        return base
+    if isinstance(s, (int, float)):
+        return float(s)
+    expr = str(s).replace(" ", "")
+    num = {"x1": x1, "x2": x2}.get(expr.split("/")[0])
+    if num is None:
+        return base
+    if "/" in expr:
+        try:
+            return num / float(expr.split("/")[1])
+        except ValueError:
+            return num
+    return num
+
+
 def measured_context(x1=2.56, x2=1415.232, corner="worst"):
     """device record → 실측 I(V) 평가기 resolver. 곡선은 server.model calib에서 유도.
 
-    cell→모델: d_up/d_down/d_b2b = Device1(esdvpnp 제공 diode model — b2b도 동일 곡선,
-    사용자 지시 2026-07-28), clamp = Device2 미러. size는 instance params.size로
-    해석("x1"/"x2"/"x1/10" 등 — secondary는 primary 면적 1/10, 사용자 지시), 미지정
-    cell 기본값은 diode=x1, clamp=x2. (cell, size)별 곡선 캐시."""
+    cell→모델: d_up/d_down/d_b2b = Device1(esdvpnp 제공 diode model — b2b·down도 동일
+    곡선, 사용자 지시 2026-07-28 — 방향은 element 배치가 표현), clamp = Device2 미러.
+    size는 _size_of로 해석. (모델, size)별 곡선 캐시."""
     from server import model as M
     cache = {}
 
@@ -351,32 +371,37 @@ def measured_context(x1=2.56, x2=1415.232, corner="worst"):
             cache[key] = _mirror(f) if mirror else f
         return cache[key]
 
-    def size_of(dev, base):
-        s = (dev.get("params") or {}).get("size")
-        if s is None:
-            return base
-        if isinstance(s, (int, float)):
-            return float(s)
-        expr = str(s).replace(" ", "")
-        num = {"x1": x1, "x2": x2}.get(expr.split("/")[0])
-        if num is None:
-            return base
-        if "/" in expr:
-            try:
-                return num / float(expr.split("/")[1])
-            except ValueError:
-                return num
-        return num
-
     def resolve(d):
         cell = d.get("cell")
         if cell in ("d_up", "d_down", "d_b2b"):
-            return curve(M.D1, size_of(d, x1))
+            return curve(M.D1, _size_of(d, x1, x2))
         if cell == "clamp":
-            return curve(M.D2, size_of(d, x2), mirror=True)
+            return curve(M.D2, _size_of(d, x1, x2), mirror=True)
         return None
 
     return resolve
+
+
+def soa_endpoints(nl, x1=2.56, x2=1415.232, corner="worst"):
+    """저항 제외 device별 실측 SOA endpoint {vp, ip, vn, inn, size} — **element 좌표계**.
+
+    diode류=Device1·clamp=Device2를 해당 instance size로 평가. clamp는 곡선을
+    미러해 stamping하므로(zener a=하단) endpoint도 뒤집어 표현한다: element 음(−)
+    방향(주 도통)=Device2 pos branch 한계. 데이터 없는 소자=None."""
+    from server import model as M
+    out = {}
+    for key, d in _device_keys(nl):
+        cell = d.get("cell")
+        x = _size_of(d, x1, x2)
+        if cell in ("d_up", "d_down", "d_b2b"):
+            e = M.ep(M.D1, x, corner)
+            out[key] = {"vp": e["vp"], "ip": e["ip"], "vn": e["vn"], "inn": e["inn"], "size": x}
+        elif cell == "clamp":
+            e = M.ep(M.D2, x, corner)
+            out[key] = {"vp": -e["vn"], "ip": -e["inn"], "vn": -e["vp"], "inn": -e["ip"], "size": x}
+        else:
+            out[key] = None
+    return out
 
 
 def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=350.0,
@@ -630,12 +655,11 @@ RAIL_SCENARIOS = [("IO", "VSS"), ("VSS", "IO"), ("IO", "VDD"),
                   ("VDD", "IO"), ("VDD", "VSS"), ("VSS", "VDD")]
 
 
-def device_voltages(nl, sol):
-    """저항을 제외한 모든 device의 양단 전압 (사용자 요구: 동적 그래프 원천).
-    monitor FET은 VDS(상세 stress는 monitors에), 동일 instance 복수 소자는 #k 접미."""
-    names = nl["nets"]
-    v = sol["v"]
-    out = {}
+def device_keys(nl):
+    """저항 제외 device의 (표시 key, record) 목록 — 시각화의 단일 소자 원천.
+    동일 instance 복수 소자(b2b 쌍)는 #k 접미. device_v/device_i/soa_endpoints/
+    frontend 소자 리스트가 전부 이 키를 공유한다."""
+    out = []
     seen = {}
     for d in nl["devices"]:
         if d["kind"] == "resistor" or d["open"]:
@@ -644,10 +668,46 @@ def device_voltages(nl, sol):
         seen[key] = seen.get(key, 0) + 1
         if seen[key] > 1:
             key = "{}#{}".format(key, seen[key])
+        out.append((key, d))
+    return out
+
+
+def _device_keys(nl):
+    return device_keys(nl)
+
+
+def device_voltages(nl, sol):
+    """저항을 제외한 모든 device의 양단 전압 (사용자 요구: 동적 그래프 원천).
+    monitor FET은 VDS(상세 stress는 monitors에)."""
+    names = nl["nets"]
+    v = sol["v"]
+    out = {}
+    for key, d in device_keys(nl):
         if d["kind"] in ("pfet", "nfet"):
             out[key] = v[names[d["drain"]]] - v[names[d["source"]]]
         else:
             out[key] = v[names[d["a"]]] - v[names[d["b"]]]
+    return out
+
+
+def device_currents(nl, sol, model_ctx=None):
+    """저항 제외 device의 분기 전류 — diode/zener는 stamping과 동일한 평가기의 I(V).
+    monitor(무방정식)·전류원(시나리오 강제)은 None (임의 계산 금지, 이슈 #10)."""
+    names = nl["nets"]
+    v = sol["v"]
+    out = {}
+    for key, d in device_keys(nl):
+        if d["kind"] in ("diode", "zener") and d.get("role") != "soa_monitor":
+            V = v[names[d["a"]]] - v[names[d["b"]]]
+            meas = model_ctx(d) if model_ctx else None
+            if meas is not None:
+                out[key] = meas(V)[0]
+            elif d["kind"] == "zener":
+                out[key] = _clamp_iv(V)[0]
+            else:
+                out[key] = _diode_iv(V)[0]
+        else:
+            out[key] = None
     return out
 
 
@@ -683,6 +743,7 @@ def sweep_scenario(nl, force, ground, imax=2.0, n=21, L=350.0, model_ctx=None):
         points.append({"I": i, "status": status, "converged": sol["converged"],
                        "residual": sol["residual"], "v": sol["v"],
                        "device_v": device_voltages(nl, sol),
+                       "device_i": device_currents(nl, sol, model_ctx=model_ctx),
                        "monitors": [{"instance": m["instance"], "valid": m["valid"],
                                      "reason": m["reason"], "passed": m["passed"],
                                      "stress": m["stress"],

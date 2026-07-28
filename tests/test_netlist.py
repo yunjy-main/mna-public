@@ -420,6 +420,26 @@ chk("measured sweep 전 point 수렴", all(p["converged"] for p in swm["points"]
 chk("sweep point에 device_v 포함", all("device_v" in p and len(p["device_v"]) == 11
                                        for p in swm["points"]), "")
 
+# 소자별 SOA endpoint (element 좌표계): size 스케일 + clamp 방향 반전
+from server.netlist import soa_endpoints  # noqa: E402
+eps = soa_endpoints(nl, 2.56, 1415.232, "worst")
+e_up, e_up2, e_cl = eps["XD_up"], eps["XD_up2"], eps["XClamp"]
+chk("endpoint: secondary size=x1/10", abs(e_up2["size"] - 0.256) < 1e-12
+    and e_up2["ip"] < 0.5 * e_up["ip"], str((e_up2["size"], e_up2["ip"], e_up["ip"])))
+e_d2 = M.ep(M.D2, 1415.232, "worst")
+chk("endpoint: clamp element 좌표계 반전(주 도통=음방향)",
+    abs(e_cl["vn"] + e_d2["vp"]) < 1e-12 and abs(e_cl["inn"] + e_d2["ip"]) < 1e-12
+    and abs(e_cl["vp"] + e_d2["vn"]) < 1e-12, str(e_cl))
+chk("endpoint: 전류원·monitor는 None", eps["XI_ESD (IO→VSS)"] is None and eps["XVictim"] is None, "")
+chk("endpoint: b2b도 D1 endpoint", abs(eps["XD_b2b_m"]["ip"] - e_up["ip"]) < 1e-12, "")
+
+# device_i: KCL — 주입 2A = D_up + D_up2 분담, monitor/전류원 None
+sw2 = sweep_scenario(nl, "IO", "VSS", imax=2.0, n=3, model_ctx=ctx)
+pi = sw2["points"][-1]["device_i"]
+chk("device_i KCL(2A 분담)", abs(pi["XD_up"] + pi["XD_up2"] - 2.0) < 2e-3,
+    str((pi["XD_up"], pi["XD_up2"])))
+chk("device_i monitor/전류원 None", pi["XVictim"] is None and pi["XI_ESD (IO→VSS)"] is None, "")
+
 # pwl kink 진동 회귀 (2026-07-28 발견): 병렬 실측 diode도 backtracking으로 수렴
 Lp = copy.deepcopy(DEFAULT_LAYOUT)
 Lp["elements"].append({"type": "diode", "from": "N1", "to": "N2"})
