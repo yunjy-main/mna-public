@@ -458,7 +458,7 @@ dvRegister({host:'ssDev', applies:()=>true, render:(el,d,c)=>{
     for(let k=k0;k>=0;k--){const u=dvUsage(d,c,k);
       if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
   }
-  lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,origin:true,
+  lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,sym:true,
     xlabel:'V(양단) [V]'});
 }});
 // [renderer] victim monitor stress — 동일 pivot: X=stress V, Y=주입전류 (한계=세로선)
@@ -480,7 +480,7 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const ffl=[];
   if(c.ffI!==null) ffl.push({y:c.ffI,color:CB.red,label:'first fail +'});
   if(c.ffIN!==null) ffl.push({y:c.ffIN,color:CB.red,label:'first fail −'});
-  lineChart(el,{title:'I-V victim · '+d.key,w:380,h:170,series:s,vlines:vl,origin:true,
+  lineChart(el,{title:'I-V victim · '+d.key,w:380,h:170,series:s,vlines:vl,sym:true,
     points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
     hlines:ffl,xlabel:'stress [V]'});
 }});

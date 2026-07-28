@@ -37,7 +37,11 @@ window.MNA = (function () {
     xs = xs.filter(isFinite); ys = ys.filter(isFinite);
     if (!xs.length) { el.innerHTML = ''; return; }
     let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    if (o.origin) { x0 = Math.min(x0, 0); x1 = Math.max(x1, 0); y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+    if (o.origin || o.sym) { x0 = Math.min(x0, 0); x1 = Math.max(x1, 0); y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+    if (o.sym) { // 양/음 최대 대칭 — 원점이 항상 plot 정중앙 (snap도 대칭 유지)
+      const mx = Math.max(-x0, x1), my = Math.max(-y0, y1);
+      x0 = -mx; x1 = mx; y0 = -my; y1 = my;
+    }
     if (x0 === x1) { x0 -= 1; x1 += 1; } if (y0 === y1) { y0 -= 1; y1 += 1; }
     const px = (x1 - x0) * .03, py = (y1 - y0) * .07; x0 -= px; x1 += px; y0 -= py; y1 += py;
     // graph 기본: 눈금은 1-2-5 계열의 '딱 떨어지는' step, 0에 정렬 —
