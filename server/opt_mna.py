@@ -78,7 +78,8 @@ def design_usages(nl, x1, x2, L, corner, force, ground, i_spec, cap_lim,
                 out["{}·invalid{}".format(m["instance"], tag)] = 3.0
     cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
     out["cap(IO)"] = cap_total / cap_lim
-    detail["cap"] = {"total": cap_total, "lim": cap_lim}
+    # 집계 spec 항목은 usage 키와 동일 키로 detail 기록 (frontend 표의 동적 생성 원천)
+    detail["cap(IO)"] = {"value": cap_total, "lim": cap_lim, "unit": "F", "kind": "spec"}
     return out, detail
 
 
@@ -165,5 +166,14 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
     final["detail"] = det_final
     return {"initial": initial, "final": final, "history": history,
             "best_it": best_it,  # 최적해 iteration — 마지막 step이 아닐 수 있음(Adam 관성)
+            # 설계변수 descriptor — AS-IS/TO-BE 표의 동적 생성 원천 (하드코딩 금지)
+            "variables": [
+                {"key": "x1", "name": "x1 (diode size)", "lo": x1min, "hi": x1max,
+                 "unit": "", "dec": 3, "kind": "rule"},
+                {"key": "x2", "name": "x2 (clamp size)", "lo": x2min, "hi": x2max,
+                 "unit": "", "dec": 1, "kind": "rule"},
+                {"key": "L", "name": "L (RDD 금속)", "lo": lmin, "hi": lmax,
+                 "unit": "µm", "dec": 1, "kind": "rule"},
+            ],
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
             "force": force, "ground": ground, "corner": corner, "iters": iters}

@@ -202,7 +202,7 @@
       </div>
       <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
       <div class="radars" id="optRadar"></div>
-      <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선(usage/loss 감소)=녹색, 악화=적색.">ⓘ</span></h3>
+      <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선=녹색, 악화=적색.&#10;spec/SOA 열의 종류 표기: rule=설계변수 창, spec=외부 spec(capLim), SOA=소자 실측 한계(TO-BE size 반영, 순방향 ≤/역방향 ≥).&#10;행은 전부 데이터 구동(서버 variables·usage·detail) — 하드코딩 없음.&#10;※ 미러 소자의 동일 값(예: XD_up·V+ ↔ XD_down·V−)은 대칭 시나리오+동일 곡선·size의 물리적 결과(차이 <1e-8).">ⓘ</span></h3>
       <div class="tw"><table id="optDiff"></table></div>
       <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (x1/x2/L 갱신 + 재해석)</button>
     </div>
@@ -821,8 +821,12 @@ function renderOptIter(){
   // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
   const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
   const u0=t0.usages||{}, uc=cur.usages||{};
+  // ── 표는 전부 데이터 구동 (하드코딩 금지 — 사용자 지시):
+  //    설계변수 = 서버 variables descriptor, 집계 spec = usage 키↔detail[동일 키],
+  //    소자 행 = usage 키 전수. spec/SOA 열은 종류(rule/spec/SOA)를 밝혀 표기.
+  //    미러 소자(XD_up·V+ ↔ XD_down·V− 등)의 동일 값은 대칭 시나리오+공유 곡선의 물리 결과.
   let html='<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')
-    +')</th><th>diff</th><th>spec</th><th>판정</th></tr>';
+    +')</th><th>diff</th><th>spec/SOA</th><th>판정</th></tr>';
   const VER=v=>v===null?'<span style="color:#8a94a0">—</span>'
     :(v?'<b style="color:#0a7d38">PASS</b>':'<b style="color:#b3261e">FAIL</b>');
   const drow=(name,at,bt,dtext,col,spec,verdict)=>{
@@ -835,25 +839,27 @@ function renderOptIter(){
     drow(name,f(a,dec)+unit,f(b,dec)+unit,(dd>=0?'+':'')+f(dd,dec)+unit+rel,
       lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',spec,verdict);
   };
-  // 1) 설계변수 — spec = rule 창(min~max), 판정 = TO-BE 창 내
-  const win=(id1,id2)=>[+val(id1),+val(id2)];
-  const [x1lo,x1hi]=win('x1min','x1max'), [x2lo,x2hi]=win('x2min','x2max'), [llo,lhi]=win('lmin','lmax');
-  numRow('x1 (diode size)',t0.x1,cur.x1,3,'',false,x1lo+' ~ '+x1hi,cur.x1>=x1lo&&cur.x1<=x1hi);
-  numRow('x2 (clamp size)',t0.x2,cur.x2,1,'',false,x2lo+' ~ '+x2hi,cur.x2>=x2lo&&cur.x2<=x2hi);
-  numRow('L (RDD, µm)',t0.L,cur.L,1,'',false,llo+' ~ '+lhi+'µm',cur.L>=llo&&cur.L<=lhi);
-  // 2) spec 집계 — cap은 합산 절대값, spec=capLim, 판정=합산≤한계
-  const cap0=d0.cap, capc=dc.cap;
-  if(cap0&&capc){
-    drow('cap (IO 합산)',
-      f(cap0.total*1e15,0)+'fF ('+pct(u0['cap(IO)']||0)+')',
-      f(capc.total*1e15,0)+'fF ('+pct(uc['cap(IO)']||0)+')',
-      ((capc.total>=cap0.total?'+':'')+f((capc.total-cap0.total)*1e15,0)+'fF ('
-        +(((uc['cap(IO)']||0)-(u0['cap(IO)']||0))*100).toFixed(1)+'%p)'),
-      capc.total<=cap0.total?'#0a7d38':'#b3261e',
-      '≤ '+f(capc.lim*1e12,1)+'pF', capc.total<=capc.lim);
-  }
-  numRow('loss',t0.loss,cur.loss,3,'',true);
-  // 3) 소자별 — usage 전 항목 동적: spec = TO-BE 시점의 signed 한계(값÷usage), 판정 = usage≤100%
+  const fmtF=v=>Math.abs(v)>=1e-12?f(v*1e12,2)+'pF':f(v*1e15,0)+'fF';  // F 단위 공학 표기
+  // 1) 설계변수 — 서버 descriptor에서 동적
+  (d.variables||[]).forEach(vd=>{
+    numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
+      'rule '+vd.lo+' ~ '+vd.hi+vd.unit,
+      cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
+  });
+  // 2) 집계 spec — usage 키 중 '·' 없는 항목을 detail[동일 키]로 표시
+  Object.keys(u0).filter(k=>!k.includes('·')).forEach(k=>{
+    const a0=d0[k], ac=dc[k];
+    if(!a0||!ac||a0.value===undefined) return;
+    const fu=a0.unit==='F'?fmtF:(v=>f(v,3)+(a0.unit||''));
+    drow(k, fu(a0.value)+' ('+pct(u0[k]||0)+')', fu(ac.value)+' ('+pct(uc[k]||0)+')',
+      ((ac.value>=a0.value?'+':'')+fu(ac.value-a0.value).replace('-','−')+' ('
+        +(((uc[k]||0)-(u0[k]||0))*100).toFixed(1)+'%p)'),
+      ac.value<=a0.value?'#0a7d38':'#b3261e',
+      (ac.kind||'spec')+' ≤ '+fu(ac.lim), ac.value<=ac.lim);
+  });
+  // 3) 목적함수
+  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true);
+  // 4) 소자별 — usage 키 전수 동적: spec/SOA = TO-BE 시점의 signed SOA 한계(값÷usage)
   const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
   devs.forEach(devk=>{
     const s0=(d0[devk]||{}).size, sc=(dc[devk]||{}).size;
@@ -870,7 +876,7 @@ function renderOptIter(){
         ((ub-ua)>=0?'+':'')+((ub-ua)*100).toFixed(1)+'%p'
           +((va!==undefined&&vb!==undefined)?' ('+((vb-va)>=0?'+':'')+f(vb-va,3)+unit+')':''),
         ub<=ua?'#0a7d38':'#b3261e',
-        sp===null?'—':(vb>=0?'≤ ':'≥ ')+sp, ub<=1.0);
+        sp===null?'—':'SOA '+(vb>=0?'≤ ':'≥ ')+sp, ub<=1.0);
     });
   });
   document.getElementById('optDiff').innerHTML=html;
