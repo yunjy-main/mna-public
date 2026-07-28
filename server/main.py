@@ -743,8 +743,10 @@ def analysis_sweep(imax: float = 2.0, n: int = 21, L: float = 350.0,
             lo, hi = M.xwindow(M.D2)
         else:
             lo, hi = meta.get("lo"), meta.get("hi")
+        rule = meta.get("rule") or (lo, hi)  # optimizer 탐색 창 (§3 행 원천)
         params.append({"name": p["name"], "default": meta.get("default", 1.0),
                        "unit": meta.get("unit", ""), "lo": lo, "hi": hi,
+                       "rule_lo": rule[0], "rule_hi": rule[1],
                        "devices": p["devices"], "exprs": p["exprs"],
                        "supported": p["name"] in ENGINE_PARAMS})
     io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
@@ -787,7 +789,7 @@ def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
                      lmin: float = 70.0, lmax: float = 1400.0,
                      wA: float = 1.0, wC: float = 1.0, wL: float = 0.0,
                      mu_soa: float = 12.0, mu_rule: float = 20.0,
-                     lr: float = 0.06, iters: int = 30):
+                     lr: float = 0.06, iters: int = 30, freeze: str = "L"):
     """Schematic MNA 기반 optimizer (궁극 목표 마지막 조각) — loss 평가기가
     analytic 직렬 모델이 아니라 표시 중 회로도의 netlist MNA(±HBM spec 전류).
     §2 경계 카드의 승계 초기조건(x1/x2/L·corner·scenario)과 spec으로 호출된다."""
@@ -797,6 +799,8 @@ def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
         return PlainTextResponse("corner must be worst|best", status_code=422)
     if not (1 <= iters <= 200):
         return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
+    # freeze: 쉼표 구분 변수 이름 — 고정(gradient 마스크). 기본 L(사용자 확정 2026-07-28).
+    fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
     try:
         return optimize_mna(load_layout()[0], x1, x2, L, corner=corner,
@@ -805,7 +809,7 @@ def optimize_mna_api(x1: float = 2.56, x2: float = 1415.232, L: float = 350.0,
                             x1min=x1min, x1max=x1max, x2min=x2min, x2max=x2max,
                             lmin=lmin, lmax=lmax, wA=wA, wC=wC, wL=wL,
                             mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
-                            progress_cb=_opt_tick)
+                            progress_cb=_opt_tick, freeze=fz)
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 

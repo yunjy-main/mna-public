@@ -114,15 +114,8 @@
       <a href="spec">ESD Spec</a> <a href="meta">Meta/개체</a>
       <a href="ref/docs/victim_soa_model.html">victim SOA 문서</a> <a href="hub">전체 화면 목록</a>
     </div>
-    <h3>Rule 실험 (비대칭: min=가혹 FAIL·projection 금지, max=준-rule)</h3>
-    <div class="in">
-      <div><label>x1 min rule</label><input id="x1min" type="number" step="any" value="0.64"></div>
-      <div><label>x1 max (준-rule)</label><input id="x1max" type="number" step="any" value="3.84"></div>
-      <div><label>x2 min rule</label><input id="x2min" type="number" step="any" value="1415.232"></div>
-      <div><label>x2 max (준-rule)</label><input id="x2max" type="number" step="any" value="2628.288"></div>
-      <div><label>L min (µm, 공정)</label><input id="lmin" type="number" step="any" value="70"></div>
-      <div><label>L max (µm, EM/Joule)</label><input id="lmax" type="number" step="any" value="1400"></div>
-    </div>
+    <h3>설계변수 — 탐색 창·고정<span class="info" title="schematic 자유 파라미터 레지스트리에서 동적 생성(§1 입력과 같은 원천).&#10;자물쇠 = optimizer 변경 권한: 잠금 시 gradient 마스크(FD·update 생략) — 값은 §1 승계·회로 반영 유지. 고정된 변수의 탐색 창은 미연계라 비활성(활성=연계 원칙).&#10;창은 비대칭 rule: min=가혹 FAIL(급경사)·max=준-rule(완경사).&#10;기본: L 고정(layout이 결정하는 물리량).">ⓘ</span></h3>
+    <div id="optVars"></div>
     <h3>Cost</h3>
     <div class="in">
       <div><label>wA (x1 area)</label><input id="wA" type="number" step="any" value="1.0"></div>
@@ -307,6 +300,9 @@ function val(id){const el=document.getElementById(id);return el?el.value:'';}
 // 레거시 코드 호환을 위해 알려진 이름은 기존 id를 재사용한다.
 const PARAM_ID={x1:'x1init',x2:'x2init',L:'linit'};
 const PARAM_DEFAULTS={x1:2.56,x2:1415.232,L:350};
+// §3 설계변수 — 자물쇠(고정=gradient 마스크) 상태 + 탐색 창 legacy id 매핑
+const FZ={};  // name → bool. 기본 L만 잠금 (사용자 확정 2026-07-28)
+const WID={x1:['x1min','x1max'],x2:['x2min','x2max'],L:['lmin','lmax']};
 const PARAM_OVERRIDE={};  // 카드 내 input이 canonical 생성 전 편집될 때의 저장소
 function pv(name){
   const el=document.getElementById(PARAM_ID[name]||('param_'+name));
@@ -404,6 +400,41 @@ function renderParamInputs(){
     if(q.supported)
       w.querySelector('input').addEventListener('change',()=>{loadSchematic();loadSchemSweep();});
   });
+  renderOptVarRows();
+}
+// §3 설계변수 행 — 같은 레지스트리(SS.params)에서 동적 생성: 자물쇠 + 탐색 창(min~max)
+function renderOptVarRows(){
+  const vb=document.getElementById('optVars');
+  if(!vb||!SS||!SS.params) return;
+  vb.innerHTML='';
+  SS.params.forEach(q=>{
+    if(!(q.name in FZ)) FZ[q.name]=(q.name==='L');  // 기본: L만 잠금
+    const [idLo,idHi]=WID[q.name]||['param_'+q.name+'_min','param_'+q.name+'_max'];
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:6px;padding:2px 0;flex-wrap:wrap';
+    row.innerHTML='<button type="button" style="width:26px;padding:1px 0" '
+      +'title="optimizer 변경 권한 — 잠금=gradient 마스크 (값은 §1 승계, 회로 반영 유지)"'
+      +(q.supported?'':' disabled')+'></button>'
+      +'<b style="min-width:26px">'+q.name+'</b>'
+      +'<span class="hint">창</span>'
+      +'<input id="'+idLo+'" type="number" step="any" value="'+(q.rule_lo!=null?q.rule_lo:(q.lo!=null?q.lo:''))+'" style="width:82px">'
+      +'<span class="hint">~</span>'
+      +'<input id="'+idHi+'" type="number" step="any" value="'+(q.rule_hi!=null?q.rule_hi:(q.hi!=null?q.hi:''))+'" style="width:82px">'
+      +'<span class="hint">'+(q.unit||'')+'</span>'
+      +'<span style="display:none;font-size:var(--fs-tiny);color:#1f5f99;border:1px solid #1f5f99;'
+      +'border-radius:3px;padding:0 5px">고정</span>'
+      +(q.supported?'':'<span class="hint">엔진 미지원 — 비활성</span>');
+    const btn=row.children[0], lo=row.children[3], hi=row.children[5], badge=row.children[7];
+    const apply=()=>{const fz=FZ[q.name];
+      btn.textContent=fz?'🔒':'🔓';
+      lo.disabled=hi.disabled=fz||!q.supported;
+      badge.style.display=fz?'':'none';};
+    btn.addEventListener('click',()=>{FZ[q.name]=!FZ[q.name];apply();});
+    [lo,hi].forEach(el=>el.addEventListener('change',updateEquations));
+    apply();
+    vb.appendChild(row);
+  });
+  updateEquations();  // 창 input이 이제 존재 — rule 수식 표시 갱신
 }
 function collect(){const q={};P.forEach(k=>q[k]=val(k));return q;}
 
@@ -909,6 +940,12 @@ let OPT=null;
 function startMnaOpt(){
   const st=document.getElementById('status'), err=document.getElementById('err');
   const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
+  const sup=((SS&&SS.params)||[]).filter(q=>q.supported);
+  const fzList=sup.filter(q=>FZ[q.name]).map(q=>q.name);
+  if(sup.length&&fzList.length===sup.length){
+    document.getElementById('err').textContent='모든 설계변수가 고정 — 최적화 대상이 없습니다';
+    return;
+  }
   st.textContent='MNA 최적화 시작…';
   err.textContent='';
   document.getElementById('startBtn').disabled=true;
@@ -925,7 +962,8 @@ function startMnaOpt(){
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     x1min:val('x1min'),x1max:val('x1max'),x2min:val('x2min'),x2max:val('x2max'),
     lmin:val('lmin'),lmax:val('lmax'),wA:val('wA'),wC:val('wC'),wL:val('wL'),
-    mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters')});
+    mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
+    freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
   fetch('api/optimize/mna?'+q.toString())
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{OPT=d;renderOptResult();
@@ -939,11 +977,14 @@ function renderOptResult(){
   document.getElementById('optResult').hidden=false;
   const i=d.initial, fn=d.final;
   const P=t=>'<b style="color:#0a7d38">'+t+'</b>', F=t=>'<b style="color:#b3261e">'+t+'</b>';
+  // 설계변수 나열은 variables descriptor에서 동적 생성 (고정 변수는 '고정' 표기)
+  const vline=h=>(d.variables||[]).map(v=>v.key+'='+f(h[v.key],v.dec)+(v.unit||'')
+    +(v.frozen?' <b style="color:#1f5f99">고정</b>':'')).join(' · ');
   document.getElementById('optSummary').innerHTML=
     'HBM '+d.hbm_kv+'kV(±'+f(d.i_spec,2)+'A) · '+d.force+'→'+d.ground+' · corner='+d.corner
-    +'<br>초기: x1='+f(i.x1,3)+' · x2='+f(i.x2,0)+' · L='+f(i.L,0)+'µm · worst '+pct(i.worst)
+    +'<br>초기: '+vline(i)+' · worst '+pct(i.worst)
     +' ('+i.worst_name+') '+(i.soa_pass?P('PASS'):F('FAIL'))
-    +'<br>최적: x1='+f(fn.x1,3)+' · x2='+f(fn.x2,0)+' · L='+f(fn.L,0)+'µm · worst '+pct(fn.worst)
+    +'<br>최적: '+vline(fn)+' · worst '+pct(fn.worst)
     +' ('+fn.worst_name+') '+(fn.soa_pass?P('PASS'):F('FAIL'))+' · cap '+pct(fn.cap_u);
   const sl=document.getElementById('optIdx');
   sl.max=d.history.length-1;
@@ -958,8 +999,8 @@ function renderOptIter(){
   const cur=h[idx];
   const isBest=(d.best_it!==undefined&&cur.it===d.best_it);
   document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
-    +(isBest?' ★best':'')+'  (x1='+f(cur.x1,3)+' · x2='+f(cur.x2,0)+' · L='+f(cur.L,0)
-    +'µm · worst '+pct(cur.worst)+')';
+    +(isBest?' ★best':'')+'  ('+(d.variables||[]).map(v=>v.key+'='+f(cur[v.key],v.dec)
+    +(v.unit||'')+(v.frozen?'(고정)':'')).join(' · ')+' · worst '+pct(cur.worst)+')';
   // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
   const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
   const u0=t0.usages||{}, uc=cur.usages||{};
@@ -1007,8 +1048,9 @@ function renderOptIter(){
     const bound=Object.values(exprOf).some(e=>e===vd.key);
     if(bound) return;  // 소자별 size 행이 대표
     numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
-      'size','rule '+vd.lo+' ~ '+vd.hi+vd.unit,
-      cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi);
+      vd.frozen?'고정':'size',
+      vd.frozen?null:('rule '+vd.lo+' ~ '+vd.hi+vd.unit),
+      vd.frozen?undefined:(cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi));
   });
   // ③ 소자별 — SOA(usage) 행 먼저, size 등 parameter 행 나중
   const devs=[...new Set(Object.keys(u0).filter(k=>k.includes('·')).map(k=>k.split('·')[0]))];
@@ -1033,8 +1075,9 @@ function renderOptIter(){
       const expr=exprOf[devk];
       const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
       numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
-        'size', vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null),
-        vd?(sc>=vd.lo&&sc<=vd.hi):undefined);
+        (vd&&vd.frozen)?'고정':'size',
+        (vd&&vd.frozen)?null:(vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null)),
+        (vd&&vd.frozen)?undefined:(vd?(sc>=vd.lo&&sc<=vd.hi):undefined));
     }
   });
   document.getElementById('optDiff').innerHTML=html;

@@ -88,16 +88,25 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
                  x1min=0.64, x1max=3.84, x2min=1415.232, x2max=2628.288,
                  lmin=70.0, lmax=1400.0, wA=1.0, wC=1.0, wL=0.0,
                  mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
-                 progress_cb=None):
+                 progress_cb=None, freeze=()):
     """승계된 초기조건 (x1,x2,L)에서 spec(HBM 레벨·capLim) 하의 Adam 최적화.
-    progress_cb(done, total): evaluate 1회=1단위 — 초기 1 + iter당 5(기준+FD 3+갱신)
-    + 최종 정밀 재평가(저해상도 대비 격자 비율만큼 가중)."""
+    progress_cb(done, total): evaluate 1회=1단위 — 초기 1 + iter당 (활성변수+2)
+    (기준+활성 FD+갱신) + 최종 정밀 재평가(저해상도 대비 격자 비율만큼 가중).
+    freeze: 고정 변수 이름들 — gradient 마스크(FD 생략+update 생략, 값은 회로
+    평가의 상수로 유지). 자유도별 lr이 아니라 마스크가 곧 lr=0과 동치."""
+    var_keys = ("x1", "x2", "L")
+    for k in freeze:
+        if k not in var_keys:
+            raise ValueError("freeze 대상 아님: {} (가능: {})".format(k, "/".join(var_keys)))
+    active = [i for i, k in enumerate(var_keys) if k not in freeze]
+    if not active:
+        raise ValueError("모든 설계변수가 고정 — 최적화 대상이 없습니다")
     nl = extract_netlist(layout)
     i_spec = M.hbm_current(hbm_kv)
     warm, ccache = {}, {}
     bounds = ((x1min, x1max), (x2min, x2max), (lmin, lmax))
     w_final = max(1, round(M.N / max(1, n)))
-    prog = {"done": 0, "total": 1 + iters * 5 + w_final}
+    prog = {"done": 0, "total": 1 + iters * (len(active) + 2) + w_final}
 
     def _tick(k=1):
         prog["done"] += k
@@ -151,13 +160,13 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
                 "usages": _round_us(us0), "detail": det0}]
     for it in range(1, iters + 1):
         f_base, us_base, _d0 = evaluate(z)
-        grad = []
-        for i in range(3):
+        grad = {}  # 활성 변수만 FD — 고정 변수는 probe·update 모두 생략(마스크)
+        for i in active:
             zp = list(z)
             zp[i] += FD_H
             fp, _u, _d = evaluate(zp)
-            grad.append((fp - f_base) / FD_H)
-        for i in range(3):
+            grad[i] = (fp - f_base) / FD_H
+        for i in active:
             mom[i] = b1 * mom[i] + (1 - b1) * grad[i]
             vel[i] = b2 * vel[i] + (1 - b2) * grad[i] * grad[i]
             mh = mom[i] / (1 - b1 ** it)
@@ -183,11 +192,11 @@ def optimize_mna(layout, x1, x2, L, corner="worst", force="IO", ground="VSS",
             # 설계변수 descriptor — AS-IS/TO-BE 표의 동적 생성 원천 (하드코딩 금지)
             "variables": [
                 {"key": "x1", "name": "x1 (diode size)", "lo": x1min, "hi": x1max,
-                 "unit": "", "dec": 3, "kind": "rule"},
+                 "unit": "", "dec": 3, "kind": "rule", "frozen": "x1" in freeze},
                 {"key": "x2", "name": "x2 (clamp size)", "lo": x2min, "hi": x2max,
-                 "unit": "", "dec": 1, "kind": "rule"},
+                 "unit": "", "dec": 1, "kind": "rule", "frozen": "x2" in freeze},
                 {"key": "L", "name": "L (RDD 금속)", "lo": lmin, "hi": lmax,
-                 "unit": "µm", "dec": 1, "kind": "rule"},
+                 "unit": "µm", "dec": 1, "kind": "rule", "frozen": "L" in freeze},
             ],
             "i_spec": i_spec, "hbm_kv": hbm_kv, "cap_lim": cap_lim,
             "force": force, "ground": ground, "corner": corner, "iters": iters}

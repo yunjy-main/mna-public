@@ -512,6 +512,25 @@ chk("opt: progress 단조증가·완료 done==total", prog[0] == (0, _tot)
     and all(prog[i][0] < prog[i + 1][0] for i in range(len(prog) - 1))
     and prog[-1] == (_tot, _tot) and all(t == _tot for _, t in prog), str(prog[:3] + prog[-2:]))
 
+# freeze (사용자 확정 2026-07-28): gradient 마스크 — L 불변 + FD 생략(iter당 4 eval)
+prog_f = []
+rf = optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=2, n=200,
+                  freeze=("L",), progress_cb=lambda dn, t: prog_f.append((dn, t)))
+chk("opt freeze: L 전 iteration 불변", all(abs(h["L"] - 350.0) < 1e-9 for h in rf["history"])
+    and abs(rf["final"]["L"] - 350.0) < 1e-9, str([h["L"] for h in rf["history"]]))
+chk("opt freeze: x1/x2는 여전히 이동", any(abs(h["x1"] - 2.56) > 1e-6 for h in rf["history"]), "")
+chk("opt freeze: descriptor frozen 플래그", [v["frozen"] for v in rf["variables"]]
+    == [False, False, True], str([(v["key"], v["frozen"]) for v in rf["variables"]]))
+_tot_f = 1 + 2 * 4 + max(1, round(M.N / 200))
+chk("opt freeze: 진행률 total = 1+iters×(활성+2)+가중", prog_f[-1] == (_tot_f, _tot_f),
+    str(prog_f[-1]))
+for _bad_fz, _msg in ((("x1", "x2", "L"), "전 변수 고정"), (("bogus",), "미지 변수")):
+    try:
+        optimize_mna(DEFAULT_LAYOUT, 2.56, 1415.232, 350.0, iters=1, freeze=_bad_fz)
+        chk("opt freeze: {} 거부".format(_msg), False, "예외 없음")
+    except ValueError:
+        chk("opt freeze: {} 거부".format(_msg), True, "")
+
 # 9) instance/subcircuit 정본 페이지 원천 (사용자 지시 2026-07-28): /api/instance/info
 from server.main import instance_info, _slug  # noqa: E402
 from server.schematic import LIBRARY_CELLS  # noqa: E402

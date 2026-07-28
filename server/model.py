@@ -86,9 +86,10 @@ HBM_DEFAULT_KV = 1.0  # default spec 레벨 = HBM 1kV → 1.33A (사용자 지�
 # 기본값·창은 모델 계층인 여기서 공급한다 (2-소자 시절 x1/x2 하드코딩 청산, 2026-07-28).
 # dev가 있으면 창=xwindow(해당 device), 없으면 lo/hi 직접.
 PARAM_META = {
-    "x1": {"default": 2.56, "unit": "", "dev": "diode"},
-    "x2": {"default": 1415.232, "unit": "", "dev": "clamp"},
-    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0},
+    # rule: optimizer 탐색 창(비대칭 barrier 기준) — 측정 유효창(xwindow)과 구분
+    "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (0.64, 3.84)},
+    "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 2628.288)},
+    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0)},
 }
 
 
