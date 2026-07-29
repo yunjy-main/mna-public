@@ -735,6 +735,83 @@ def soa_rules_for(model):
 IO_VIEW_NETS = ("IO", "N1", "IN")  # pad에서 바라본 노드 섬 (Rio_rdl·Resd 경유 lumped view)
 
 
+def residual_param_derivatives(nl, sol, pset, corner="worst", n=None, cache=None,
+                               params=("x1", "x2", "W", "L")):
+    """∂F_s/∂p 벡터(unknowns 순서) — node 전압은 수렴해에 고정, MNA 재해석 없음
+    (이슈 #13 4.2.B/C/D).
+
+    저항: 해석 스탬프 — dI = dg·(v_a−v_b), dg = −(dR/dp)/R² (dR/dp는 바인딩 식의
+      스칼라 central FD — rdd(L,W) 등 임의 바인딩에 일반).
+    실측 소자(diode/clamp): hybrid 1단계 — 고정 V에서 곡선만 size 섭동한
+      central FD dI/dp (calib 곡선 2장 평가, solve 없음).
+    placeholder 소자·전류원·monitor: 파라미터 의존 없음 → 0."""
+    from server import model as M
+    names = nl["nets"]
+    pos = {nm: i for i, nm in enumerate(sol["unknowns"])}
+    nvec = len(sol["unknowns"])
+    v = sol["v"]
+    out = {p: [0.0] * nvec for p in params}
+    hs = {p: 1e-4 * max(1.0, abs(pset.get(p, 1.0))) for p in params}
+    ctx_pm = {}  # p → (ctx+, ctx−) 곡선 컨텍스트 (size 섭동, 캐시 공유)
+
+    def _ctxs(p):
+        if p not in ctx_pm:
+            pp, pm = dict(pset), dict(pset)
+            pp[p] = pset[p] + hs[p]
+            pm[p] = pset[p] - hs[p]
+            ctx_pm[p] = (measured_context(corner=corner, n=n, cache=cache, pset=pp),
+                         measured_context(corner=corner, n=n, cache=cache, pset=pm))
+        return ctx_pm[p]
+
+    def _stamp(rows_a, rows_b, dI, p):
+        if rows_a is not None:
+            out[p][rows_a] += dI
+        if rows_b is not None:
+            out[p][rows_b] -= dI
+
+    stamped = [d for d in nl["devices"] if not d["open"] and d["kind"] != "sourcei"
+               and d.get("role") != "soa_monitor"]
+    for d in stamped:
+        if d["kind"] == "resistor":
+            R = (d.get("params") or {}).get("R")
+            if not isinstance(R, str):
+                continue
+            pb = parse_binding(R)
+            if not pb or not pb["symbols"]:
+                continue
+            dV = v[names[d["a"]]] - v[names[d["b"]]]
+            ra, rb = pos.get(names[d["a"]]), pos.get(names[d["b"]])
+            R0 = eval_binding(pb, pset)
+            for p in params:
+                if p not in pb["symbols"]:
+                    continue
+                pp, pm = dict(pset), dict(pset)
+                pp[p] = pset[p] + hs[p]
+                pm[p] = pset[p] - hs[p]
+                dRdp = (eval_binding(pb, pp) - eval_binding(pb, pm)) / (2 * hs[p])
+                dI = -(dRdp / (R0 * R0)) * dV
+                _stamp(ra, rb, dI, p)
+        elif d["kind"] in ("diode", "zener"):
+            # 실측 곡선 소자만 파라미터 의존 (size 바인딩 기호)
+            e = size_expr_of(d)
+            pb = parse_binding(e) if e else None
+            syms = pb["symbols"] if pb else []
+            if not syms:
+                continue
+            dV = v[names[d["a"]]] - v[names[d["b"]]]
+            ra, rb = pos.get(names[d["a"]]), pos.get(names[d["b"]])
+            for p in params:
+                if p not in syms:
+                    continue
+                cp, cm = _ctxs(p)
+                fp_, fm_ = cp(d), cm(d)
+                if fp_ is None or fm_ is None:
+                    continue  # 실측 아님(placeholder) — 의존 없음
+                dI = (fp_(dV)[0] - fm_(dV)[0]) / (2 * hs[p])
+                _stamp(ra, rb, dI, p)
+    return out
+
+
 def direct_io_cap(nl, pset=None, x1=None, x2=None):
     """IO cap spec 정본 (이슈 #13 4.3.A, 사용자 확정 '완전 교체') — 일반 동작·0V
     small-signal에서 IO 직결 primary up/down diode만 합산. 선택은 이름 추측이 아니라

@@ -768,6 +768,51 @@ r_stop = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"),
 chk("S2 opt: stop_on_feasible 옵션 — 조기 종료", r_stop["stopped_on_feasible"] is True
     and len(r_stop["history"]) < len(r_fs["history"]), str(len(r_stop["history"])))
 
+# 16) S3~S5 (이슈 #13): adjoint gradient — central FD oracle 대조 (rel_err·부호)
+from server.opt_feas import adjoint_gradient  # noqa: E402
+
+_KEYS = ("x1", "x2", "W", "L")
+
+
+def _jhat(ps, cap_lim=5e-12):
+    ev = evaluate_candidate(nl, dict(ps), "worst", "IO", "VSS", _ispec, cap_lim,
+                            windows=_win, n=500)
+    return ev["losses"]["total"]
+
+
+def _grad_check(tag, ps, cap_lim=5e-12, tol=1e-2):
+    ev = evaluate_candidate(nl, dict(ps), "worst", "IO", "VSS", _ispec, cap_lim,
+                            windows=_win, n=500, keep_aux=True)
+    ga = adjoint_gradient(nl, dict(ps), ev, _KEYS, _win, (1.0, 1.0, 1.0), cap_lim,
+                          corner="worst", n=500)
+    ok, msgs = True, []
+    for p in _KEYS:
+        h = 5e-4 * max(1.0, abs(ps[p]))
+        pp, pm = dict(ps), dict(ps)
+        pp[p] += h
+        pm[p] -= h
+        g_fd = (_jhat(pp, cap_lim) - _jhat(pm, cap_lim)) / (2 * h)
+        err = abs(ga[p] - g_fd) / max(1.0, abs(ga[p]), abs(g_fd))
+        sign_ok = (abs(g_fd) < 1e-9) or (ga[p] * g_fd >= 0)
+        if err > tol or not sign_ok:
+            ok = False
+        msgs.append("{}: adj={:.5g} fd={:.5g} err={:.2g}".format(p, ga[p], g_fd, err))
+    chk("S5 gradient check ({}): rel_err≤{}·부호 일치".format(tag, tol), ok,
+        " | ".join(msgs))
+
+
+_grad_check("SOA 활성 — 초기 설계", {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0})
+_grad_check("rule 활성 — x1>max", {"x1": 4.2, "x2": 1415.232, "L": 350.0, "W": 12.0})
+_grad_check("spec 활성 — capLim 0.4pF",
+            {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0}, cap_lim=0.4e-12)
+r_adj = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"), grad="adjoint")
+chk("S6 opt: adjoint(기본)로 W 단독 PASS — FD 경로와 동일 결말",
+    r_adj["status"] == "PASS" and r_adj["grad"] == "adjoint"
+    and 11.5 < r_adj["best_feasible"]["W"] <= 12.0 + 1e-9,
+    "W={} status={}".format((r_adj.get("best_feasible") or {}).get("W"), r_adj["status"]))
+chk("S6 opt: freeze 변수는 gradient에서 제외",
+    all(set(h["gradient"]) == {"W"} for h in r_adj["history"] if h.get("gradient")), "")
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:

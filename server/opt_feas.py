@@ -21,8 +21,14 @@ import math
 
 from server import model as M
 from server.netlist import (extract_netlist, assemble_and_solve, measured_context,
-                            soa_endpoints, device_voltages, device_currents,
-                            evaluate_soa_monitors, direct_io_cap, params_registry, _pset)
+                            soa_endpoints, device_voltages, device_keys,
+                            evaluate_soa_monitors, direct_io_cap, params_registry,
+                            solve_linear, residual_param_derivatives,
+                            _pset, _clamp_iv, _diode_iv)
+
+# victim stress quantity → (양(+) 단자, 음(−) 단자) — ∂q/∂v 계수 조립용
+_VICTIM_TERMS = {"VGS": ("g", "s"), "VGD": ("g", "d"), "VDS": ("d", "s"),
+                 "VGB": ("g", "b")}
 
 FEAS_N = 500        # FD 탐색용 저해상 calib 격자 (best 후보는 정밀 N 재평가로 재판정)
 FD_H = 2e-3         # 정규화 좌표 forward 차분 스텝
@@ -36,18 +42,21 @@ def _phi(g):
 
 def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
                        windows=None, alphas=(1.0, 1.0, 1.0),
-                       warm=None, calib_cache=None, n=FEAS_N):
+                       warm=None, calib_cache=None, n=FEAS_N, keep_aux=False):
     """candidate pset의 constraint 전수 평가 (이슈 #13 4.1.A 스키마).
 
     반환: {solver, constraints{rule,soa,spec}, losses{rule,soa,spec,total},
-           feasible, detail(legacy 표시 호환), usages(legacy 키 호환)}.
-    비수렴 케이스는 SOA usage에 섞지 않고 solver status로만 기록 → feasible=False."""
+           feasible, detail(legacy 표시 호환), usages(legacy 키 호환)[, aux]}.
+    비수렴 케이스는 SOA usage에 섞지 않고 solver status로만 기록 → feasible=False.
+    keep_aux=True면 adjoint 조립용 부가정보(해 객체·record별 node/g_d/한계) 포함."""
     ctx = measured_context(corner=corner, n=n, cache=calib_cache, pset=pset)
     eps = soa_endpoints(nl, corner=corner, pset=pset)
+    kd = dict(device_keys(nl))
     warm = warm if warm is not None else {}
     cons = {"rule": [], "soa": [], "spec": []}
     solver = {}
     detail = {}
+    aux = {"sols": {}}
 
     # ── rule (전 변수 — 판정에는 frozen 포함, gradient는 optimizer가 active만 사용)
     for name, (lo, hi) in (windows or {}).items():
@@ -70,22 +79,40 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
         if not sol["converged"]:
             continue  # usage 혼합 금지 — solver status가 infeasible을 만든다
         warm[tag] = [sol["v"][nm] for nm in sol["unknowns"]]
+        if keep_aux:
+            aux["sols"][tag] = sol
+        names = nl["nets"]
         dv = device_voltages(nl, sol)
-        di = device_currents(nl, sol, model_ctx=ctx)
         for key, e in eps.items():
             if not e:
                 continue
-            V, I = dv[key], (di.get(key) or 0.0)
+            d = kd[key]
+            V = dv[key]
+            meas = ctx(d)
+            if meas is not None:
+                I, g_d = meas(V)
+            elif d["kind"] == "zener":
+                I, g_d = _clamp_iv(V)
+            else:
+                I, g_d = _diode_iv(V)
             uV = V / e["vp"] if V >= 0 else V / e["vn"]
             uI = I / e["ip"] if I >= 0 else I / e["inn"]
-            cons["soa"].append({"key": "{}·V{}".format(key, tag), "category": "soa",
-                                "stress_case": tag, "device": key, "quantity": "V",
-                                "value": V, "limit_min": e["vn"], "limit_max": e["vp"],
-                                "usage": uV, "g": uV - 1.0, "passed": uV <= 1.0})
-            cons["soa"].append({"key": "{}·I{}".format(key, tag), "category": "soa",
-                                "stress_case": tag, "device": key, "quantity": "I",
-                                "value": I, "limit_min": e["inn"], "limit_max": e["ip"],
-                                "usage": uI, "g": uI - 1.0, "passed": uI <= 1.0})
+            nodes = (names[d["a"]], names[d["b"]])
+            rv = {"key": "{}·V{}".format(key, tag), "category": "soa",
+                  "stress_case": tag, "device": key, "quantity": "V",
+                  "value": V, "limit_min": e["vn"], "limit_max": e["vp"],
+                  "usage": uV, "g": uV - 1.0, "passed": uV <= 1.0}
+            ri = {"key": "{}·I{}".format(key, tag), "category": "soa",
+                  "stress_case": tag, "device": key, "quantity": "I",
+                  "value": I, "limit_min": e["inn"], "limit_max": e["ip"],
+                  "usage": uI, "g": uI - 1.0, "passed": uI <= 1.0}
+            if keep_aux:
+                rv["_aux"] = {"kind": "V", "nodes": nodes, "dev_key": key,
+                              "limit_active": e["vp"] if V >= 0 else e["vn"], "V": V}
+                ri["_aux"] = {"kind": "I", "nodes": nodes, "dev_key": key, "g_d": g_d,
+                              "limit_active": e["ip"] if I >= 0 else e["inn"], "V": V}
+            cons["soa"].append(rv)
+            cons["soa"].append(ri)
             dd = detail.setdefault(key, {"size": round(e["size"], 4),
                                          "vp": round(e["vp"], 3), "vn": round(e["vn"], 3),
                                          "ip": round(e["ip"], 4), "inn": round(e["inn"], 4)})
@@ -96,14 +123,21 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
                 solver[tag]["monitor_invalid"] = m["reason"]
                 continue
             dd = detail.setdefault(m["instance"], {})
+            tnet = {t: info["net"] for t, info in m["terminals"].items()}
             for c in m["checks"]:
                 val = c["value"]
                 u = val / c["max"] if val >= 0 else val / c["min"]
-                cons["soa"].append({"key": "{}·{}{}".format(m["instance"], c["quantity"], tag),
-                                    "category": "soa", "stress_case": tag,
-                                    "device": m["instance"], "quantity": c["quantity"],
-                                    "value": val, "limit_min": c["min"], "limit_max": c["max"],
-                                    "usage": u, "g": u - 1.0, "passed": u <= 1.0})
+                rec = {"key": "{}·{}{}".format(m["instance"], c["quantity"], tag),
+                       "category": "soa", "stress_case": tag,
+                       "device": m["instance"], "quantity": c["quantity"],
+                       "value": val, "limit_min": c["min"], "limit_max": c["max"],
+                       "usage": u, "g": u - 1.0, "passed": u <= 1.0}
+                if keep_aux and c["quantity"] in _VICTIM_TERMS:
+                    hi_t, lo_t = _VICTIM_TERMS[c["quantity"]]
+                    rec["_aux"] = {"kind": "victim",
+                                   "nodes": (tnet[hi_t], tnet[lo_t]), "dev_key": None,
+                                   "limit_active": c["max"] if val >= 0 else c["min"]}
+                cons["soa"].append(rec)
                 dd[c["quantity"] + tag] = round(val, 4)
 
     # ── spec: 0V direct up/down cap (ESD 해와 분리 — x1만의 함수)
@@ -126,8 +160,110 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
                 and "monitor_invalid" not in solver["-"]
                 and all(c["passed"] for c in all_cons))
     usages = {c["key"]: c["usage"] for c in all_cons if c["usage"] is not None}
-    return {"solver": solver, "constraints": cons, "losses": losses,
-            "feasible": feasible, "detail": detail, "usages": usages}
+    out = {"solver": solver, "constraints": cons, "losses": losses,
+           "feasible": feasible, "detail": detail, "usages": usages}
+    if keep_aux:
+        out["aux"] = aux
+    return out
+
+
+def adjoint_gradient(nl, pset, ev, param_keys, windows, alphas, cap_lim,
+                     corner="worst", n=FEAS_N, cache=None):
+    """dJ_hat/dp (barrier 제외) — 직접 경로 + stress case별 adjoint (이슈 #12 §5·§6).
+
+      J_sᵀψ_s = ∂J_obj/∂v_s  (케이스당 1회 전치 선형해)
+      dJ/dp = ∂J/∂p − Σ_s ψ_sᵀ·∂F_s/∂p
+
+    직접 경로: rule hinge(해석), cap(스칼라 FD), SOA limit의 size 의존(−q·dlim/lim²)
+    과 고정 V에서의 전류 size 의존(dI/dp|V / lim). MNA 경유는 residual stamp.
+    hinge 특성상 PASS(g≤0) 항목은 기여 0 — evaluate_candidate(keep_aux=True) 결과 필요."""
+    a_rule, a_soa, a_spec = alphas
+    grad = {p: 0.0 for p in param_keys}
+    hs = {p: 1e-4 * max(1.0, abs(pset.get(p, 1.0))) for p in param_keys}
+
+    # ── 직접: rule hinge (해석)
+    for name, (lo, hi) in (windows or {}).items():
+        if name not in grad:
+            continue
+        v, span = pset[name], (hi - lo) or 1.0
+        g_min, g_max = (lo - v) / span, (v - hi) / span
+        if g_min > 0:
+            grad[name] += a_rule * g_min * (-1.0 / span)
+        if g_max > 0:
+            grad[name] += a_rule * g_max * (1.0 / span)
+
+    # ── 직접: spec (0V cap — ESD 해 무관, 스칼라 중심차분)
+    for c in ev["constraints"]["spec"]:
+        if c["g"] <= 0:
+            continue
+        for p in param_keys:
+            pp, pm = dict(pset), dict(pset)
+            pp[p] += hs[p]
+            pm[p] -= hs[p]
+            dC = (direct_io_cap(nl, pset=pp) - direct_io_cap(nl, pset=pm)) / (2 * hs[p])
+            grad[p] += a_spec * c["g"] * dC / cap_lim
+
+    # ── SOA: 위반 항목만 (hinge) — 필요한 섭동 컨텍스트 준비
+    act = [c for c in ev["constraints"]["soa"] if c["g"] > 0 and "_aux" in c]
+    if act:
+        kd = dict(device_keys(nl))
+        eps_pm, ctx_pm = {}, {}
+        for p in param_keys:
+            pp, pm = dict(pset), dict(pset)
+            pp[p] += hs[p]
+            pm[p] -= hs[p]
+            eps_pm[p] = (soa_endpoints(nl, corner=corner, pset=pp),
+                         soa_endpoints(nl, corner=corner, pset=pm))
+            ctx_pm[p] = (measured_context(corner=corner, n=n, cache=cache, pset=pp),
+                         measured_context(corner=corner, n=n, cache=cache, pset=pm))
+        _branch = {"V": lambda e, val: e["vp"] if val >= 0 else e["vn"],
+                   "I": lambda e, val: e["ip"] if val >= 0 else e["inn"]}
+        for c in act:
+            ax = c["_aux"]
+            w = a_soa * c["g"]  # dφ/du = g (g>0)
+            lim = ax["limit_active"]
+            if ax["kind"] == "victim":
+                continue  # victim limit은 상수·전류항 없음 — 직접 경로 기여 0
+            q = c["value"]
+            for p in param_keys:
+                ep, em = eps_pm[p][0].get(ax["dev_key"]), eps_pm[p][1].get(ax["dev_key"])
+                dlim = ((_branch[ax["kind"]](ep, q) - _branch[ax["kind"]](em, q))
+                        / (2 * hs[p])) if (ep and em) else 0.0
+                term = -q * dlim / (lim * lim)
+                if ax["kind"] == "I":
+                    d = kd[ax["dev_key"]]
+                    fp_, fm_ = ctx_pm[p][0](d), ctx_pm[p][1](d)
+                    if fp_ is not None and fm_ is not None:
+                        term += ((fp_(ax["V"])[0] - fm_(ax["V"])[0]) / (2 * hs[p])) / lim
+                grad[p] += w * term
+
+    # ── MNA 경유: 케이스별 adjoint solve + residual stamp
+    for tag in ("+", "-"):
+        sol = ev.get("aux", {}).get("sols", {}).get(tag)
+        if sol is None:
+            continue
+        pos = {nm: i for i, nm in enumerate(sol["unknowns"])}
+        rhs = [0.0] * len(pos)
+        for c in ev["constraints"]["soa"]:
+            if c["stress_case"] != tag or c["g"] <= 0 or "_aux" not in c:
+                continue
+            ax = c["_aux"]
+            w = a_soa * c["g"]
+            coef = (ax["g_d"] if ax["kind"] == "I" else 1.0) / ax["limit_active"]
+            na, nb = ax["nodes"]
+            if na in pos:
+                rhs[pos[na]] += w * coef
+            if nb in pos:
+                rhs[pos[nb]] -= w * coef
+        if not any(rhs):
+            continue
+        jt = [list(col) for col in zip(*sol["jacobian"])]
+        psi = solve_linear(jt, rhs)
+        dF = residual_param_derivatives(nl, sol, pset, corner=corner, n=n, cache=cache,
+                                        params=tuple(param_keys))
+        for p in param_keys:
+            grad[p] -= sum(ps * df for ps, df in zip(psi, dF[p]))
+    return grad
 
 
 def _violation_score(ev):
@@ -142,17 +278,19 @@ def _violation_score(ev):
 def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                   hbm_kv=1.0, cap_lim=5e-12, windows=None,
                   alphas=(1.0, 1.0, 1.0), barrier="off", mu_bar=0.01, mu_rule=20.0,
-                  lr=0.06, iters=30, n=FEAS_N, grad="fd",
+                  lr=0.06, iters=30, n=FEAS_N, grad="adjoint",
                   freeze=(), pset=None, stop_on_feasible=False, progress_cb=None):
-    """Feasibility optimizer 본체 (이슈 #13 §3·§4.1) — Adam + (S1) forward FD gradient.
+    """Feasibility optimizer 본체 (이슈 #13 §3·§4.1) — Adam + adjoint gradient(기본).
 
+    grad: adjoint(기본 — ± 케이스당 전치 선형해 1회로 전 변수 gradient)
+          | fd(forward 유한차분 — S5 대조 oracle 겸 보존 옵션).
     barrier: off(기본 — hinge만, 경계 통과 허용) | log | softplus (preference 옵션).
     stop_on_feasible: 기본 False(사용자 확정) — iters 완주하며 best_feasible 갱신
-    (residual 최소 기준). final clamp 없음 — 실제 candidate의 feasibility를 보고."""
+    (margin 최대 기준). final clamp 없음 — 실제 candidate의 feasibility를 보고."""
     if barrier not in ("off", "log", "softplus"):
         raise ValueError("barrier must be off|log|softplus")
-    if grad not in ("fd",):  # adjoint는 S3에서 추가
-        raise ValueError("grad must be fd (adjoint는 S3 예정)")
+    if grad not in ("adjoint", "fd"):
+        raise ValueError("grad must be adjoint|fd")
     nl = extract_netlist(layout)
     reg = [r for r in params_registry(nl)
            if r["supported"] and r["name"] in ALLOWED_VARS]
@@ -179,7 +317,8 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     i_spec = M.hbm_current(hbm_kv)
     warm, ccache = {}, {}
     w_final = max(1, round(M.N / max(1, n)))
-    prog = {"done": 0, "total": 1 + iters * (len(active) + 2) + 2 * w_final}
+    per_it = 2 if grad == "adjoint" else (len(active) + 2)
+    prog = {"done": 0, "total": 1 + iters * per_it + 2 * w_final}
 
     def _tick(k=1):
         prog["done"] += k
@@ -209,13 +348,34 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 b += mu_rule * _softplus((val - v["hi"]) / (0.05 * span))
         return b
 
-    def evaluate(z, n_eval=n):
+    def evaluate(z, n_eval=n, keep_aux=False):
         pv = to_p(z)
         ev = evaluate_candidate(nl, pv, corner, force, ground, i_spec, cap_lim,
-                                windows=win, alphas=alphas,
+                                windows=win, alphas=alphas, keep_aux=keep_aux,
                                 warm=warm, calib_cache=ccache, n=n_eval)
         _tick()
         return ev["losses"]["total"] + barrier_term(pv), ev
+
+    def barrier_grad(pv):
+        """barrier preference 항의 해석 gradient (활성 변수 자신에만)."""
+        gb = {var_spec[i]["key"]: 0.0 for i in active}
+        if barrier == "off":
+            return gb
+        for i in active:
+            v = var_spec[i]
+            valv, span = pv[v["key"]], v["hi"] - v["lo"]
+            if barrier == "log":
+                u = (v["hi"] - valv) / span
+                gb[v["key"]] += mu_bar * (1.0 / (v["hi"] - valv) if u > 1e-3
+                                          else 1.0 / (1e-3 * span))
+                uo = (valv - v["hi"]) / span
+                if uo > 0:
+                    gb[v["key"]] += mu_rule * 1000.0 * uo / span  # _wallq k=500
+            else:
+                t = (valv - v["hi"]) / (0.05 * span)
+                sig = 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, t))))
+                gb[v["key"]] += mu_rule * sig / (0.05 * span)
+        return gb
 
     z = [0.0] * len(var_spec)
     for i, v in enumerate(var_spec):
@@ -268,13 +428,26 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         if stop_on_feasible and best_feasible is not None:
             stopped_feasible = True
             break
-        f_base, _ev = evaluate(z)
-        gradient = {}
-        for i in active:
-            zp = list(z)
-            zp[i] += FD_H
-            fp, _e = evaluate(zp)
-            gradient[var_spec[i]["key"]] = (fp - f_base) / FD_H
+        if grad == "adjoint":
+            f_base, ev_base = evaluate(z, keep_aux=True)
+            _consider(z, ev_base)
+            pv = to_p(z)
+            act_keys = tuple(var_spec[i]["key"] for i in active)
+            spans = {var_spec[i]["key"]: var_spec[i]["hi"] - var_spec[i]["lo"]
+                     for i in active}
+            ga = adjoint_gradient(nl, pv, ev_base, act_keys, win, alphas, cap_lim,
+                                  corner=corner, n=n, cache=ccache)
+            gb = barrier_grad(pv)
+            # Adam은 정규화 좌표(z)에서 동작 — 물리 gradient × span으로 좌표 일치
+            gradient = {k: (ga[k] + gb[k]) * spans[k] for k in act_keys}
+        else:
+            f_base, _ev = evaluate(z)
+            gradient = {}
+            for i in active:
+                zp = list(z)
+                zp[i] += FD_H
+                fp, _e = evaluate(zp)
+                gradient[var_spec[i]["key"]] = (fp - f_base) / FD_H
         for i in active:
             gi = gradient[var_spec[i]["key"]]
             mom[i] = b1 * mom[i] + (1 - b1) * gi
