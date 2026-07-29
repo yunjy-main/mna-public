@@ -418,7 +418,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     b1, b2, eps_ = 0.9, 0.999, 1e-9
     MAX_SOLVER_RETRIES = 4  # 비수렴 trial rollback·절반 step 재시도 횟수 (#14 §2.4)
 
-    def _record(it, jv, ev, z_now, gradient):
+    def _record(it, jv, ev, z_now, gradient, diag=None):
         pv = to_p(z_now)
         worst_c = max((ev["constraints"]["soa"] + ev["constraints"]["spec"]) or [],
                       key=lambda c: (c["usage"] if c["usage"] is not None else -1e9),
@@ -427,7 +427,10 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         losses_row = {k: round(x, 6) for k, x in ev["losses"].items()}
         losses_row["barrier"] = round(bt, 6)
         losses_row["objective"] = round(jv, 6)
-        row = {"it": it, "J_obj": jv, "loss": jv,  # loss=legacy 호환 별칭
+        all_c = (ev["constraints"]["rule"] + ev["constraints"]["soa"]
+                 + ev["constraints"]["spec"])
+        row = {"it": it, "J_obj": jv,
+               "loss": losses_row["objective"],  # loss ≡ losses.objective (#15 §5)
                "losses": losses_row,
                "feasible": ev["feasible"], "soa_pass": ev["pass"]["soa"],
                "pass": ev["pass"],  # category별 (#14 §7)
@@ -438,7 +441,12 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                "worst_name": (worst_c["key"] if worst_c else None),
                "cap_u": ev["usages"].get("cap(IO)", 0.0),
                "usages": {k: round(u, 4) for k, u in ev["usages"].items()},
+               # 경계 근처 거동 진단 (#15 §7)
+               "max_positive_violation": round(max([max(0.0, c["g"]) for c in all_c]
+                                                   or [0.0]), 6),
+               "active_constraints": [c["key"] for c in all_c if c["g"] > 0][:8],
                "detail": ev["detail"]}
+        row.update(diag or {})
         for k in keys:
             row[k] = pv[k]
         history.append(row)
@@ -489,11 +497,15 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     _record(0, j0, ev0, z, None)
     stopped_feasible = False
     solver_terminated = ev0["candidate_status"] != "VALID"  # 초기부터 무효 → 진행 불가
+    # 종료 원인은 status와 별개로 보고 (#15 §7)
+    termination_reason = ("INITIAL_CANDIDATE_INVALID" if solver_terminated
+                         else "ITERATION_LIMIT")
     it = 0
     while not solver_terminated and it < iters:
         it += 1
         if feasible_policy == "first" and feasible_pool:
             stopped_feasible = True  # first policy = 자동 조기 종료 (#14 §5.2)
+            termination_reason = "FIRST_FEASIBLE_STOP"
             break
         # gradient 기준점 — 수락 로직이 z를 항상 VALID로 유지 (warm-start 변화 대비 방어)
         if grad == "adjoint":
@@ -501,6 +513,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             _consider(it - 1, z, ev_base)
             if ev_base["candidate_status"] != "VALID":
                 solver_terminated = True
+                termination_reason = "SOLVER_RETRY_EXHAUSTED"
                 break
             pv = to_p(z)
             act_keys = tuple(var_spec[i]["key"] for i in active)
@@ -520,6 +533,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             _consider(it - 1, z, ev_base)
             if ev_base["candidate_status"] != "VALID":
                 solver_terminated = True
+                termination_reason = "SOLVER_RETRY_EXHAUSTED"
                 break
             gradient = {}
             for i in active:
@@ -550,14 +564,26 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             if ev_new["candidate_status"] == "VALID":
                 for i in active:  # 수락 시에만 Adam 상태 커밋
                     mom[i], vel[i] = prop[i][0], prop[i][1]
+                diag = {"step_norm": round(max([abs(z_trial[i] - z[i])
+                                                for i in active] or [0.0]), 8),
+                        "gradient_norm": round(math.sqrt(sum(
+                            g * g for g in gradient.values())), 8),
+                        "accepted_step_scale": scale}
                 z = z_trial
-                _record(it, j_new, ev_new, z, _round_gd(gradient_detail))
+                _record(it, j_new, ev_new, z, _round_gd(gradient_detail), diag)
                 accepted = True
                 break
             scale *= 0.5  # rollback + 절반 step 재시도
         if not accepted:  # 재시도 소진 — solver error로 기록하고 종료 (#14 §2.4)
             _record(it, j_new, ev_new, z_trial, _round_gd(gradient_detail))
             solver_terminated = True
+            termination_reason = "SOLVER_RETRY_EXHAUSTED"
+
+    if termination_reason == "ITERATION_LIMIT":
+        tail = [h.get("step_norm") for h in history[-3:]
+                if h.get("step_norm") is not None]
+        if len(tail) == 3 and all(s < 1e-9 for s in tail):
+            termination_reason = "NUMERICAL_STALL"  # 완주 말미 step 정체 (#15 §7)
 
     # best 후보를 정밀 격자로 재평가·재판정 (저해상 편향으로 feasibility가 뒤집힐 수 있음.
     # clamp 없음 — 실제 candidate 그대로 보고, 이슈 #13 4.1.E)
@@ -585,7 +611,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 if ev["usages"] else None,
                 "cap_u": ev["usages"].get("cap(IO)", 0.0),
                 "soa_pass": ev["pass"]["soa"],
-                "loss": ev["losses"]["total"],
+                "loss": losses_p["objective"],  # history와 동일 의미로 통일 (#15 §5)
                 **{k: pv[k] for k in keys}}
     valid_seen = bool(feasible_pool) or (best_infeasible is not None)
     # feasible pool을 score 순으로 정밀 재평가 — 1위가 뒤집혀도 후순위 검증 (#15 §4.3)
@@ -626,11 +652,24 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             "stopped_on_feasible": stopped_feasible,
             # selection policy 명시 (#14 §5.3)
             "feasible_policy": feasible_policy,
+            # 선택 의미 명시 (#15 §6): "방문한 feasible 후보 중" 선택 — 전역 최적 주장 금지
+            "feasible_selection": {"max_margin": "max_margin_visited",
+                                   "first": "first_feasible",
+                                   "min_residual": "min_residual_visited"}[feasible_policy],
+            "score_definition": {"primary": {"max_margin": "max_usage_over_soa_and_spec",
+                                             "first": "first_iteration",
+                                             "min_residual": "max_solver_residual"
+                                             }[feasible_policy],
+                                 "secondary": "max_solver_residual"},
             "secondary_objective_used": (feasible_policy != "first"
                                          and bool(feasible_pool)),
-            "secondary_score": (feasible_pool[0]["score"][0]
-                                if (feasible_policy != "first" and feasible_pool)
-                                else None),
+            "secondary_score": (
+                ({"worst_usage": feasible_pool[0]["score"][0],
+                  "solver_residual": feasible_pool[0]["score"][1]}
+                 if feasible_policy == "max_margin"
+                 else {"solver_residual": feasible_pool[0]["score"][0]})
+                if (feasible_policy != "first" and feasible_pool) else None),
+            "termination_reason": termination_reason,
             "precise_validation": precise_validation,
             "history": history,
             # legacy 프론트 호환 (전환기 유지 — 이슈 #13 4.4)

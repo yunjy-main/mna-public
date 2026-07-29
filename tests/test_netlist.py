@@ -1039,6 +1039,30 @@ chk("#15 S3: pool dedup·상한 — 1 ≤ pool ≤ 10",
     1 <= r_fb["precise_validation"]["pool_size"] <= 10,
     str(r_fb["precise_validation"]["pool_size"]))
 
+# #15 S4 — 의미 정합: loss=objective 통일·score 정의·termination·진단 필드
+r_s4 = optimize_feas(DEFAULT_LAYOUT, iters=6, freeze=("L", "x1", "x2"), barrier="log")
+chk("#15 S4: history·final loss = losses.objective 통일 (barrier on)",
+    all(abs(h["loss"] - h["losses"]["objective"]) < 1e-9 for h in r_s4["history"])
+    and abs(r_s4["final"]["loss"] - r_s4["final"]["losses"]["objective"]) < 1e-9, "")
+chk("#15 S4: barrier off도 동일 contract",
+    abs(r_fb["final"]["loss"] - r_fb["final"]["losses"]["objective"]) < 1e-9, "")
+chk("#15 S4: 선택 의미 metadata — max_margin_visited·score 정의·secondary dict",
+    r_fb["feasible_selection"] == "max_margin_visited"
+    and r_fb["score_definition"]["primary"] == "max_usage_over_soa_and_spec"
+    and set(r_fb["secondary_score"]) == {"worst_usage", "solver_residual"}
+    and r_s4["secondary_score"] is None,  # feasible 미방문 시 None
+    str(r_fb.get("score_definition")))
+chk("#15 S4: termination_reason — 완주=ITERATION_LIMIT·first=FIRST_FEASIBLE_STOP",
+    r_s4["termination_reason"] in ("ITERATION_LIMIT", "NUMERICAL_STALL")
+    and optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"),
+                      feasible_policy="first")["termination_reason"]
+    == "FIRST_FEASIBLE_STOP", str(r_s4["termination_reason"]))
+chk("#15 S4: 진단 필드 — step/gradient norm·scale·위반·활성 constraint",
+    all(k in r_s4["history"][-1] for k in
+        ("step_norm", "gradient_norm", "accepted_step_scale",
+         "max_positive_violation", "active_constraints")),
+    str({k: r_s4["history"][-1].get(k) for k in ("step_norm", "gradient_norm")}))
+
 # 20) #14 S3 — feasible_policy 명시 + best_it/final 일치
 r_mm = r_adj  # 기본 policy=max_margin 실행 재사용 (§16)
 chk("#14 S3: 기본 policy=max_margin — 완주·secondary 명시",

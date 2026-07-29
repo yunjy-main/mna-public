@@ -1052,9 +1052,15 @@ function renderOptResult(){
       +' (rule '+f(ls.rule,5)+' · SOA '+f(ls.soa,5)+' · spec '+f(ls.spec,5)+')'
       +(ls.barrier!==undefined?(' · barrier '+f(ls.barrier,5)):'')
       +' · objective <b>'+f(ls.objective!==undefined?ls.objective:ls.total,5)+'</b>'
-      +(d.feasible_policy?(' · policy '+d.feasible_policy
-        +(d.secondary_objective_used?' (secondary '+pct(d.secondary_score)+')':'')):'')
-      +(d.stopped_on_feasible?' · 조기 종료':'');
+      +(d.feasible_policy?(' · 선택: 방문 feasible 중 '+d.feasible_policy
+        +((d.secondary_objective_used&&d.secondary_score&&
+           d.secondary_score.worst_usage!==undefined)
+          ?' (worst usage '+pct(d.secondary_score.worst_usage)+')':'')):'')
+      +(d.termination_reason?(' · 종료: '+d.termination_reason):'')
+      +(d.precise_validation&&d.precise_validation.rejected_source_iterations
+        &&d.precise_validation.rejected_source_iterations.length
+        ?(' · 정밀 재검증: '+d.precise_validation.tested+'개 중 채택 it='
+          +d.precise_validation.accepted_source_it):'');
     const cw=document.getElementById('consWrap');
     cw.hidden=false;
     const cs=(fn.constraints?[].concat(fn.constraints.rule,fn.constraints.soa,
@@ -1074,7 +1080,8 @@ function renderOptResult(){
     +extra
     +'<br>초기: '+vline(i)+' · worst '+pct(i.worst)
     +' ('+i.worst_name+') '+((i.feasible!==undefined?i.feasible:i.soa_pass)?P('PASS'):F('FAIL'))
-    +'<br>최적: '+vline(fn)+' · worst '+pct(fn.worst)
+    +'<br>'+(d.status?'선택(방문 feasible 중 '+(d.feasible_policy||'')+'): ':'최적: ')
+    +vline(fn)+' · worst '+pct(fn.worst)
     +' ('+fn.worst_name+') '
     +((fn.feasible!==undefined?fn.feasible:fn.soa_pass)?P('PASS'):F('FAIL'))
     +' · cap '+pct(fn.cap_u);
