@@ -812,12 +812,50 @@ def residual_param_derivatives(nl, sol, pset, corner="worst", n=None, cache=None
     return out
 
 
-def direct_io_cap(nl, pset=None, x1=None, x2=None):
+def validate_direct_io_cap_roles(nl):
+    """direct IO cap의 semantic role 무결성 검증 (이슈 #14 §3.2) — silent 0 방지.
+    io_primary_up/down 각 정확히 1개, open 아님, diode kind, cap model(D1) 적용
+    가능(diode 계열 cell), size 바인딩 평가 가능."""
+    found = {"io_primary_up": [], "io_primary_down": []}
+    errors = []
+    for d in nl["devices"]:
+        r = d.get("role")
+        if r in found:
+            found[r].append(d)
+    for role, ds in found.items():
+        names = [d.get("instance") or "?" for d in ds]
+        if not ds:
+            errors.append("{} role missing".format(role))
+            continue
+        if len(ds) > 1:
+            errors.append("{} duplicated: {}".format(role, ", ".join(names)))
+        for d in ds:
+            nm = d.get("instance") or "?"
+            if d["open"]:
+                errors.append("{} ({}) is open/disabled".format(role, nm))
+            if d["kind"] not in ("diode", "zener"):
+                errors.append("{} ({}) kind={} — diode 아님".format(role, nm, d["kind"]))
+            if d.get("cell") not in ("d_up", "d_down", "d_b2b"):
+                errors.append("{} ({}) cell={} — D1 cap model 부적용"
+                              .format(role, nm, d.get("cell")))
+            e = size_expr_of(d)
+            if e is not None and parse_binding(e) is None:
+                errors.append("{} ({}) size 바인딩 해석 불가: {}".format(role, nm, e))
+    return {"valid": not errors, "errors": errors,
+            "devices": {r: [d.get("instance") for d in ds] for r, ds in found.items()}}
+
+
+def direct_io_cap(nl, pset=None, x1=None, x2=None, strict=True):
     """IO cap spec 정본 (이슈 #13 4.3.A, 사용자 확정 '완전 교체') — 일반 동작·0V
     small-signal에서 IO 직결 primary up/down diode만 합산. 선택은 이름 추측이 아니라
     schematic semantic role(io_primary_up/io_primary_down). up2/down2·b2b·clamp 제외,
-    ESD operating point 무관."""
+    ESD operating point 무관. strict=True(기본): role 누락·중복·무효 시 ValueError —
+    configuration error를 0 pF PASS로 위장하지 않는다 (이슈 #14 §3.3)."""
     from server import model as M
+    if strict:
+        chk = validate_direct_io_cap_roles(nl)
+        if not chk["valid"]:
+            raise ValueError("direct IO cap role 오류: " + "; ".join(chk["errors"]))
     p = _pset(pset, x1=x1, x2=x2)
     total = 0.0
     for d in nl["devices"]:

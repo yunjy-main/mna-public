@@ -823,9 +823,13 @@ def analysis_sweep(request: Request, imax: float = 2.0, n: int = 21,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
-    # cap spec 완전 교체 (이슈 #13, 사용자 확정): 0V direct up/down 합이 정본
+    # cap spec 완전 교체 (이슈 #13, 사용자 확정): 0V direct up/down 합이 정본.
+    # role 무결성 오류는 silent 0이 아니라 422 (이슈 #14 §3)
     from server.netlist import direct_io_cap
-    io_cap_total = direct_io_cap(nl, pset=p)
+    try:
+        io_cap_total = direct_io_cap(nl, pset=p)
+    except ValueError as ex:
+        return PlainTextResponse(str(ex), status_code=422)
     # spec 입력(UI) 반영 — 미지정 시 model 기본값 (capLim 5pF, HBM 1kV)
     cap_lim = (cap_lim_pf * 1e-12) if (cap_lim_pf and cap_lim_pf > 0) else M.IO_CAP_LIM
     spec_kv = hbm_kv if (hbm_kv and hbm_kv > 0) else M.HBM_DEFAULT_KV
@@ -1050,6 +1054,12 @@ async def schematic_layout_save(request: Request):
     if nl["assoc_conflicts"]:
         return PlainTextResponse("instance 귀속 충돌: {}".format("; ".join(nl["assoc_conflicts"])),
                                  status_code=422)
+    # cap spec role 무결성 (이슈 #14 §3.4 권장안): 저장 시 강제 검증 — silent 0 방지
+    from server.netlist import validate_direct_io_cap_roles
+    role_chk = validate_direct_io_cap_roles(nl)
+    if not role_chk["valid"]:
+        return PlainTextResponse("direct IO cap role 오류: "
+                                 + "; ".join(role_chk["errors"]), status_code=422)
     SCH.save_layout(layout)
     return {"ok": True, "n_nets": len(nl["nets"])}
 

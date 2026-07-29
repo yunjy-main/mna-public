@@ -876,6 +876,43 @@ try:
 finally:
     OF.assemble_and_solve = _orig_solve
 
+# 19) #14 S2 — direct cap role 무결성 (negative 먼저): silent 0 pF 금지
+from server.netlist import validate_direct_io_cap_roles  # noqa: E402
+
+
+def _mutate_layout(fn):
+    L2 = copy.deepcopy(DEFAULT_LAYOUT)
+    for el in L2["elements"]:
+        if isinstance(el, dict):
+            fn(el)
+    return extract_netlist(L2)
+
+
+nl_no_up = _mutate_layout(lambda el: el.pop("role", None)
+                          if el.get("instance") == "XD_up" else None)
+chk("#14 S2: up role 누락 — validator 검출 + strict ValueError",
+    validate_direct_io_cap_roles(nl_no_up)["valid"] is False
+    and "io_primary_up role missing" in validate_direct_io_cap_roles(nl_no_up)["errors"][0], "")
+try:
+    direct_io_cap(nl_no_up)
+    chk("#14 S2: strict 기본 — 누락 시 예외 (silent 0 금지)", False, "예외 없음")
+except ValueError:
+    chk("#14 S2: strict 기본 — 누락 시 예외 (silent 0 금지)", True, "")
+chk("#14 S2: strict=False 진단 경로는 값 반환(경고용)",
+    abs(direct_io_cap(nl_no_up, strict=False) - 250e-15) < 1e-18, "")
+nl_dup = _mutate_layout(lambda el: el.update({"role": "io_primary_up"})
+                        if el.get("instance") == "XD_up2" else None)
+chk("#14 S2: role 중복 검출", any("duplicated" in e
+    for e in validate_direct_io_cap_roles(nl_dup)["errors"]), "")
+nl_open = _mutate_layout(lambda el: el.update({"enabled": False})
+                         if el.get("instance") == "XD_up" else None)
+chk("#14 S2: role 소자 open 검출", any("open" in e
+    for e in validate_direct_io_cap_roles(nl_open)["errors"]),
+    str(validate_direct_io_cap_roles(nl_open)["errors"]))
+chk("#14 S2: 정상 layout은 valid + 소자 명단",
+    validate_direct_io_cap_roles(nl)["valid"] is True
+    and validate_direct_io_cap_roles(nl)["devices"]["io_primary_up"] == ["XD_up"], "")
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:
