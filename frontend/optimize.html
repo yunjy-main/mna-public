@@ -118,7 +118,11 @@
     <div id="optVarRows"></div>
     <h3>수치 최적화 (MNA optimizer 연계)</h3>
     <div class="in">
-      <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
+      <div><label>α rule/SOA/spec<span class="info" title="신규 optimizer의 loss 가중 J_obj=α_rule·L_rule+α_SOA·L_SOA+α_spec·L_spec (기본 1). legacy에는 미적용.">ⓘ</span></label>
+        <span style="display:flex;gap:3px"><input id="aRule" type="number" step="any" value="1" style="width:44px"><input id="aSoa" type="number" step="any" value="1" style="width:44px"><input id="aSpec" type="number" step="any" value="1" style="width:44px"></span></div>
+      <div><label>first-feasible stop<span class="info" title="feasible 후보 최초 발견 시 즉시 종료 (기본 off — iters 완주하며 margin 최대 feasible 갱신).">ⓘ</span></label>
+        <select id="stopFeas"><option value="0" selected>off (완주)</option><option value="1">on (조기 종료)</option></select></div>
+      <div><label>μ SOA (legacy)</label><input id="muSOA" type="number" step="any" value="12"></div>
       <div><label>μ Rule (min측)<span class="info" title="min 위반 = 가혹 FAIL 급경사 barrier 가중치 (창립 비대칭 — barrier 선택과 무관하게 항상 적용). softplus 모드에서는 max측 완경사에도 사용.">ⓘ</span></label>
         <input id="muRule" type="number" step="any" value="20"></div>
       <div><label>max barrier<span class="info" title="off(기본, 신규 optimizer): hinge만 사용 — 탐색 중 경계 통과 허용, rule 위반은 L_rule이 복원 (이슈 #13).&#10;log: 내부 log barrier −μb·ln((hi−v)/span) — margin 소모 후 limit 앞 정지. legacy 기본.&#10;softplus: 준-rule 완경사 — 경계 앞 여유를 남김.">ⓘ</span></label>
@@ -196,6 +200,10 @@
       </div>
       <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
       <div class="radars" id="optRadar"></div>
+      <details id="consWrap" style="margin-top:6px" hidden>
+        <summary class="cap" style="cursor:pointer">constraint 전수표 (표준형 g≤0 — best candidate 정밀 재평가)<span class="info" title="이슈 #13 4.5.C — category|stress|device|quantity|value|min|max|usage|g|판정. hinge loss는 g>0 항목에서만 발생.">ⓘ</span></summary>
+        <div class="tw"><table id="consTbl"></table></div>
+      </details>
       <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선=녹색, 악화=적색.&#10;spec/SOA 열의 종류 표기: rule=설계변수 창, spec=외부 spec(capLim), SOA=소자 실측 한계(TO-BE size 반영, 순방향 ≤/역방향 ≥).&#10;행은 전부 데이터 구동(서버 variables·usage·detail) — 하드코딩 없음.&#10;※ 미러 소자의 동일 값(예: XD_up·V+ ↔ XD_down·V−)은 대칭 시나리오+동일 곡선·size의 물리적 결과(차이 <1e-8).">ⓘ</span></h3>
       <div class="tw"><table id="optDiff"></table></div>
       <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (설계변수 갱신 + 재해석)</button>
@@ -993,6 +1001,8 @@ function startMnaOpt(useLegacy){
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
     barrier:(useLegacy&&bar==='off')?'log':bar,mu_bar:val('muBar'),
+    alpha_rule:val('aRule'),alpha_soa:val('aSoa'),alpha_spec:val('aSpec'),
+    stop_on_feasible:val('stopFeas'),
     freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
   sup.forEach(p=>{ // 초기값·창·cost — registry 루프 (이슈 #11 신규약: <name>_min/max, w_<name>)
     q.set(p.name,pv(p.name));
@@ -1019,8 +1029,33 @@ function renderOptResult(){
   // 설계변수 나열은 variables descriptor에서 동적 생성 (고정 변수는 '고정' 표기)
   const vline=h=>(d.variables||[]).map(v=>v.key+'='+f(h[v.key],v.dec)+(v.unit||'')
     +(v.frozen?' <b style="color:#1f5f99">고정</b>':'')).join(' · ');
+  // 신규(feasibility) 응답: status·loss 3종·constraint 전수표 (이슈 #13 4.5)
+  let extra='';
+  if(d.status){
+    const SB={'PASS':P('PASS'),'INFEASIBLE':F('INFEASIBLE'),
+              'SOLVER_ERROR':F('SOLVER ERROR')}[d.status]||d.status;
+    const ls=fn.losses||{};
+    extra='<br>status: '+SB+' · loss_rule '+f(ls.rule,5)+' · loss_SOA '+f(ls.soa,5)
+      +' · loss_spec '+f(ls.spec,5)+' · J_total <b>'+f(ls.total,5)+'</b>'
+      +(d.best_infeasible&&d.status==='PASS'?'':'')
+      +(d.stopped_on_feasible?' · first-feasible 조기 종료':'');
+    const cw=document.getElementById('consWrap');
+    cw.hidden=false;
+    const cs=(fn.constraints?[].concat(fn.constraints.rule,fn.constraints.soa,
+      fn.constraints.spec):[]);
+    document.getElementById('consTbl').innerHTML=
+      '<tr><th>category</th><th>stress</th><th>device</th><th>quantity</th><th>value</th>'
+      +'<th>min</th><th>max</th><th>usage</th><th>g</th><th>판정</th></tr>'
+      +cs.map(c=>'<tr'+(c.passed?'':' style="background:#fde8e8"')+'><td>'+c.category
+        +'</td><td>'+(c.stress_case||'—')+'</td><td>'+(c.device||'—')+'</td><td>'
+        +c.quantity+'</td><td>'+f(c.value,4)+'</td><td>'+(c.limit_min===null?'—':f(c.limit_min,3))
+        +'</td><td>'+(c.limit_max===null?'—':f(c.limit_max,4))+'</td><td>'
+        +(c.usage===null?'—':pct(c.usage))+'</td><td>'+f(c.g,4)+'</td><td>'
+        +(c.passed?P('PASS'):F('FAIL'))+'</td></tr>').join('');
+  } else document.getElementById('consWrap').hidden=true;
   document.getElementById('optSummary').innerHTML=
     'HBM '+d.hbm_kv+'kV(±'+f(d.i_spec,2)+'A) · '+d.force+'→'+d.ground+' · corner='+d.corner
+    +extra
     +'<br>초기: '+vline(i)+' · worst '+pct(i.worst)
     +' ('+i.worst_name+') '+(i.soa_pass?P('PASS'):F('FAIL'))
     +'<br>최적: '+vline(fn)+' · worst '+pct(fn.worst)
@@ -1039,7 +1074,12 @@ function renderOptIter(){
   const isBest=(d.best_it!==undefined&&cur.it===d.best_it);
   document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
     +(isBest?' ★best':'')+'  ('+(d.variables||[]).map(v=>v.key+'='+f(cur[v.key],v.dec)
-    +(v.unit||'')+(v.frozen?'(고정)':'')).join(' · ')+' · worst '+pct(cur.worst)+')';
+    +(v.unit||'')+(v.frozen?'(고정)':'')).join(' · ')+' · worst '+pct(cur.worst)
+    +(cur.losses?(' · loss r/s/c '+f(cur.losses.rule,4)+'/'+f(cur.losses.soa,4)
+      +'/'+f(cur.losses.spec,4)):'')
+    +(cur.gradient?(' · ∇ '+Object.entries(cur.gradient).map(([k,g])=>k+'='
+      +(+g).toExponential(1)).join(' ')):'')
+    +(cur.feasible!==undefined?(cur.feasible?' · feasible':' · infeasible'):'')+')';
   // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
   const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
   const u0=t0.usages||{}, uc=cur.usages||{};
