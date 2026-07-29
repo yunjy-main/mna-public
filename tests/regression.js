@@ -107,19 +107,21 @@ function corr(x, d, T, I, neg, n = N) {
   let shape = shapeFromConfig(cfg, TT, Iraw, T);
   const requested = cfg.mode;
   if (requested.startsWith('saturation') && target <= rawEnd * (1 + 1e-12)) {
-    const power = bisectMonotone(p => integScaled(Graw, TT, shape.map(z => satMult(z, p))), target, 0, 512, false);
-    return { mode: requested, power, v_start: cfg.v_start, q_start: cfg.q_start,
-             raw_end: rawEnd, target, q: power, s: target / rawEnd };
+    try { // gate/floor로 도달 불가 시 adaptive q_start fallback으로 진행 (PR#17 리뷰 2)
+      const power = bisectMonotone(p => integScaled(Graw, TT, shape.map(z => satMult(z, p))), target, 0, 512, false);
+      return { mode: requested, power, v_start: cfg.v_start, q_start: cfg.q_start,
+               raw_end: rawEnd, target, q: power, s: target / rawEnd };
+    } catch (e) { /* fall through */ }
   }
   let qStart = cfg.q_start !== undefined ? cfg.q_start : 0.70;
   const ratio = target / rawEnd;
   if (ratio < 1 && ratio <= qStart + 0.02) qStart = Math.max(0.05, ratio - 0.05);
-  if (requested !== 'saturation_v') shape = shapeFromConfig({ mode: 'local_exp_q', q_start: qStart }, TT, Iraw, T);
+  // fallback/boost는 branch가 사용할 q-shape로 fitting 통일 (PR#17 리뷰 1)
+  shape = shapeFromConfig({ mode: 'local_exp_q', q_start: qStart }, TT, Iraw, T);
   if (target <= rawEnd * (1 + 1e-12)) {
     const power = bisectMonotone(p => integScaled(Graw, TT, shape.map(z => satMult(z, p))), target, 0, 512, false);
-    const mode = requested === 'saturation_v' ? 'saturation_v' : 'saturation_q';
-    return { mode, power, v_start: cfg.v_start, q_start: qStart, raw_end: rawEnd, target,
-             q: power, s: target / rawEnd, fallback_from: requested !== mode ? requested : null };
+    return { mode: 'saturation_q', power, v_start: cfg.v_start, q_start: qStart, raw_end: rawEnd, target,
+             q: power, s: target / rawEnd, fallback_from: requested !== 'saturation_q' ? requested : null };
   }
   const beta = bisectMonotone(b => integScaled(Graw, TT, shape.map(z => Math.exp(b * z))), target, 0, 120, true);
   return { mode: 'local_exp_q', beta, q_start: qStart, raw_end: rawEnd, target,

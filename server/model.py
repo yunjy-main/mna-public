@@ -266,20 +266,24 @@ def corr(x, d, T, I, neg, n=N):
             mult = [_sat_multiplier(z, power) for z in shape]
             return _integrate_scaled(Graw, TT, mult)
 
-        power = _bisect_monotone(endpoint, target, 0.0, 512.0, False)
-        return {"mode": requested_mode, "power": power,
-                "v_start": cfg.get("v_start"), "q_start": cfg.get("q_start"),
-                "raw_end": raw_end, "target": target,
-                "q": power, "s": target / raw_end}
+        try:
+            power = _bisect_monotone(endpoint, target, 0.0, 512.0, False)
+            return {"mode": requested_mode, "power": power,
+                    "v_start": cfg.get("v_start"), "q_start": cfg.get("q_start"),
+                    "raw_end": raw_end, "target": target,
+                    "q": power, "s": target / raw_end}
+        except ValueError:
+            pass  # gate/floor로 도달 불가 — adaptive q_start fallback (PR#17 리뷰 2)
 
     q_start = cfg.get("q_start", 0.70)
     ratio = target / raw_end
     if ratio < 1.0 and ratio <= q_start + 0.02:
         q_start = max(0.05, ratio - 0.05)
 
-    if requested_mode != "saturation_v":
-        cfg_local = {"mode": "local_exp_q", "q_start": q_start}
-        shape = _shape_from_config(cfg_local, TT, Iraw, T)
+    # fallback/boost 경로는 branch()가 사용할 q-shape로 fitting을 통일한다
+    # (PR#17 리뷰 1: v-shape로 fitting 후 q-shape branch를 만드는 불일치 제거)
+    cfg_local = {"mode": "local_exp_q", "q_start": q_start}
+    shape = _shape_from_config(cfg_local, TT, Iraw, T)
 
     if target <= raw_end * (1.0 + 1e-12):
         def endpoint_reduce(power):
@@ -287,12 +291,13 @@ def corr(x, d, T, I, neg, n=N):
             return _integrate_scaled(Graw, TT, mult)
 
         power = _bisect_monotone(endpoint_reduce, target, 0.0, 512.0, False)
-        mode = "saturation_v" if requested_mode == "saturation_v" else "saturation_q"
-        return {"mode": mode, "power": power,
+        # 반환 mode는 fitting에 쓴 shape와 동일한 q-기반으로 고정 (shape 정합)
+        return {"mode": "saturation_q", "power": power,
                 "v_start": cfg.get("v_start"), "q_start": q_start,
                 "raw_end": raw_end, "target": target,
                 "q": power, "s": target / raw_end,
-                "fallback_from": (requested_mode if requested_mode != mode else None)}
+                "fallback_from": (requested_mode
+                                  if requested_mode != "saturation_q" else None)}
 
     def endpoint_boost(beta):
         mult = [math.exp(beta * z) for z in shape]

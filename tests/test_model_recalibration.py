@@ -99,6 +99,35 @@ class ModelRecalibrationTest(unittest.TestCase):
         self.assertLess(e["vn"], M.D2["m"][0]["vn"])
         self.assertGreater(e["vn"], M.D2["m"][1]["vn"])
 
+    def _raw_end(self, dev, x, T, neg, n=1200):
+        _, iraw, _, _ = M._raw_grid(x, dev, T, neg, n)
+        return iraw[-1]
+
+    def test_boost_fallback_shape_roundtrip(self):
+        # PR#17 리뷰 1: saturation_v에서 target>raw_end → boost fitting과 branch가
+        # 같은 q-shape를 사용해 endpoint round-trip이 정확해야 한다
+        row = M.D1["m"][2]
+        raw_end = self._raw_end(M.D1, row["x"], row["vp"], False)
+        target = raw_end * 1.15
+        c = M.corr(row["x"], M.D1, row["vp"], target, False, n=1200)
+        self.assertEqual(c["mode"], "local_exp_q")
+        b = M.branch(row["x"], M.D1, row["vp"], c, False, n=1200)
+        self.assertAlmostEqual(b["I"][-1], target, places=8)
+        self.assertGreater(min(b["G"]), 0.0)
+
+    def test_unreachable_saturation_adapts_gate(self):
+        # PR#17 리뷰 2: q0=0.20/floor=0.02로 도달 불가한 작은 target에서
+        # 예외 대신 adaptive q_start 재시도로 보정이 성공해야 한다
+        row = M.D2["m"][0]
+        raw_end = self._raw_end(M.D2, row["x"], row["vp"], False)
+        target = raw_end * 0.10  # 최소 도달치(≈0.216·raw)보다 작음
+        c = M.corr(row["x"], M.D2, row["vp"], target, False, n=1200)
+        self.assertEqual(c["mode"], "saturation_q")
+        self.assertLess(c["q_start"], 0.20)
+        b = M.branch(row["x"], M.D2, row["vp"], c, False, n=1200)
+        self.assertAlmostEqual(b["I"][-1], target, places=8)
+        self.assertGreater(min(b["G"]), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
