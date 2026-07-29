@@ -844,7 +844,7 @@ def analysis_sweep(request: Request, imax: float = 2.0, n: int = 21,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
-    # cap spec 완전 교체 (이슈 #13, 사용자 확정): 0V direct up/down 합이 정본.
+    # cap spec 정본 = io_cap_at_zero (0V contributor 집합 합, 이슈 #15 §3.6).
     # role 무결성 오류는 silent 0이 아니라 422 (이슈 #14 §3)
     from server.netlist import io_cap_at_zero
     try:

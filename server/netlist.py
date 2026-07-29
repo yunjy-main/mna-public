@@ -897,7 +897,7 @@ def direct_io_cap(nl, pset=None, x1=None, x2=None, strict=True):
 def device_caps(nl, x1=None, x2=None, pset=None):
     """저항 제외 device별 capacitance **표시·개별 정보** — model.CAP의 size 스케일 평가.
     {c0: V=0 값[F], vbi, mj, fc, size, on_io} — on_io=pad에서 보이는 소자(참고 표기).
-    ※ cap spec 정본은 direct_io_cap()(0V direct up/down, 이슈 #13/#14) — 이 함수의
+    ※ cap spec 정본은 io_cap_at_zero()(0V contributor 집합 합, 이슈 #15) — 이 함수의
     on_io 합은 판정에 쓰지 않는다. diode류=D1 cap, clamp=D2 cap, 그 외=None."""
     from server import model as M
     names = nl["nets"]

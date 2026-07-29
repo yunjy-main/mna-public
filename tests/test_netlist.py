@@ -971,6 +971,29 @@ chk("#15 cap: up2/down2/b2b는 role 없으면 제외",
     all(c["instance"] in ("XD_up", "XD_down")
         for c in validate_io_cap_contributors(nl)["contributors"]), "")
 
+# #15 S2 — cap gradient 일반화: contributor가 x2 의존이면 dJ/dx2에 dC/dx2가 흐른다
+_cap3 = 2.0e-12  # nl_three C_IO=2.6pF → spec hinge 활성
+ev_c3 = evaluate_candidate(nl_three, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0},
+                           "worst", "IO", "VSS", _ispec, _cap3, windows=_win, n=500,
+                           keep_aux=True)
+ga_c3 = adjoint_gradient(nl_three, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0},
+                         ev_c3, _KEYS, _win, (1.0, 1.0, 1.0), _cap3,
+                         corner="worst", n=500)
+
+
+def _jhat3(ps):
+    ev = evaluate_candidate(nl_three, dict(ps), "worst", "IO", "VSS", _ispec, _cap3,
+                            windows=_win, n=500)
+    return ev["losses"]["total"]
+
+
+_h2 = 5e-1
+_ps3 = {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0}
+_fd_x2 = (_jhat3({**_ps3, "x2": 1415.232 + _h2}) - _jhat3({**_ps3, "x2": 1415.232 - _h2})) / (2 * _h2)
+chk("#15 S2: 혼합 바인딩 cap gradient — adjoint dJ/dx2 = FD (clamp contributor)",
+    abs(ga_c3["x2"] - _fd_x2) <= 1e-6 + 1e-2 * max(abs(ga_c3["x2"]), abs(_fd_x2))
+    and abs(ga_c3["x2"]) > 1e-9, "adj={:.4g} fd={:.4g}".format(ga_c3["x2"], _fd_x2))
+
 # 20) #14 S3 — feasible_policy 명시 + best_it/final 일치
 r_mm = r_adj  # 기본 policy=max_margin 실행 재사용 (§16)
 chk("#14 S3: 기본 policy=max_margin — 완주·secondary 명시",
