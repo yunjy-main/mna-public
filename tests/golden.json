@@ -4,37 +4,37 @@
  "values": [
   {
    "key": "endpoint/diode/x=0.64/pos",
-   "value": -3.552713678800501e-15,
-   "tol": 1e-09,
-   "kind": "raw"
-  },
-  {
-   "key": "endpoint/diode/x=0.64/neg",
    "value": 0.0,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
+   "key": "endpoint/diode/x=0.64/neg",
+   "value": -1.1102230246251565e-16,
+   "tol": 1e-09,
+   "kind": "raw"
+  },
+  {
    "key": "endpoint/diode/x=1.344/pos",
-   "value": 3.3306690738754696e-15,
+   "value": -2.220446049250313e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/diode/x=1.344/neg",
-   "value": 1.7763568394002505e-15,
+   "value": -2.220446049250313e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/diode/x=2.56/pos",
-   "value": 8.881784197001252e-16,
+   "value": 0.0,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/diode/x=2.56/neg",
-   "value": 6.661338147750939e-16,
+   "value": -1.1102230246251565e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
@@ -46,43 +46,43 @@
   },
   {
    "key": "endpoint/diode/x=3.84/neg",
-   "value": -3.3306690738754696e-16,
+   "value": 2.220446049250313e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=1415.232/pos",
-   "value": -3.219646771412954e-15,
+   "value": -2.220446049250313e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=1415.232/neg",
-   "value": 3.1308289294429414e-14,
+   "value": -3.3306690738754696e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=2021.76/pos",
-   "value": -3.275157922644212e-14,
+   "value": 0.0,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=2021.76/neg",
-   "value": -1.432187701766452e-14,
+   "value": -1.1102230246251565e-16,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=2628.288/pos",
-   "value": -4.218847493575595e-15,
+   "value": 0.0,
    "tol": 1e-09,
    "kind": "raw"
   },
   {
    "key": "endpoint/clamp/x=2628.288/neg",
-   "value": 2.531308496145357e-14,
+   "value": 0.0,
    "tol": 1e-09,
    "kind": "raw"
   },
@@ -130,109 +130,109 @@
   },
   {
    "key": "beta+/diode/x=0.64/worst",
-   "value": 0.4906197417202943,
+   "value": 0.42712494003516654,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta-/diode/x=0.64/worst",
-   "value": 0.1834711175553903,
+   "value": 0.8406290534877938,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/diode/x=0.64/worst",
-   "value": 1.538044060718018e-15,
+   "value": 1.538053545560517e-15,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta+/diode/x=1.344/worst",
-   "value": 0.4508511929680754,
+   "value": 0.36442064535138974,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta-/diode/x=1.344/worst",
-   "value": -0.43049269214282604,
+   "value": 1.5543699650175755,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/diode/x=1.344/worst",
-   "value": 3.0941600251911e-15,
+   "value": 3.0940903783961784e-15,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta+/diode/x=2.56/worst",
-   "value": 0.4140860042356487,
+   "value": 0.3145102666702946,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta-/diode/x=2.56/worst",
-   "value": -1.5042314665245815,
+   "value": 3.4617050511255645,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/diode/x=2.56/worst",
-   "value": 5.583311081928637e-15,
+   "value": 5.582666373839998e-15,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta+/diode/x=3.84/worst",
-   "value": 0.3899171382613452,
+   "value": 0.28507590216662904,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "beta-/diode/x=3.84/worst",
-   "value": -2.462923125828244,
+   "value": 4.65487443295544,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/diode/x=3.84/worst",
-   "value": 8.032100692766403e-15,
+   "value": 8.030167006467921e-15,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "scale+/clamp/x=1415.232/worst",
-   "value": 0.996134535279717,
+   "value": 0.8650374145537371,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/clamp/x=1415.232/worst",
-   "value": 2.503557233754623e-06,
+   "value": 2.34092415531783e-06,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "scale+/clamp/x=2021.76/worst",
-   "value": 0.7242092235976386,
+   "value": 0.6322320044069926,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/clamp/x=2021.76/worst",
-   "value": 4.584305587093738e-06,
+   "value": 5.680968346820444e-06,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "scale+/clamp/x=2628.288/worst",
-   "value": 0.5784661152395901,
+   "value": 0.5062888238719475,
    "tol": 1e-06,
    "kind": "rel"
   },
   {
    "key": "minG/clamp/x=2628.288/worst",
-   "value": 7.2727050110794165e-06,
+   "value": 1.0971341013169587e-05,
    "tol": 1e-06,
    "kind": "rel"
   },
@@ -244,31 +244,31 @@
   },
   {
    "key": "ref/VIO/worst/I=0.5",
-   "value": 2.705973884817598,
+   "value": 2.6969496436964486,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/worst/I=1",
-   "value": 3.8718280031776944,
+   "value": 3.8426840974908467,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/worst/I=1.33",
-   "value": 4.649023458737263,
+   "value": 4.598064534844157,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "ref/VIO/best/I=1.33",
-   "value": 4.910071591135817,
+   "value": 4.597534552705153,
    "tol": 1e-06,
    "kind": "abs"
   },
   {
    "key": "series/VIO/x1=2.56/x2=2021.76/worst/I=2.0",
-   "value": 6.6305347286545375,
+   "value": 6.121493454484626,
    "tol": 1e-06,
    "kind": "abs"
   },
@@ -286,7 +286,7 @@
   },
   {
    "key": "neg/VIO/ref/0.999It2-",
-   "value": -8.349110453830905,
+   "value": -8.353123460402303,
    "tol": 1e-06,
    "kind": "abs"
   },
