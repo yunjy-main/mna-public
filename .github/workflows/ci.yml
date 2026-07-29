@@ -1,0 +1,28 @@
+name: ci
+# PR#17 리뷰 권장: focused model test + Python/JS regression을 status check로 연결
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install fastapi schemdraw matplotlib
+      - name: Focused model tests
+        run: python -m unittest tests.test_model_recalibration -v
+      - name: Python golden regression
+        run: python tests/regression.py
+      - name: Netlist/MNA/optimizer regression
+        run: python tests/test_netlist.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: JS witness
+        run: node tests/regression.js

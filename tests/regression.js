@@ -30,7 +30,10 @@ const D1 = { id: 'diode', method: 'exp',
   soa: { vp: ['Vt2+', 1, 1.7052482326597274, .010814475389598174, 2.1338251606769485, 2.183514224890132],
          vn: ['Vt2-', -1, 1.7052482326597274, .006758644201696505, 7.703915866993116, 7.856330403842027],
          ip: ['It2+', 1, 1.7052482326597274, .8853326789209258, 1.4195543445506187, 1.4984574918281428],
-         inn: ['It2-', -1, 1.7052482326597274, .9679787370175855, .03472919025401326, .04363077033143844] } };
+         inn: ['It2-', -1, 1.7052482326597274, .9679787370175855, .03472919025401326, .04363077033143844] },
+  // SOA-local recalibration (issue #16) — mirror of server/model.py
+  correction: { pos: { mode: 'saturation_v', v_start: 1.6 },
+                neg: { mode: 'local_exp_q', q_start: 0.70 } } };
 
 const D2 = { id: 'clamp', method: 'late',
   par: x => ({ a1: 829.4 / x ** .452, r1: 5.462 / x ** .2865, c1: .08357 / x ** -.207,
@@ -41,7 +44,10 @@ const D2 = { id: 'clamp', method: 'late',
   soa: { vp: ['Vt2+', 1, 1959.190790564251, 1.3726632026868713, 6.090603488345262, 7.691645019533501],
          vn: ['Vt2-', -1, 1959.190790564251, 1.0334594160835273, 6.497875372967659, 6.994612508780857],
          ip: ['It2+', 1, 1959.190790564251, .8799640088461418, 5.936085662066821, 5.948515095817292],
-         inn: ['It2-', -1, 1959.190790564251, .712730158253558, 6.063770015250391, 6.2861134455085015] } };
+         inn: ['It2-', -1, 1959.190790564251, .712730158253558, 6.063770015250391, 6.2861134455085015] },
+  // SOA-local recalibration (issue #16): no branch-wide scale — mirror of server/model.py
+  correction: { pos: { mode: 'saturation_q', q_start: 0.20 },
+                neg: { mode: 'saturation_q', q_start: 0.20 } } };
 
 const N = 4000; // unified grid (calibration AND curve)
 
@@ -56,18 +62,90 @@ function integ(x, d, T, q, s, neg, n = N) {
   for (let j = 0; j <= n; j++) { const t = j * h, v = neg ? -t : t, y = g0(v, x, d) * mod(t, T, q, d) * s; a += (j && j < n ? 1 : .5) * y; }
   return a * h;
 }
-function corr(x, d, T, I, neg) {
-  if (d.method === 'late') return { q: 2, s: I / integ(x, d, T, 2, 1, neg) };
-  let l = -1, h = 1;
-  while (integ(x, d, T, l, 1, neg) < I) l *= 2;
-  while (integ(x, d, T, h, 1, neg) > I) h *= 2;
-  for (let k = 0; k < 65; k++) { const m2 = (l + h) / 2; if (integ(x, d, T, m2, 1, neg) > I) l = m2; else h = m2; }
-  return { q: (l + h) / 2, s: 1 };
+// ---- SOA-local recalibration core (issue #16) — mirror of server/model.py ----
+const SATURATION_FLOOR = 0.02;
+const smoothstep = u => { u = Math.max(0, Math.min(1, u)); return 3 * u * u - 2 * u * u * u; };
+function rawGrid(x, d, T, neg, n) {
+  const h = T / n, V = [0], Iabs = [0], G = [g0(0, x, d)], TT = [0];
+  let acc = 0, prev = G[0];
+  for (let j = 1; j <= n; j++) {
+    const t = j * h, v = neg ? -t : t, cur = g0(v, x, d);
+    acc += (prev + cur) * h / 2;
+    V.push(v); Iabs.push(acc); G.push(cur); TT.push(t); prev = cur;
+  }
+  return { V, Iabs, G, TT };
+}
+function integScaled(G, TT, mult) {
+  let acc = 0;
+  for (let j = 1; j < TT.length; j++) acc += (G[j - 1] * mult[j - 1] + G[j] * mult[j]) * (TT[j] - TT[j - 1]) / 2;
+  return acc;
+}
+const satMult = (shape, power) => SATURATION_FLOOR + (1 - SATURATION_FLOOR) * Math.pow(Math.max(0, 1 - shape), power);
+function bisectMonotone(fn, target, lo, hi, increasing, iterations = 80) {
+  const vlo = fn(lo), vhi = fn(hi);
+  const lower = increasing ? vlo : vhi, upper = increasing ? vhi : vlo;
+  if (target < lower - 1e-12 || target > upper + 1e-12) throw new Error(`target ${target} outside correction range [${lower}, ${upper}]`);
+  for (let k = 0; k < iterations; k++) {
+    const mid = (lo + hi) / 2;
+    if ((fn(mid) < target) === increasing) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+function shapeFromConfig(cfg, TT, Iraw, T) {
+  if (cfg.mode === 'saturation_v') {
+    const start = cfg.v_start;
+    return TT.map(t => t > start ? smoothstep((t - start) / (T - start)) : 0);
+  }
+  const start = cfg.q_start, rawEnd = Iraw[Iraw.length - 1];
+  return Iraw.map(v => { const q = v / rawEnd; return q > start ? smoothstep((q - start) / (1 - start)) : 0; });
+}
+function corr(x, d, T, I, neg, n = N) {
+  const target = Math.abs(I);
+  const { Iabs: Iraw, G: Graw, TT } = rawGrid(x, d, T, neg, n);
+  const rawEnd = Iraw[Iraw.length - 1];
+  const cfg = d.correction[neg ? 'neg' : 'pos'];
+  let shape = shapeFromConfig(cfg, TT, Iraw, T);
+  const requested = cfg.mode;
+  if (requested.startsWith('saturation') && target <= rawEnd * (1 + 1e-12)) {
+    try { // gate/floor로 도달 불가 시 adaptive q_start fallback으로 진행 (PR#17 리뷰 2)
+      const power = bisectMonotone(p => integScaled(Graw, TT, shape.map(z => satMult(z, p))), target, 0, 512, false);
+      return { mode: requested, power, v_start: cfg.v_start, q_start: cfg.q_start,
+               raw_end: rawEnd, target, q: power, s: target / rawEnd };
+    } catch (e) { /* fall through */ }
+  }
+  let qStart = cfg.q_start !== undefined ? cfg.q_start : 0.70;
+  const ratio = target / rawEnd;
+  if (ratio < 1 && ratio <= qStart + 0.02) qStart = Math.max(0.05, ratio - 0.05);
+  // fallback/boost는 branch가 사용할 q-shape로 fitting 통일 (PR#17 리뷰 1)
+  shape = shapeFromConfig({ mode: 'local_exp_q', q_start: qStart }, TT, Iraw, T);
+  if (target <= rawEnd * (1 + 1e-12)) {
+    const power = bisectMonotone(p => integScaled(Graw, TT, shape.map(z => satMult(z, p))), target, 0, 512, false);
+    return { mode: 'saturation_q', power, v_start: cfg.v_start, q_start: qStart, raw_end: rawEnd, target,
+             q: power, s: target / rawEnd, fallback_from: requested !== 'saturation_q' ? requested : null };
+  }
+  const beta = bisectMonotone(b => integScaled(Graw, TT, shape.map(z => Math.exp(b * z))), target, 0, 120, true);
+  return { mode: 'local_exp_q', beta, q_start: qStart, raw_end: rawEnd, target,
+           q: beta, s: target / rawEnd, fallback_from: requested !== 'local_exp_q' ? requested : null };
 }
 function branch(x, d, T, c, neg, n = N) {
-  const h = T / n, V = [0], I = [0], G = []; let sum = 0, p = g0(0, x, d) * mod(0, T, c.q, d) * c.s; G.push(p);
-  for (let j = 1; j <= n; j++) { const t = j * h, v = neg ? -t : t, g = g0(v, x, d) * mod(t, T, c.q, d) * c.s; sum += (p + g) * h / 2; V.push(v); I.push(neg ? -sum : sum); G.push(g); p = g; }
-  return { V, I, G };
+  if (!('mode' in c)) { // legacy q/s path (API 호환)
+    const h = T / n, V = [0], I = [0], G = []; let sum = 0, p = g0(0, x, d) * mod(0, T, c.q, d) * c.s; G.push(p);
+    for (let j = 1; j <= n; j++) { const t = j * h, v = neg ? -t : t, g = g0(v, x, d) * mod(t, T, c.q, d) * c.s; sum += (p + g) * h / 2; V.push(v); I.push(neg ? -sum : sum); G.push(g); p = g; }
+    return { V, I, G };
+  }
+  const { V, Iabs: Iraw, G: Graw, TT } = rawGrid(x, d, T, neg, n);
+  let mult;
+  if (c.mode.startsWith('saturation')) {
+    const cfg = c.mode === 'saturation_v' ? { mode: 'saturation_v', v_start: c.v_start } : { mode: 'saturation_q', q_start: c.q_start };
+    mult = shapeFromConfig(cfg, TT, Iraw, T).map(z => satMult(z, c.power));
+  } else {
+    mult = shapeFromConfig({ mode: 'local_exp_q', q_start: c.q_start }, TT, Iraw, T).map(z => Math.exp(c.beta * z));
+  }
+  const G = Graw.map((g, j) => g * mult[j]);
+  const Iabs = [0]; let acc = 0;
+  for (let j = 1; j < TT.length; j++) { acc += (G[j - 1] + G[j]) * (TT[j] - TT[j - 1]) / 2; Iabs.push(acc); }
+  return { V, I: neg ? Iabs.map(v => -v) : Iabs, G,
+           I_raw: neg ? Iraw.map(v => -v) : Iraw, G_raw: Graw, multiplier: mult };
 }
 const sv = (a, x, c) => a[1] * (c === 'worst' ? a[4] : a[5]) * (x / a[2]) ** a[3];
 const ep = (d, x, c) => ({ x, vp: sv(d.soa.vp, x, c), vn: sv(d.soa.vn, x, c), ip: sv(d.soa.ip, x, c), inn: sv(d.soa.inn, x, c) });

@@ -41,6 +41,13 @@ D1 = {
             "ip": ["It2+", 1, 1.7052482326597274, .8853326789209258, 1.4195543445506187, 1.4984574918281428],
             "inn": ["It2-", -1, 1.7052482326597274, .9679787370175855, .03472919025401326, .04363077033143844]},
     "range": (0.64, 3.84),
+    # SOA-local 재보정 (이슈 #16): 원본 I-V·size 경향 보존, SOA 근방만 국소 보정.
+    # pos: 1.6V까지 원본 그대로 → 이후 완만한 saturation으로 endpoint 도달.
+    # neg: raw 진행률 70%까지 원본 → endpoint/raw 관계에 따라 국소 감쇠/breakdown 증가.
+    "correction": {
+        "pos": {"mode": "saturation_v", "v_start": 1.6},
+        "neg": {"mode": "local_exp_q", "q_start": 0.70},
+    },
 }
 
 D2 = {
@@ -55,6 +62,13 @@ D2 = {
             "ip": ["It2+", 1, 1959.190790564251, .8799640088461418, 5.936085662066821, 5.948515095817292],
             "inn": ["It2-", -1, 1959.190790564251, .712730158253558, 6.063770015250391, 6.2861134455085015]},
     "range": (1415.232, 2628.288),
+    # SOA-local 재보정 (이슈 #16): 구 branch 전체 scale 제거 — raw 전류 진행률 20%까지
+    # 원본 그대로(저전류 width 경향 보존), 이후 국소 saturation으로 endpoint 도달.
+    # 창 밖 외삽에서 envelope가 raw보다 큰 전류를 요구하면 국소 exp boost로 자동 대체.
+    "correction": {
+        "pos": {"mode": "saturation_q", "q_start": 0.20},
+        "neg": {"mode": "saturation_q", "q_start": 0.20},
+    },
 }
 
 # ---- Capacitance spec (2026-07-28, 사용자 지시: radar 축용 spec equation) ----
@@ -129,6 +143,8 @@ def g0(v, x, d):
 
 
 def mod(t, T, q, d):
+    """Legacy 진단용 변조 함수 — API/문서 호환 보존 (이슈 #16).
+    신 runtime branch는 corr()가 반환하는 correction 메타를 사용한다."""
     if d["method"] == "late":
         r = t / T
         if r <= .5:
@@ -144,6 +160,7 @@ def mod(t, T, q, d):
 
 
 def integ(x, d, T, q, s, neg, n=N):
+    """Legacy 적분 — corr() 신경로 밖 호출자(문서·플롯)용 보존."""
     h = T / n
     a = 0.0
     for j in range(n + 1):
@@ -154,39 +171,188 @@ def integ(x, d, T, q, s, neg, n=N):
     return a * h
 
 
-def corr(x, d, T, I, neg, n=N):
-    if d["method"] == "late":
-        return {"q": 2, "s": I / integ(x, d, T, 2, 1, neg, n)}
-    l, h = -1.0, 1.0
-    while integ(x, d, T, l, 1, neg, n) < I:
-        l *= 2
-    while integ(x, d, T, h, 1, neg, n) > I:
-        h *= 2
-    for _ in range(65):
-        m2 = (l + h) / 2
-        if integ(x, d, T, m2, 1, neg, n) > I:
-            l = m2
-        else:
-            h = m2
-    return {"q": (l + h) / 2, "s": 1}
+# ---- SOA-local 재보정 core (이슈 #16) ----
+# 원본 softplus I-V(raw)와 실측 SOA source를 유지하고, SOA 근방에서만 컨덕턴스를
+# 국소 보정한다. H_sat(u,p) = ε + (1−ε)(1−S(u))^p — 시작에서 연속(H=1, dH/du=0),
+# endpoint에서 기울기 ε>0 유지(calibtable C1 확장 유한성). g_model = g_raw·H > 0.
+SATURATION_FLOOR = 0.02
 
 
-def branch(x, d, T, c, neg, n=N):
+def _smoothstep(u):
+    u = max(0.0, min(1.0, u))
+    return 3.0 * u * u - 2.0 * u * u * u
+
+
+def _raw_grid(x, d, T, neg, n):
     h = T / n
-    V, I, G = [0.0], [0.0], []
-    s = 0.0
-    p = g0(0, x, d) * mod(0, T, c["q"], d) * c["s"]
-    G.append(p)
+    V, Iabs, G, TT = [0.0], [0.0], [g0(0.0, x, d)], [0.0]
+    acc = 0.0
+    prev = G[0]
     for j in range(1, n + 1):
         t = j * h
         v = -t if neg else t
-        g = g0(v, x, d) * mod(t, T, c["q"], d) * c["s"]
-        s += (p + g) * h / 2
+        cur = g0(v, x, d)
+        acc += (prev + cur) * h / 2.0
         V.append(v)
-        I.append(-s if neg else s)
-        G.append(g)
-        p = g
-    return {"V": V, "I": I, "G": G}
+        Iabs.append(acc)
+        G.append(cur)
+        TT.append(t)
+        prev = cur
+    return V, Iabs, G, TT
+
+
+def _integrate_scaled(G, TT, mult):
+    acc = 0.0
+    for j in range(1, len(TT)):
+        h = TT[j] - TT[j - 1]
+        acc += (G[j - 1] * mult[j - 1] + G[j] * mult[j]) * h / 2.0
+    return acc
+
+
+def _sat_multiplier(shape, power):
+    base = max(0.0, 1.0 - shape)
+    return SATURATION_FLOOR + (1.0 - SATURATION_FLOOR) * base ** power
+
+
+def _bisect_monotone(fn, target, lo, hi, increasing, iterations=80):
+    vlo, vhi = fn(lo), fn(hi)
+    lower, upper = (vlo, vhi) if increasing else (vhi, vlo)
+    if target < lower - 1e-12 or target > upper + 1e-12:
+        raise ValueError("target {} outside correction range [{}, {}]".format(
+            target, lower, upper))
+    for _ in range(iterations):
+        mid = (lo + hi) / 2.0
+        value = fn(mid)
+        if (value < target) == increasing:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def _shape_from_config(cfg, TT, Iraw, T):
+    mode = cfg["mode"]
+    if mode == "saturation_v":
+        start = cfg["v_start"]
+        if not 0.0 < start < T:
+            raise ValueError("v_start must lie inside branch: {} vs {}".format(start, T))
+        return [_smoothstep((t - start) / (T - start)) if t > start else 0.0
+                for t in TT]
+    start = cfg["q_start"]
+    raw_end = Iraw[-1]
+    if not 0.0 <= start < 1.0:
+        raise ValueError("q_start must be in [0,1)")
+    return [_smoothstep((q - start) / (1.0 - start)) if q > start else 0.0
+            for q in (value / raw_end for value in Iraw)]
+
+
+def corr(x, d, T, I, neg, n=N):
+    """branch 보정 계수 산출 — 전역 scale 없이 SOA-local 보정 (이슈 #16).
+
+    계약 호환: signature 불변, 반환에 q·s 호환 필드 포함(regression/calibtable),
+    branch()가 반환 dict를 그대로 수용. endpoint는 이분법으로 정확히 도달."""
+    target = abs(I)
+    if target <= 0.0:
+        raise ValueError("endpoint current must be non-zero")
+    _, Iraw, Graw, TT = _raw_grid(x, d, T, neg, n)
+    raw_end = Iraw[-1]
+    side = "neg" if neg else "pos"
+    cfg = d["correction"][side]
+    shape = _shape_from_config(cfg, TT, Iraw, T)
+    requested_mode = cfg["mode"]
+
+    if requested_mode.startswith("saturation") and target <= raw_end * (1.0 + 1e-12):
+        def endpoint(power):
+            mult = [_sat_multiplier(z, power) for z in shape]
+            return _integrate_scaled(Graw, TT, mult)
+
+        try:
+            power = _bisect_monotone(endpoint, target, 0.0, 512.0, False)
+            return {"mode": requested_mode, "power": power,
+                    "v_start": cfg.get("v_start"), "q_start": cfg.get("q_start"),
+                    "raw_end": raw_end, "target": target,
+                    "q": power, "s": target / raw_end}
+        except ValueError:
+            pass  # gate/floor로 도달 불가 — adaptive q_start fallback (PR#17 리뷰 2)
+
+    q_start = cfg.get("q_start", 0.70)
+    ratio = target / raw_end
+    if ratio < 1.0 and ratio <= q_start + 0.02:
+        q_start = max(0.05, ratio - 0.05)
+
+    # fallback/boost 경로는 branch()가 사용할 q-shape로 fitting을 통일한다
+    # (PR#17 리뷰 1: v-shape로 fitting 후 q-shape branch를 만드는 불일치 제거)
+    cfg_local = {"mode": "local_exp_q", "q_start": q_start}
+    shape = _shape_from_config(cfg_local, TT, Iraw, T)
+
+    if target <= raw_end * (1.0 + 1e-12):
+        def endpoint_reduce(power):
+            mult = [_sat_multiplier(z, power) for z in shape]
+            return _integrate_scaled(Graw, TT, mult)
+
+        power = _bisect_monotone(endpoint_reduce, target, 0.0, 512.0, False)
+        # 반환 mode는 fitting에 쓴 shape와 동일한 q-기반으로 고정 (shape 정합)
+        return {"mode": "saturation_q", "power": power,
+                "v_start": cfg.get("v_start"), "q_start": q_start,
+                "raw_end": raw_end, "target": target,
+                "q": power, "s": target / raw_end,
+                "fallback_from": (requested_mode
+                                  if requested_mode != "saturation_q" else None)}
+
+    def endpoint_boost(beta):
+        mult = [math.exp(beta * z) for z in shape]
+        return _integrate_scaled(Graw, TT, mult)
+
+    beta = _bisect_monotone(endpoint_boost, target, 0.0, 120.0, True)
+    return {"mode": "local_exp_q", "beta": beta, "q_start": q_start,
+            "raw_end": raw_end, "target": target,
+            "q": beta, "s": target / raw_end,
+            "fallback_from": (requested_mode if requested_mode != "local_exp_q" else None)}
+
+
+def branch(x, d, T, c, neg, n=N):
+    """보정 branch 생성 — 반환 스키마(V/I/G) 불변, raw 진단 배열은 additive.
+    correction 메타 없는 c(legacy q/s dict)는 구 경로로 처리(호환)."""
+    if "mode" not in c:
+        h = T / n
+        V, I, G = [0.0], [0.0], []
+        s = 0.0
+        p = g0(0, x, d) * mod(0, T, c["q"], d) * c["s"]
+        G.append(p)
+        for j in range(1, n + 1):
+            t = j * h
+            v = -t if neg else t
+            g = g0(v, x, d) * mod(t, T, c["q"], d) * c["s"]
+            s += (p + g) * h / 2
+            V.append(v)
+            I.append(-s if neg else s)
+            G.append(g)
+            p = g
+        return {"V": V, "I": I, "G": G}
+
+    V, Iraw, Graw, TT = _raw_grid(x, d, T, neg, n)
+    if c["mode"].startswith("saturation"):
+        if c["mode"] == "saturation_v":
+            shape_cfg = {"mode": "saturation_v", "v_start": c["v_start"]}
+        else:
+            shape_cfg = {"mode": "saturation_q", "q_start": c["q_start"]}
+        shape = _shape_from_config(shape_cfg, TT, Iraw, T)
+        mult = [_sat_multiplier(z, c["power"]) for z in shape]
+    else:
+        local_cfg = {"mode": "local_exp_q", "q_start": c["q_start"]}
+        shape = _shape_from_config(local_cfg, TT, Iraw, T)
+        mult = [math.exp(c["beta"] * z) for z in shape]
+    G = [g * m for g, m in zip(Graw, mult)]
+    Iabs = [0.0]
+    acc = 0.0
+    for j in range(1, len(TT)):
+        h = TT[j] - TT[j - 1]
+        acc += (G[j - 1] + G[j]) * h / 2.0
+        Iabs.append(acc)
+    I = [-value for value in Iabs] if neg else Iabs
+    return {"V": V, "I": I, "G": G,
+            "I_raw": ([-value for value in Iraw] if neg else Iraw),
+            "G_raw": Graw, "multiplier": mult}
 
 
 def sv(a, x, c):
@@ -196,6 +362,22 @@ def sv(a, x, c):
 def ep(d, x, c):
     return {"x": x, "vp": sv(d["soa"]["vp"], x, c), "vn": sv(d["soa"]["vn"], x, c),
             "ip": sv(d["soa"]["ip"], x, c), "inn": sv(d["soa"]["inn"], x, c)}
+
+
+def measured_ep(d, x):
+    """실측 row 구간선형 보간 endpoint — 검토·플롯용 (이슈 #16 MODEL_SPEC §2).
+    runtime 정본은 worst/best 멱법칙 envelope(ep) 그대로다."""
+    rows = d["m"]
+    lo, hi = rows[0], rows[1]
+    for a, b in zip(rows, rows[1:]):
+        lo, hi = a, b
+        if x <= b["x"]:
+            break
+    f = (x - lo["x"]) / (hi["x"] - lo["x"])
+    out = {"x": x}
+    for k in ("vp", "vn", "ip", "inn"):
+        out[k] = lo[k] + f * (hi[k] - lo[k])
+    return out
 
 
 def calib(d, x, c, n=N):
