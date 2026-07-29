@@ -913,6 +913,31 @@ chk("#14 S2: 정상 layout은 valid + 소자 명단",
     validate_direct_io_cap_roles(nl)["valid"] is True
     and validate_direct_io_cap_roles(nl)["devices"]["io_primary_up"] == ["XD_up"], "")
 
+# 20) #14 S3 — feasible_policy 명시 + best_it/final 일치
+r_mm = r_adj  # 기본 policy=max_margin 실행 재사용 (§16)
+chk("#14 S3: 기본 policy=max_margin — 완주·secondary 명시",
+    r_mm["feasible_policy"] == "max_margin" and r_mm["secondary_objective_used"] is True
+    and r_mm["secondary_score"] is not None and r_mm["stopped_on_feasible"] is False,
+    str((r_mm["feasible_policy"], r_mm["secondary_score"])))
+chk("#14 S3: best_it=final.source_it — history[best_it] pset과 final 일치",
+    all(abs(r_mm["history"][r_mm["best_it"]][k] - r_mm["final"][k]) < 1e-9
+        for k in ("x1", "x2", "W", "L")), str(r_mm["best_it"]))
+r_first = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"),
+                        feasible_policy="first")
+chk("#14 S3: first policy — 최초 feasible 보존 + 자동 조기 종료",
+    r_first["feasible_policy"] == "first" and r_first["stopped_on_feasible"] is True
+    and r_first["secondary_objective_used"] is False
+    and r_first["status"] == "PASS"
+    and len(r_first["history"]) <= len(r_mm["history"]), str(len(r_first["history"])))
+chk("#14 S3: 두 policy 모두 PASS 판정 기준 동일(전 g≤0)",
+    r_first["best_feasible"]["losses"]["total"] == 0.0
+    and r_mm["best_feasible"]["losses"]["total"] == 0.0, "")
+try:
+    optimize_feas(DEFAULT_LAYOUT, iters=1, feasible_policy="bogus")
+    chk("#14 S3: 미지 policy 거부", False, "예외 없음")
+except ValueError:
+    chk("#14 S3: 미지 policy 거부", True, "")
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:

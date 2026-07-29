@@ -891,7 +891,8 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
                       alpha_spec: float = 1.0,
                       barrier: str = "off", mu_bar: float = 0.01, mu_rule: float = 20.0,
                       lr: float = 0.06, iters: int = 30, freeze: str = None,
-                      stop_on_feasible: int = 0, grad: str = "adjoint"):
+                      stop_on_feasible: int = 0, grad: str = "adjoint",
+                      feasible_policy: str = "max_margin"):
     """Constraint·feasibility optimizer (이슈 #12/#13) — 기본 엔드포인트.
     J_obj = α·(L_rule+L_SOA+L_spec) squared hinge, PASS=전 g_j≤0, barrier 기본 off,
     best_feasible/best_infeasible 분리, final clamp 없음. legacy는 /legacy."""
@@ -932,6 +933,7 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
             barrier=barrier, mu_bar=mu_bar, mu_rule=mu_rule,
             lr=lr, iters=iters, freeze=fz, pset=p,
             stop_on_feasible=bool(stop_on_feasible), grad=grad,
+            feasible_policy=feasible_policy,
             progress_cb=_opt_tick))
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)

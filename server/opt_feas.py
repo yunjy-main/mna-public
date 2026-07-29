@@ -288,7 +288,8 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                   hbm_kv=1.0, cap_lim=5e-12, windows=None,
                   alphas=(1.0, 1.0, 1.0), barrier="off", mu_bar=0.01, mu_rule=20.0,
                   lr=0.06, iters=30, n=FEAS_N, grad="adjoint",
-                  freeze=(), pset=None, stop_on_feasible=False, progress_cb=None):
+                  freeze=(), pset=None, stop_on_feasible=False,
+                  feasible_policy="max_margin", progress_cb=None):
     """Feasibility optimizer 본체 (이슈 #13 §3·§4.1) — Adam + adjoint gradient(기본).
 
     grad: adjoint(기본 — ± 케이스당 전치 선형해 1회로 전 변수 gradient)
@@ -300,6 +301,12 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         raise ValueError("barrier must be off|log|softplus")
     if grad not in ("adjoint", "fd"):
         raise ValueError("grad must be adjoint|fd")
+    # feasible 간 selection policy 명시 (#14 §5, 기본 max_margin=완주 — 사용자 확정).
+    # stop_on_feasible(구 옵션)은 first의 별칭으로 통합.
+    if stop_on_feasible:
+        feasible_policy = "first"
+    if feasible_policy not in ("max_margin", "first", "min_residual"):
+        raise ValueError("feasible_policy must be max_margin|first|min_residual")
     nl = extract_netlist(layout)
     reg = [r for r in params_registry(nl)
            if r["supported"] and r["name"] in ALLOWED_VARS]
@@ -430,10 +437,19 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 best_solver_error = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
             return
         if ev["feasible"]:
-            # feasible 간 우열: margin 최대(max usage 최소) → residual — 저해상 평가의
-            # 정밀 재판정 뒤집힘 위험을 최소화 (#13 4.1.F의 'robustness가 좋은 feasible')
-            sc = (max([u for u in ev["usages"].values()] or [0.0]),
-                  max(s["residual"] for s in ev["solver"].values()))
+            # feasible 간 우열 = 명시 policy (#14 §5): first는 최초 보존,
+            # max_margin은 max usage 최소(정밀 재판정 뒤집힘 위험 최소),
+            # min_residual은 solver residual 최소
+            if feasible_policy == "first":
+                if best_feasible is None:
+                    best_feasible = {"it": it_now, "z": list(z_now), "ev": ev,
+                                     "score": (it_now,)}
+                return
+            if feasible_policy == "min_residual":
+                sc = (max(s["residual"] for s in ev["solver"].values()),)
+            else:
+                sc = (max([u for u in ev["usages"].values()] or [0.0]),
+                      max(s["residual"] for s in ev["solver"].values()))
             if best_feasible is None or sc < best_feasible["score"]:
                 best_feasible = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
         else:
@@ -449,8 +465,8 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     it = 0
     while not solver_terminated and it < iters:
         it += 1
-        if stop_on_feasible and best_feasible is not None:
-            stopped_feasible = True
+        if feasible_policy == "first" and best_feasible is not None:
+            stopped_feasible = True  # first policy = 자동 조기 종료 (#14 §5.2)
             break
         # gradient 기준점 — 수락 로직이 z를 항상 VALID로 유지 (warm-start 변화 대비 방어)
         if grad == "adjoint":
@@ -559,6 +575,13 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                                   if best_solver_error is not None else None),
             "solver_terminated": solver_terminated,
             "stopped_on_feasible": stopped_feasible,
+            # selection policy 명시 (#14 §5.3)
+            "feasible_policy": feasible_policy,
+            "secondary_objective_used": (feasible_policy != "first"
+                                         and best_feasible is not None),
+            "secondary_score": (best_feasible["score"][0]
+                                if (feasible_policy != "first"
+                                    and best_feasible is not None) else None),
             "history": history,
             # legacy 프론트 호환 (전환기 유지 — 이슈 #13 4.4)
             "initial": history[0] if history else None,

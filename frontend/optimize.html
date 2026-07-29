@@ -120,8 +120,8 @@
     <div class="in">
       <div><label>α rule/SOA/spec<span class="info" title="신규 optimizer의 loss 가중 J_obj=α_rule·L_rule+α_SOA·L_SOA+α_spec·L_spec (기본 1). legacy에는 미적용.">ⓘ</span></label>
         <span style="display:flex;gap:3px"><input id="aRule" type="number" step="any" value="1" style="width:44px"><input id="aSoa" type="number" step="any" value="1" style="width:44px"><input id="aSpec" type="number" step="any" value="1" style="width:44px"></span></div>
-      <div><label>first-feasible stop<span class="info" title="feasible 후보 최초 발견 시 즉시 종료 (기본 off — iters 완주하며 margin 최대 feasible 갱신).">ⓘ</span></label>
-        <select id="stopFeas"><option value="0" selected>off (완주)</option><option value="1">on (조기 종료)</option></select></div>
+      <div><label>feasible policy<span class="info" title="feasible 후보 간 선택 정책 (#14 §5 — 명시적 계약).&#10;max_margin(기본): iters 완주, max usage 최소 feasible 선택 — secondary objective 사용이 metadata에 명시됨.&#10;first: 최초 feasible 발견 시 자동 조기 종료 (#12 원칙: feasible 간 동등).&#10;min_residual: 완주, solver residual 최소 선택.">ⓘ</span></label>
+        <select id="feasPolicy"><option value="max_margin" selected>max_margin (완주)</option><option value="first">first (조기 종료)</option><option value="min_residual">min_residual</option></select></div>
       <div><label>μ SOA (legacy)</label><input id="muSOA" type="number" step="any" value="12"></div>
       <div><label>μ Rule (min측)<span class="info" title="min 위반 = 가혹 FAIL 급경사 barrier 가중치 (창립 비대칭 — barrier 선택과 무관하게 항상 적용). softplus 모드에서는 max측 완경사에도 사용.">ⓘ</span></label>
         <input id="muRule" type="number" step="any" value="20"></div>
@@ -1002,7 +1002,7 @@ function startMnaOpt(useLegacy){
     mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
     barrier:(useLegacy&&bar==='off')?'log':bar,mu_bar:val('muBar'),
     alpha_rule:val('aRule'),alpha_soa:val('aSoa'),alpha_spec:val('aSpec'),
-    stop_on_feasible:val('stopFeas'),
+    feasible_policy:val('feasPolicy')||'max_margin',
     freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
   sup.forEach(p=>{ // 초기값·창·cost — registry 루프 (이슈 #11 신규약: <name>_min/max, w_<name>)
     q.set(p.name,pv(p.name));
@@ -1044,8 +1044,9 @@ function renderOptResult(){
     const ls=fn.losses||{};
     extra='<br>status: '+SB+' · loss_rule '+f(ls.rule,5)+' · loss_SOA '+f(ls.soa,5)
       +' · loss_spec '+f(ls.spec,5)+' · J_total <b>'+f(ls.total,5)+'</b>'
-      +(d.best_infeasible&&d.status==='PASS'?'':'')
-      +(d.stopped_on_feasible?' · first-feasible 조기 종료':'');
+      +(d.feasible_policy?(' · policy '+d.feasible_policy
+        +(d.secondary_objective_used?' (secondary '+pct(d.secondary_score)+')':'')):'')
+      +(d.stopped_on_feasible?' · 조기 종료':'');
     const cw=document.getElementById('consWrap');
     cw.hidden=false;
     const cs=(fn.constraints?[].concat(fn.constraints.rule,fn.constraints.soa,
