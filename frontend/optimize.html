@@ -1026,6 +1026,13 @@ function renderOptResult(){
   document.getElementById('optResult').hidden=false;
   const i=d.initial, fn=d.final;
   const P=t=>'<b style="color:#0a7d38">'+t+'</b>', F=t=>'<b style="color:#b3261e">'+t+'</b>';
+  if(d.status&&!fn){ // SOLVER_ERROR — 유효(VALID) candidate가 한 번도 없음 (#14)
+    document.getElementById('optSummary').innerHTML='status: '+F('SOLVER ERROR')
+      +' — 유효하게 평가된 candidate가 없습니다 (MNA 비수렴/monitor 무효). '
+      +'초기 설계·spec 전류를 확인하세요.';
+    document.getElementById('consWrap').hidden=true;
+    return;
+  }
   // 설계변수 나열은 variables descriptor에서 동적 생성 (고정 변수는 '고정' 표기)
   const vline=h=>(d.variables||[]).map(v=>v.key+'='+f(h[v.key],v.dec)+(v.unit||'')
     +(v.frozen?' <b style="color:#1f5f99">고정</b>':'')).join(' · ');

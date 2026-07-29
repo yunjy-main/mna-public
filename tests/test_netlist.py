@@ -827,6 +827,55 @@ chk("실행 기록: query·응답 보존", _js["kind"] == "feas" and _js["query"
     and _js["response"]["status"] == "PASS", "")
 os.remove(_saved)  # 테스트 아티팩트는 남기지 않음
 
+# 18) #14 S1 — 비수렴 candidate 정합성 (negative 먼저): J=0 오인 금지·상태 3분법·rollback
+import server.opt_feas as OF  # noqa: E402
+
+_orig_solve = OF.assemble_and_solve
+
+
+def _fail_solve(tags=("+",), w_above=None):
+    def fake(nl_, inject="IO", ground="VSS", I=1.33, **kw):
+        sol = _orig_solve(nl_, inject=inject, ground=ground, I=I, **kw)
+        tag = "+" if I >= 0 else "-"
+        bad = tag in tags and (w_above is None
+                               or (kw.get("pset") or {}).get("W", 5.0) > w_above)
+        if bad:
+            sol = dict(sol)
+            sol["converged"] = False
+        return sol
+    return fake
+
+
+try:
+    OF.assemble_and_solve = _fail_solve(("+",))
+    ev_p = OF.evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0},
+                                 "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=500)
+    chk("#14 S1: +측만 비수렴 — J=0이어도 SOLVER_ERROR (infeasible 오인 금지)",
+        ev_p["candidate_status"] == "SOLVER_ERROR" and ev_p["feasible"] is False
+        and ev_p["losses"]["total"] == 0.0 and ev_p["solver_valid"] is False,
+        str((ev_p["candidate_status"], ev_p["losses"])))
+    OF.assemble_and_solve = _fail_solve(("-",))
+    ev_m = OF.evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0},
+                                 "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=500)
+    chk("#14 S1: −측만 비수렴도 SOLVER_ERROR", ev_m["candidate_status"] == "SOLVER_ERROR", "")
+    OF.assemble_and_solve = _fail_solve(("+", "-"))
+    r_se = OF.optimize_feas(DEFAULT_LAYOUT, iters=3, freeze=("L", "x1", "x2"))
+    chk("#14 S1: VALID 전무 → status SOLVER_ERROR·best 3종 분리",
+        r_se["status"] == "SOLVER_ERROR" and r_se["best_feasible"] is None
+        and r_se["best_infeasible"] is None and r_se["best_solver_error"] is not None
+        and r_se["final"] is None, str(r_se["status"]))
+    # rollback: W>8에서만 비수렴 — trial 거부·절반 step으로 W≤8 유지, VALID만 best에
+    OF.assemble_and_solve = _fail_solve(("+", "-"), w_above=8.0)
+    r_rb = OF.optimize_feas(DEFAULT_LAYOUT, iters=8, freeze=("L", "x1", "x2"))
+    chk("#14 S1: 비수렴 영역 rollback — z는 VALID에 머물고 INFEASIBLE 보고",
+        r_rb["status"] == "INFEASIBLE" and r_rb["final"] is not None
+        and r_rb["final"]["W"] <= 8.0 + 1e-9
+        and all(h["candidate_status"] == "VALID" for h in r_rb["history"]
+                if h["it"] > 0 and h is not r_rb["history"][-1]),
+        "W={} status={}".format(r_rb["final"]["W"], r_rb["status"]))
+finally:
+    OF.assemble_and_solve = _orig_solve
+
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
     for f in fails:

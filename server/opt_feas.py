@@ -155,12 +155,21 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
               "spec": sum(_phi(c["g"]) for c in cons["spec"])}
     losses["total"] = a_rule * losses["rule"] + a_soa * losses["soa"] + a_spec * losses["spec"]
     all_cons = cons["rule"] + cons["soa"] + cons["spec"]
-    feasible = (all(s["converged"] for s in solver.values())
-                and "monitor_invalid" not in solver["+"]
-                and "monitor_invalid" not in solver["-"]
-                and all(c["passed"] for c in all_cons))
+    # candidate 상태 3분법 (이슈 #14 §2.2) — 비수렴 candidate의 J=0을 정상
+    # infeasible로 오인하지 않도록 feasibility와 평가 유효성을 분리한다.
+    solver_valid = all(s["converged"] for s in solver.values())
+    constraints_valid = not any("monitor_invalid" in s for s in solver.values())
+    if not solver_valid:
+        candidate_status = "SOLVER_ERROR"
+    elif not constraints_valid:
+        candidate_status = "MONITOR_ERROR"
+    else:
+        candidate_status = "VALID"
+    feasible = candidate_status == "VALID" and all(c["passed"] for c in all_cons)
     usages = {c["key"]: c["usage"] for c in all_cons if c["usage"] is not None}
     out = {"solver": solver, "constraints": cons, "losses": losses,
+           "candidate_status": candidate_status, "solver_valid": solver_valid,
+           "constraints_valid": constraints_valid,
            "feasible": feasible, "detail": detail, "usages": usages}
     if keep_aux:
         out["aux"] = aux
@@ -381,11 +390,14 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     for i, v in enumerate(var_spec):
         if v["lo"] is not None:
             z[i] = min(1.2, max(-0.2, (p0[v["key"]] - v["lo"]) / (v["hi"] - v["lo"])))
-    best_feasible = None   # (z, ev) — residual 최소 갱신
-    best_infeasible = None  # (z, ev, score) — 위반 사전식 최소
+    # candidate 통일 스키마 (이슈 #14 4.2): {"it","z","ev","score"} — 상태별 3분리(§2.3)
+    best_feasible = None
+    best_infeasible = None
+    best_solver_error = None
     history = []
     mom, vel = [0.0] * len(var_spec), [0.0] * len(var_spec)
     b1, b2, eps_ = 0.9, 0.999, 1e-9
+    MAX_SOLVER_RETRIES = 4  # 비수렴 trial rollback·절반 step 재시도 횟수 (#14 §2.4)
 
     def _record(it, jv, ev, z_now, gradient):
         pv = to_p(z_now)
@@ -395,6 +407,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         row = {"it": it, "J_obj": jv, "loss": jv,  # loss=legacy 호환 별칭
                "losses": {k: round(x, 6) for k, x in ev["losses"].items()},
                "feasible": ev["feasible"], "soa_pass": ev["feasible"],
+               "candidate_status": ev["candidate_status"],
                "solver": {t: s["converged"] for t, s in ev["solver"].items()},
                "gradient": gradient,
                "worst": (worst_c["usage"] if worst_c else 0.0),
@@ -406,31 +419,46 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             row[k] = pv[k]
         history.append(row)
 
-    def _consider(z_now, ev):
-        nonlocal best_feasible, best_infeasible
+    def _consider(it_now, z_now, ev):
+        nonlocal best_feasible, best_infeasible, best_solver_error
+        if ev["candidate_status"] != "VALID":
+            # solver/monitor error는 physical infeasible과 분리 저장 (#14 §2.3)
+            sc = (0 if ev["solver_valid"] else 1,
+                  max((s["residual"] for s in ev["solver"].values()),
+                      default=float("inf")))
+            if best_solver_error is None or sc < best_solver_error["score"]:
+                best_solver_error = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
+            return
         if ev["feasible"]:
             # feasible 간 우열: margin 최대(max usage 최소) → residual — 저해상 평가의
             # 정밀 재판정 뒤집힘 위험을 최소화 (#13 4.1.F의 'robustness가 좋은 feasible')
             sc = (max([u for u in ev["usages"].values()] or [0.0]),
                   max(s["residual"] for s in ev["solver"].values()))
-            if best_feasible is None or sc < best_feasible[2]:
-                best_feasible = (list(z_now), ev, sc)
+            if best_feasible is None or sc < best_feasible["score"]:
+                best_feasible = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
         else:
             sc = _violation_score(ev)
-            if best_infeasible is None or sc < best_infeasible[2]:
-                best_infeasible = (list(z_now), ev, sc)
+            if best_infeasible is None or sc < best_infeasible["score"]:
+                best_infeasible = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
 
     j0, ev0 = evaluate(z)
-    _consider(z, ev0)
+    _consider(0, z, ev0)
     _record(0, j0, ev0, z, None)
     stopped_feasible = False
-    for it in range(1, iters + 1):
+    solver_terminated = ev0["candidate_status"] != "VALID"  # 초기부터 무효 → 진행 불가
+    it = 0
+    while not solver_terminated and it < iters:
+        it += 1
         if stop_on_feasible and best_feasible is not None:
             stopped_feasible = True
             break
+        # gradient 기준점 — 수락 로직이 z를 항상 VALID로 유지 (warm-start 변화 대비 방어)
         if grad == "adjoint":
             f_base, ev_base = evaluate(z, keep_aux=True)
-            _consider(z, ev_base)
+            _consider(it - 1, z, ev_base)
+            if ev_base["candidate_status"] != "VALID":
+                solver_terminated = True
+                break
             pv = to_p(z)
             act_keys = tuple(var_spec[i]["key"] for i in active)
             spans = {var_spec[i]["key"]: var_spec[i]["hi"] - var_spec[i]["lo"]
@@ -441,37 +469,63 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             # Adam은 정규화 좌표(z)에서 동작 — 물리 gradient × span으로 좌표 일치
             gradient = {k: (ga[k] + gb[k]) * spans[k] for k in act_keys}
         else:
-            f_base, _ev = evaluate(z)
+            f_base, ev_base = evaluate(z)
+            _consider(it - 1, z, ev_base)
+            if ev_base["candidate_status"] != "VALID":
+                solver_terminated = True
+                break
             gradient = {}
             for i in active:
                 zp = list(z)
                 zp[i] += FD_H
-                fp, _e = evaluate(zp)
-                gradient[var_spec[i]["key"]] = (fp - f_base) / FD_H
+                fp, ev_p = evaluate(zp)
+                gradient[var_spec[i]["key"]] = (
+                    0.0 if ev_p["candidate_status"] != "VALID"
+                    else (fp - f_base) / FD_H)  # 무효 probe는 기여 제외
+        # Adam 제안 (미커밋 — #14 §2.4: 비수렴 trial에는 상태를 갱신하지 않는다)
+        prop = {}
         for i in active:
             gi = gradient[var_spec[i]["key"]]
-            mom[i] = b1 * mom[i] + (1 - b1) * gi
-            vel[i] = b2 * vel[i] + (1 - b2) * gi * gi
-            mh = mom[i] / (1 - b1 ** it)
-            vh = vel[i] / (1 - b2 ** it)
-            z[i] = min(1.2, max(-0.2, z[i] - lr * mh / (math.sqrt(vh) + eps_)))
-        j_new, ev_new = evaluate(z)
-        _consider(z, ev_new)
-        _record(it, j_new, ev_new,
-                z, {k: round(g, 6) for k, g in gradient.items()})
+            m2 = b1 * mom[i] + (1 - b1) * gi
+            v2 = b2 * vel[i] + (1 - b2) * gi * gi
+            mh = m2 / (1 - b1 ** it)
+            vh = v2 / (1 - b2 ** it)
+            prop[i] = (m2, v2, lr * mh / (math.sqrt(vh) + eps_))
+        accepted, scale = False, 1.0
+        j_new, ev_new, z_trial = None, None, list(z)
+        for _retry in range(MAX_SOLVER_RETRIES):
+            z_trial = list(z)
+            for i in active:
+                z_trial[i] = min(1.2, max(-0.2, z[i] - scale * prop[i][2]))
+            j_new, ev_new = evaluate(z_trial)
+            _consider(it, z_trial, ev_new)
+            if ev_new["candidate_status"] == "VALID":
+                for i in active:  # 수락 시에만 Adam 상태 커밋
+                    mom[i], vel[i] = prop[i][0], prop[i][1]
+                z = z_trial
+                _record(it, j_new, ev_new, z,
+                        {k: round(g, 6) for k, g in gradient.items()})
+                accepted = True
+                break
+            scale *= 0.5  # rollback + 절반 step 재시도
+        if not accepted:  # 재시도 소진 — solver error로 기록하고 종료 (#14 §2.4)
+            _record(it, j_new, ev_new, z_trial,
+                    {k: round(g, 6) for k, g in gradient.items()})
+            solver_terminated = True
 
     # best 후보를 정밀 격자로 재평가·재판정 (저해상 편향으로 feasibility가 뒤집힐 수 있음.
     # clamp 없음 — 실제 candidate 그대로 보고, 이슈 #13 4.1.E)
     def _precise(entry):
         if entry is None:
             return None
-        z_e = entry[0]
-        pv = to_p(z_e)
+        pv = to_p(entry["z"])
         ev = evaluate_candidate(nl, pv, corner, force, ground, i_spec, cap_lim,
                                 windows=win, alphas=alphas,
                                 warm={}, calib_cache={}, n=M.N)
         _tick(w_final)
         return {"pset": pv, "losses": ev["losses"], "feasible": ev["feasible"],
+                "candidate_status": ev["candidate_status"],
+                "source_it": entry["it"],  # UI ★best·slider·[적용] 일치 (#14 §4.2)
                 "constraints": ev["constraints"], "solver": ev["solver"],
                 "usages": ev["usages"], "detail": ev["detail"],
                 # legacy 표시 호환 필드
@@ -482,26 +536,35 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 "soa_pass": ev["feasible"],
                 "loss": ev["losses"]["total"],
                 **{k: pv[k] for k in keys}}
+    valid_seen = (best_feasible is not None) or (best_infeasible is not None)
     fin_feas = _precise(best_feasible)
     fin_infeas = _precise(best_infeasible)
     if fin_feas is not None and not fin_feas["feasible"]:
         fin_infeas = fin_infeas if fin_infeas is not None else fin_feas
         fin_feas = None  # 정밀 재판정에서 뒤집힘 — PASS로 보고하지 않는다
-    if fin_feas is None and fin_infeas is None:
-        status = "SOLVER_ERROR"
+    if not valid_seen:
+        status = "SOLVER_ERROR"  # VALID candidate가 한 번도 없음 (#14 §2.3)
+    elif fin_feas is not None:
+        status = "PASS"
     else:
-        status = "PASS" if fin_feas is not None else "INFEASIBLE"
+        status = "INFEASIBLE"
     final = fin_feas if fin_feas is not None else fin_infeas
     return {"status": status, "feasible": fin_feas is not None,
             "best_feasible": fin_feas, "best_infeasible": fin_infeas,
+            "best_solver_error": ({"it": best_solver_error["it"],
+                                   "pset": to_p(best_solver_error["z"]),
+                                   "solver": best_solver_error["ev"]["solver"],
+                                   "candidate_status":
+                                       best_solver_error["ev"]["candidate_status"]}
+                                  if best_solver_error is not None else None),
+            "solver_terminated": solver_terminated,
             "stopped_on_feasible": stopped_feasible,
             "history": history,
             # legacy 프론트 호환 (전환기 유지 — 이슈 #13 4.4)
             "initial": history[0] if history else None,
             "final": final,
-            "best_it": max(range(len(history)),
-                           key=lambda i: (history[i]["feasible"], -history[i]["J_obj"]))
-            if history else 0,
+            "best_it": (final["source_it"] if final is not None
+                        else (len(history) - 1 if history else 0)),
             "variables": [{"key": v["key"], "name": v["name"], "lo": v["lo"],
                            "hi": v["hi"], "unit": v["unit"], "dec": v["dec"],
                            "kind": v["kind"], "frozen": v["frozen"],
