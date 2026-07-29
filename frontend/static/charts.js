@@ -54,7 +54,15 @@ window.MNA = (function () {
   // 공통 선형 차트: series[{x,y,color,label,dash?}], hlines/vlines, points, shade[x0,x1]
   function lineChart(el, o) {
     remember(el, lineChart, arguments);
-    const W = o.w || 340, H = (o.h || 205) * SZ.h, mL = 44, mR = 8, mT = o.title ? 20 : 8, mB = 28;
+    // 여백은 눈금 라벨 실폭에서 계산 — SVG는 overflow:hidden이라 viewBox를 넘는 글자가
+    // 잘린다(우측 끝 x 눈금이 대표 증상). 글자 배율(SZ.font)도 함께 반영.
+    const TFS = 8.5 * SZ.font;               // 눈금 글자 크기 (emit 후 실제 크기)
+    const tw = t => String(t).length * 0.56 * TFS;   // 숫자 글리프 평균 폭 (여백 산정용)
+    const twC = t => String(t).length * 0.65 * TFS;  // 클램프용 보수적 추정(−·% 등 넓은 글리프)
+    const grow = Math.max(0, SZ.font - 1);
+    const W = o.w || 340, H = (o.h || 205) * SZ.h;
+    const mT = (o.title ? 20 : 8) + grow * 14, mB = 31 + grow * 20;
+    let mL = 44, mR = 8;
     let xs = [], ys = [];
     (o.series || []).forEach(s => { xs = xs.concat(s.x); ys = ys.concat(s.y); });
     (o.hlines || []).forEach(h => ys.push(h.y));
@@ -79,6 +87,14 @@ window.MNA = (function () {
     const xst = niceStep(x1 - x0, 4), yst = niceStep(y1 - y0, 4);
     x0 = Math.floor(x0 / xst) * xst; x1 = Math.ceil(x1 / xst) * xst;
     y0 = Math.floor(y0 / yst) * yst; y1 = Math.ceil(y1 / yst) * yst;
+    // 마지막 x 눈금은 중앙정렬이라 반폭이 우측으로 넘친다. 여백은 필요분의 절반만 주고
+    // (사용자 지시 2026-07-29 — 그래프 간 간격 과다), 나머지는 라벨 위치 클램프로 흡수.
+    mR = Math.max(mR, (mR + tw(fmtN(x1)) / 2 + 2) / 2);
+    // y 눈금은 우측정렬(mL−4 기준)이라 최장 라벨 전폭이 mL 안에 들어와야 한다.
+    let ylw = 0;
+    for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++)
+      ylw = Math.max(ylw, tw(fmtN(n * yst)));
+    mL = Math.max(mL, ylw + 8);
     const X = x => mL + (x - x0) / (x1 - x0) * (W - mL - mR);
     const Y = y => H - mB - (y - y0) / (y1 - y0) * (H - mT - mB);
     let s = '<svg viewBox="0 0 ' + W + ' ' + H + '">';
@@ -97,13 +113,15 @@ window.MNA = (function () {
       const xv = n * xst, zero = n === 0;  // 원점 축은 진하게
       s += '<line x1="' + X(xv) + '" y1="' + mT + '" x2="' + X(xv) + '" y2="' + (H - mB) + '" stroke="'
         + (zero ? '#aeb7c2' : C.grid) + '"/>'
-        + '<text x="' + X(xv) + '" y="' + (H - mB + 13) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
+        // 양 끝 눈금 라벨은 viewBox 안으로 클램프 — 여백을 늘리지 않고 잘림만 막는다
+        + '<text x="' + Math.min(Math.max(X(xv), twC(fmtN(xv)) / 2 + 1), W - twC(fmtN(xv)) / 2 - 1)
+        + '" y="' + (H - mB + TFS + 4.5) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
     }
     for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++) {
       const yv = n * yst, zero = n === 0;
       s += '<line x1="' + mL + '" y1="' + Y(yv) + '" x2="' + (W - mR) + '" y2="' + Y(yv) + '" stroke="'
         + (zero ? '#aeb7c2' : C.grid) + '"/>'
-        + '<text x="' + (mL - 4) + '" y="' + (Y(yv) + 3) + '" text-anchor="end" font-size="8.5" fill="' + C.gray + '">' + fmtN(yv) + '</text>';
+        + '<text x="' + (mL - 4) + '" y="' + (Y(yv) + TFS * .35) + '" text-anchor="end" font-size="8.5" fill="' + C.gray + '">' + fmtN(yv) + '</text>';
     }
     s += '<rect x="' + mL + '" y="' + mT + '" width="' + (W - mL - mR) + '" height="' + (H - mT - mB) + '" fill="none" stroke="' + C.frame + '"/>';
     (o.hlines || []).forEach(h => {
@@ -126,15 +144,20 @@ window.MNA = (function () {
     (o.points || []).forEach(p => {
       s += '<circle cx="' + X(p.x) + '" cy="' + Y(p.y) + '" r="' + (p.r || 3) + '" fill="' + (p.color || C.gray) + '"/>';
     });
-    if (o.title) s += '<text x="' + (mL + 2) + '" y="13" font-size="10.5" fill="#20242a">' + o.title + '</text>';
-    if (o.xlabel) s += '<text x="' + ((mL + W - mR) / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + o.xlabel + '</text>';
-    let lx = mL + 5, ly = mT + 11;
+    if (o.title) {  // 긴 제목은 폭에 맞춰 축소 — viewBox 밖으로 잘리지 않게
+      const avail = W - mL - 4, need = String(o.title).length * 0.55 * 10.5 * SZ.font;
+      const tfs = need > avail ? Math.max(5, 10.5 * avail / need) : 10.5;
+      s += '<text x="' + (mL + 2) + '" y="' + (13 + grow * 10) + '" font-size="' + tfs.toFixed(2)
+        + '" fill="#20242a">' + o.title + '</text>';
+    }
+    if (o.xlabel) s += '<text x="' + ((mL + W - mR) / 2) + '" y="' + (H - TFS * .7) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + o.xlabel + '</text>';
+    let lx = mL + 5, ly = mT + TFS + 2.5;
     (o.series || []).forEach(sr => {
       if (!sr.label) return;
       s += '<line x1="' + lx + '" y1="' + (ly - 3) + '" x2="' + (lx + 13) + '" y2="' + (ly - 3) + '" stroke="' + sr.color + '" stroke-width="2"'
         + (sr.dash ? ' stroke-dasharray="4 3"' : '') + '/>'
         + '<text x="' + (lx + 17) + '" y="' + ly + '" font-size="8.5" fill="' + C.gray + '">' + sr.label + '</text>';
-      ly += 11;
+      ly += TFS + 2.5;
     });
     emit(el, s);
   }
@@ -142,7 +165,12 @@ window.MNA = (function () {
   // 방사형: 바깥=위험, 200% 스케일, 100% 경계 점선 — v4 원형(꼭짓점 점·100%/200% 라벨 포함)
   function radar(el, title, labels, vals, ghosts, size) {
     remember(el, radar, arguments);
-    const W = size || 230, H = W, cx = W / 2, cy = H / 2 + 5, R = W * 0.34, n = labels.length, MAX = 2.0;
+    const W = size || 230, H = W, cx = W / 2, cy = H / 2 + 5, n = labels.length, MAX = 2.0;
+    // 축 라벨(R*1.3 링)이 viewBox 밖으로 나가지 않게 R을 라벨 최장폭으로 제한 —
+    // 좌우 라벨은 start/end 정렬이라 전폭이 필요하다 (사용자 지시 2026-07-29)
+    const LFS = 8 * SZ.font;
+    const lw = Math.max(0, ...labels.map(l => String(l).length * 0.65 * LFS));  // −·% 등 넓은 글리프 여유
+    const R = Math.max(W * 0.16, Math.min(W * 0.34, (W / 2 - lw - 5) / 1.3));
     const pt = (k, v) => {
       const a = -Math.PI / 2 + 2 * Math.PI * k / n, r = R * Math.max(0, Math.min(v, MAX)) / MAX;
       return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -174,7 +202,11 @@ window.MNA = (function () {
         s += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.8" fill="' + (v > 1 ? C.fail : C.accent) + '"/>';
       });
     }
-    s += '<text x="' + cx + '" y="11" text-anchor="middle" font-size="10.5" fill="#20242a">' + title + '</text>'
+    // 제목 baseline·크기도 글자 배율을 따라간다 (상단/좌우 잘림 방지)
+    const rtNeed = String(title).length * 0.55 * 10.5 * SZ.font;
+    const rtFs = rtNeed > W - 6 ? Math.max(5, 10.5 * (W - 6) / rtNeed) : 10.5;
+    s += '<text x="' + cx + '" y="' + (11 + Math.max(0, SZ.font - 1) * 10)
+      + '" text-anchor="middle" font-size="' + rtFs.toFixed(2) + '" fill="#20242a">' + title + '</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 0.5) + '" text-anchor="middle" font-size="7.5" fill="' + C.fail + '">100%</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 1.02) + '" text-anchor="middle" font-size="7.5" fill="' + C.gray + '">200%</text>';
     emit(el, s);

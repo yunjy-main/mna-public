@@ -82,9 +82,9 @@
     <div class="g23" id="ssDev"></div>
     <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;victim analytic map(V(OUT), I_v — probe 전용 정보)과 XI_ESD forcing 소스 곡선(SOA 없는 참고용)도 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
-    <h3>소자별 gauge<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
+    <h3>Device gauges<span class="info" title="스크럽 전류에서의 V/I usage (victim은 worst rule usage). 100%=SOA 경계.">ⓘ</span></h3>
     <div class="g23" id="ssGauge"></div>
-    <h3>소자별 ranking<span class="info" title="usage 내림차순 — 상단이 현재 지배 제약 (스크럽 전류 기준).&#10;각 행: V·I 절대값 + usage% + PASS/FAIL + 바(중앙 빨간 눈금 = 100% SOA 경계).&#10;한계 데이터 없는 소자(전류원)는 하단 회색 — V·I만 표시.">ⓘ</span></h3>
+    <h3>Device ranking<span class="info" title="usage 내림차순 — 상단이 현재 지배 제약 (스크럽 전류 기준).&#10;각 행: V·I 절대값 + usage% + PASS/FAIL + 바(중앙 빨간 눈금 = 100% SOA 경계).&#10;한계 데이터 없는 소자(전류원)는 하단 회색 — V·I만 표시.">ⓘ</span></h3>
     <div class="rank" id="ssRank" style="margin-top:4px"></div>
   </div>
 
@@ -135,7 +135,9 @@
     <details><summary>analytic 참고 실행(§5) 전용 설정 — MNA optimizer에는 미적용</summary>
       <div class="in" style="margin-top:6px">
         <div><label>victim topology</label><select id="vTopo"><option value="1stk_1rx">SG 1stk 1rx</option><option value="2stk_2rx">SG 2stk 2rx</option><option value="2stk_1rx">SG 2stk 1rx</option></select></div>
-        <div><label>victim gate</label><input value="OUT (diode-connected)" disabled></div>
+        <!-- §5 analytic만 gate=OUT 단락(diode-connected). MNA schematic은 gate=IN(Resd 끝)·
+             drain=N2라 결선이 다르다 — 오해 방지 출처 표기 (사용자 지시 2026-07-29) -->
+        <div><label>victim gate <span style="font-size:8.5px;color:#8a94a0;font-weight:400">§5 analytic 전용 · MNA는 gate=IN</span></label><input value="OUT (diode-connected)" disabled></div>
         <div><label>learning rate</label><input id="lr" type="number" step="any" value="0.03"></div>
         <div><label>iterations</label><input id="iters" type="number" step="1" value="300"></div>
         <div><label>log every</label><input id="logEvery" type="number" step="1" value="25"></div>
@@ -200,7 +202,7 @@
       <div class="g23" style="margin-top:4px">
         <div id="optLoss"></div><div id="optVars"></div><div id="optWorst"></div>
       </div>
-      <h3 style="margin-top:6px">소자별 radar — 최적화 흐름<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
+      <h3 style="margin-top:6px">Device radar — optimization flow<span class="info" title="ghost 다각형=초기(iter 0), 실선=슬라이더 iteration의 설계.&#10;축(±HBM spec 전류 MNA usage): protection = V+/I+/V−/I−/cap 분담(면적 선형 스케일), victim = rule별 usage(양/음).&#10;바깥=위험, 빨간 점선=100% 경계 — 최적화가 여유(cap 등)를 소모해 위반(victim SOA)을 해소하는 흐름이 보인다.">ⓘ</span></h3>
       <div class="radars" id="optRadar"></div>
       <details id="consWrap" style="margin-top:6px" hidden>
         <summary class="cap" style="cursor:pointer">constraint 전수표 (표준형 g≤0 — best candidate 정밀 재평가)<span class="info" title="이슈 #13 4.5.C — category|stress|device|quantity|value|min|max|usage|g|판정. hinge loss는 g>0 항목에서만 발생.">ⓘ</span></summary>
@@ -237,7 +239,7 @@
     <div class="rank" id="rank"></div>
 
     <h3>4-5. Iteration plots<span class="info" title="선택 전류점에서의 최적화(Adam) 내부 수렴 이력 — device usage/변수/loss, victim usage/V(OUT).">ⓘ</span></h3>
-    <div class="hint">non-victim (device / 변수 / loss)</div>
+    <div class="hint">non-victim (device / variables / loss)</div>
     <div class="g23">
       <div id="itUsage"></div>
       <div id="itVars"></div>
@@ -1016,7 +1018,8 @@ function renderLiveCharts(rows){
     series:sup.map((q,i)=>({x:its,
       y:rows.map(r=>(r.vars&&r.vars[q.name]!=null)
         ?(r.vars[q.name]-q.rule_lo)/((q.rule_hi-q.rule_lo)||1):null),
-      color:[CB.blue,'#00796b',CB.orange,CB.red][i%4],label:q.name})),
+      color:[CB.blue,'#00796b',CB.orange,CB.red][i%4],
+      label:q.name+(FZ[q.name]?' (frozen)':'')})),
     hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],xlabel:'iteration'});
   lineChart(document.getElementById('lvWorst'),{title:'worst SOA usage',w:380,h:168,
     series:[{x:its,y:rows.map(r=>r.worst!=null?r.worst*100:null),color:CB.red,label:'worst %'}],
@@ -1146,7 +1149,7 @@ function renderOptResult(){
       fn.constraints.spec):[]);
     document.getElementById('consTbl').innerHTML=
       '<tr><th>category</th><th>stress</th><th>device</th><th>quantity</th><th>value</th>'
-      +'<th>min</th><th>max</th><th>usage</th><th>g</th><th>판정</th></tr>'
+      +'<th>min</th><th>max</th><th>usage</th><th>g</th><th>verdict</th></tr>'
       +cs.map(c=>'<tr'+(c.passed?'':' style="background:#fde8e8"')+'><td>'+c.category
         +'</td><td>'+(c.stress_case||'—')+'</td><td>'+(c.device||'—')+'</td><td>'
         +c.quantity+'</td><td>'+f(c.value,4)+'</td><td>'+(c.limit_min===null?'—':f(c.limit_min,3))
@@ -1178,7 +1181,7 @@ function renderOptIter(){
   const isBest=(d.best_it!==undefined&&cur.it===d.best_it);
   document.getElementById('optItLab').textContent=cur.it+' / '+(h.length-1)
     +(isBest?' ★best':'')+'  ('+(d.variables||[]).map(v=>v.key+'='+f(cur[v.key],v.dec)
-    +(v.unit||'')+(v.frozen?'(고정)':'')).join(' · ')+' · worst '+pct(cur.worst)
+    +(v.unit||'')+(v.frozen?'(frozen)':'')).join(' · ')+' · worst '+pct(cur.worst)
     +(cur.losses?(' · loss r/s/c '+f(cur.losses.rule,4)+'/'+f(cur.losses.soa,4)
       +'/'+f(cur.losses.spec,4)
       +(cur.losses.barrier?(' · barrier '+f(cur.losses.barrier,4)):'')):'')
@@ -1192,7 +1195,7 @@ function renderOptIter(){
   if(cur.pass){
     const PF=(t,v)=>t+' '+(v?'<b style="color:#0a7d38">PASS</b>'
       :'<b style="color:#b3261e">FAIL</b>');
-    pr.innerHTML='iteration '+cur.it+' 판정: '+PF('rule',cur.pass.rule)
+    pr.innerHTML='iteration '+cur.it+' verdict: '+PF('rule',cur.pass.rule)
       +' · '+PF('soa',cur.pass.soa)+' · '+PF('spec',cur.pass.spec)
       +' · overall '+(cur.feasible?'<b style="color:#0a7d38">PASS</b>'
         :'<b style="color:#b3261e">FAIL</b>');
@@ -1205,8 +1208,8 @@ function renderOptIter(){
   //    소자 행 = usage 키 전수. spec/SOA 열은 종류(rule/spec/SOA)를 밝혀 표기.
   //    미러 소자(XD_up·V+ ↔ XD_down·V− 등)의 동일 값은 대칭 시나리오+공유 곡선의 물리 결과.
   // diff열은 항목 바로 오른쪽, 열 이름 rule/soa/spec (사용자 지시 2026-07-29)
-  let html='<tr><th>항목</th><th>diff</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '
-    +cur.it+(isBest?'★':'')+')</th><th>type</th><th>rule/soa/spec</th><th>판정</th></tr>';
+  let html='<tr><th>item</th><th>diff</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '
+    +cur.it+(isBest?'★':'')+')</th><th>type</th><th>rule/soa/spec</th><th>verdict</th></tr>';
   const VER=v=>v===null?'<span style="color:#8a94a0">—</span>'
     :(v?'<b style="color:#0a7d38">PASS</b>':'<b style="color:#b3261e">FAIL</b>');
   const drow=(name,at,bt,dtext,col,type,spec,verdict)=>{
@@ -1230,7 +1233,7 @@ function renderOptIter(){
   ((SS&&SS.devices)||[]).forEach(dv=>{
     exprOf[dv.key]=dv.size_expr||(dv.params&&dv.params.size)||null;});
   // ① 목적함수
-  numRow('loss (목적함수)',t0.loss,cur.loss,3,'',true,'—');
+  numRow('loss (objective)',t0.loss,cur.loss,3,'',true,'—');
   // ② spec 관련 — 집계 spec(usage 키 중 '·' 없음 ↔ detail[동일 키])
   Object.keys(u0).filter(k=>!k.includes('·')).forEach(k=>{
     const a0=d0[k], ac=dc[k];
@@ -1247,7 +1250,7 @@ function renderOptIter(){
     const bound=Object.values(exprOf).some(e=>e===vd.key);
     if(bound) return;  // 소자별 size 행이 대표
     numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
-      vd.frozen?'고정':'size',
+      vd.frozen?'frozen':'size',
       vd.frozen?null:('['+vd.lo+', '+vd.hi+']'+(vd.unit||'')),
       vd.frozen?undefined:(cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi));
   });
@@ -1274,8 +1277,8 @@ function renderOptIter(){
       const expr=exprOf[devk];
       const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
       numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
-        (vd&&vd.frozen)?'고정':'size',
-        (vd&&vd.frozen)?null:(vd?('['+vd.lo+', '+vd.hi+']'):(expr?('파생 = '+expr):null)),
+        (vd&&vd.frozen)?'frozen':'size',
+        (vd&&vd.frozen)?null:(vd?('['+vd.lo+', '+vd.hi+']'):(expr?('derived = '+expr):null)),
         (vd&&vd.frozen)?undefined:(vd?(sc>=vd.lo&&sc<=vd.hi):undefined));
     }
   });
@@ -1294,10 +1297,15 @@ function renderOptIter(){
   lineChart(document.getElementById('optLoss'),{title:'loss',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],
     points:[{x:cur.it,y:cur.loss,r:4,color:CB.red}],vlines:vl,xlabel:'iter'});
-  lineChart(document.getElementById('optVars'),{title:'variables',w:380,h:150,
-    series:[{x:h.map(r=>r.it),y:h.map(r=>r.x1),color:CB.blue,label:'x1'},
-            {x:h.map(r=>r.it),y:h.map(r=>r.x2/1000),color:CB.green,label:'x2/1000'},
-            {x:h.map(r=>r.it),y:h.map(r=>r.L/100),color:CB.purple,label:'L/100µm'}],
+  // 설계변수 곡선은 서버 variables descriptor로 동적 생성 (하드코딩 금지 — W 누락 회귀
+  // 수정 2026-07-29). 창 정규화 z로 서로 다른 스케일을 한 축에 겹친다 (§4 live와 동일 규약)
+  const VC=[CB.blue,'#00796b',CB.orange,CB.red,CB.purple,CB.gold];
+  const vsup=(d.variables||[]).filter(v=>v.lo!=null&&v.hi!=null&&v.hi>v.lo);
+  lineChart(document.getElementById('optVars'),{title:'variables (window-normalized z)',w:380,h:150,
+    series:vsup.map((v,i)=>({x:h.map(r=>r.it),
+      y:h.map(r=>r[v.key]!=null?(r[v.key]-v.lo)/(v.hi-v.lo):null),
+      color:VC[i%VC.length],label:v.key+(v.frozen?' (frozen)':'')})),
+    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],
     vlines:vl,xlabel:'iter'});
   const bh=(d.best_it!==undefined)?h[d.best_it]:null;
   lineChart(document.getElementById('optWorst'),{title:'worst SOA usage (★=best)',w:380,h:150,
