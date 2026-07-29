@@ -77,7 +77,7 @@
       <label class="hint">I = <b id="ssIlab">—</b> A<span class="info" title="스크럽 전류 — 모든 tracing dot·gauge·ranking이 이 전류에 연동. 하단 overlay 슬라이더와 동기화.">ⓘ</span></label>
       <input id="ssIdx" class="iscrub" type="range" min="0" max="40" value="26" style="width:100%">
     </div>
-    <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, 빨간 dot=스크럽 동작점.">ⓘ</span></h3>
+    <h3>I-V device<span class="info" title="X=V(양단, 회로도에 그린 심볼 방향 기준: anode−cathode/drain−source), Y=소자 분기전류(없으면 I inj — 전류원·victim).&#10;축은 양/음 대칭(원점 정중앙), 눈금은 1-2-5 계열.&#10;세로 빨간선=vp/vn(전압 SOA), 가로 주황선=ip/inn(전류 SOA) — instance size의 실측 endpoint, 연초록=SOA 내부.&#10;회색 점선=실측 특성곡선, dot=스크럽 동작점(곡선 색 — SOA 이탈 시에만 빨강).">ⓘ</span></h3>
     <div class="g23" id="ssDev"></div>
     <h3>I-V victim<span class="info" title="X=stress 전압(VGS/VGD/VDS), Y=주입전류(monitor는 무방정식이라 분기전류 없음).&#10;세로선=signed 실측 한계(oxide inv +2.9/acc −3.3, VDS ±3.1 — 비대칭은 실측 명시값), 연초록=전 rule 교집합 안전대역.&#10;가로 빨간선=극성별 first SOA fail 전류.&#10;victim analytic map(V(OUT), I_v — probe 전용 정보)과 XI_ESD forcing 소스 곡선(SOA 없는 참고용)도 이 섹션에 함께 표시.">ⓘ</span></h3>
     <div class="g23" id="ssMon"></div>
@@ -99,7 +99,7 @@
           <option value="2">2 kV → 2.66 A</option>
           <option value="4">4 kV → 5.32 A</option>
         </select></div>
-      <div><label>IO capLim (pF)</label><input id="specCapLim" type="number" step="any" value="5"></div>
+      <div><label>IO capLim (pF)</label><input id="specCapLim" type="number" step="any" value="0.7"></div>
       <div><label>spec 판정 (§1 MNA 기준)</label><span class="hint" id="specStat">—</span></div>
     </div>
   </div>
@@ -189,6 +189,7 @@
       <span class="status" id="status">Ready.</span>
     </div>
     <div class="err" id="err"></div>
+    <div id="optLive" class="g23" hidden style="margin-top:6px"></div>
     <div id="optResult" hidden style="margin-top:6px">
       <div class="hint" id="optSummary"></div>
       <div style="margin:6px 0 4px">
@@ -205,6 +206,7 @@
         <div class="tw"><table id="consTbl"></table></div>
       </details>
       <h3 style="margin-top:6px">AS-IS → TO-BE<span class="info" title="AS-IS=초기 설계(iter 0), TO-BE=슬라이더 iteration의 설계(★=best). diff=TO-BE−AS-IS — 슬라이더에 연동. 개선=녹색, 악화=적색.&#10;spec/SOA 열의 종류 표기: rule=설계변수 창, spec=외부 spec(capLim), SOA=소자 실측 한계(TO-BE size 반영, 순방향 ≤/역방향 ≥).&#10;행은 전부 데이터 구동(서버 variables·usage·detail) — 하드코딩 없음.&#10;※ 미러 소자의 동일 값(예: XD_up·V+ ↔ XD_down·V−)은 대칭 시나리오+동일 곡선·size의 물리적 결과(차이 <1e-8).">ⓘ</span></h3>
+      <div id="optPassRow" class="hint" style="margin:4px 0 2px"></div>
       <div class="tw"><table id="optDiff"></table></div>
       <button id="applyBtn" style="margin-top:4px">최적 결과를 §1에 적용 (설계변수 갱신 + 재해석)</button>
     </div>
@@ -659,7 +661,10 @@ dvRegister({host:'ssDev', applies:d=>d.role!=='soa_monitor'&&d.kind!=='sourcei',
   const Ys=c.I.map((_,k)=>{const i=dvI(d,c,k);return i===null?c.I[k]:i;});
   const maxV=Math.max(...Vs), minV=Math.min(...Vs);
   const maxI=Math.max(...Ys), minI=Math.min(...Ys);
-  const series=[], vl=[], hl=[], pts=[{x:Vs[c.idx],y:Ys[c.idx],r:4.5,color:CB.red}];
+  // 동작점 색: 기본=곡선 색, SOA 이탈 시에만 빨강 (사용자 지시 2026-07-29)
+  const u0=dvUsage(d,c,c.idx);
+  const series=[], vl=[], hl=[],
+    pts=[{x:Vs[c.idx],y:Ys[c.idx],r:4.5,color:(u0&&u0.u>=1)?CB.red:CB.blue}];
   if(d.soa){
     // SOA 한계는 양/음 4개(vp/vn·ip/inn) 전부 상시 표시 — 단자쌍 순서 반전 동치
     // (사용자 지시). vp≠−vn, ip≠−inn의 비대칭은 실측이 명시한 값 그대로.
@@ -714,7 +719,10 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const sx1=rl.length?Math.min(...rl.map(r=>r.max)):null;
   lineChart(el,{title:'I-V victim · '+d.key,w:380,h:170,series:s,vlines:vl,sym:true,
     shadeRect:(sx0!==null)?[sx0,-1e9,sx1,1e9]:null,
-    points:(m0&&m0.stress)?QS.map((q,i)=>({x:m0.stress[q],y:c.iNow,r:4,color:QC[i]})):[],
+    // 동작점 색: 기본=해당 stress 곡선 색, rule 이탈 시에만 빨강 (사용자 지시 2026-07-29)
+    points:(m0&&m0.stress)?QS.map((q,i)=>{const rq=lim(q==='VGD'?'VGS':q), v=m0.stress[q];
+      const bad=rq&&(v>=0?v/rq.max:v/rq.min)>=1;
+      return {x:v,y:c.iNow,r:4,color:bad?CB.red:QC[i]};}):[],
     hlines:ffl,xlabel:'stress [V]'});
 }});
 // [renderer] 전류원 참고 곡선 — SOA 없음, I-V victim 섹션에 참고용으로 배치 (사용자 지시)
@@ -722,7 +730,8 @@ dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
   const Vs=c.I.map((_,k)=>dvV(d,c,k));
   lineChart(el,{title:d.key+' (참고 — SOA 없음)',w:380,h:170,
     series:[{x:Vs,y:c.I,color:CB.gray,label:'I inj'}],
-    points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.red}],
+    // SOA 없는 참고 곡선 — 동작점도 곡선 색 (사용자 지시 2026-07-29: 빨강=이탈 전용)
+    points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.gray}],
     sym:true,xlabel:'V(양단) [V]'});
 }});
 // (소자별 radar는 §2 optimizer 결과로 이동 — 사용자 확정 2026-07-28:
@@ -776,6 +785,15 @@ dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
     +it.name+' <span>'+it.vi+'</span></span><span>'+it.note+'</span></div></div>').join('');
 }});
 
+// 2-0 스크럽을 특정 전류로 스냅 + 하단 overlay 썸 동기화 (사용자 지시 2026-07-29)
+function ssSnapTo(iT){
+  const sl=document.getElementById('ssIdx');
+  if(!SS||!isFinite(iT)) return;
+  const mn=SS.imin||0;
+  sl.value=Math.max(0,Math.min(+sl.max,Math.round((iT-mn)/((SS.imax-mn)||1)*(+sl.max))));
+  document.getElementById('iovlR').value=Math.round((+sl.value)/((+sl.max)||1)*1000);
+  sl.dispatchEvent(new Event('input'));
+}
 let SS_POLL=null, SS_SEQ=0;  // single-flight — 연속 변경 시 최신 sweep만 유효
 function loadSchemSweep(){
   const info=document.getElementById('ssInfo');
@@ -811,12 +829,15 @@ function loadSchemSweep(){
       sel.innerHTML=d.scenarios.map((s,i)=>'<option value="'+i+'">'+s.force+'→'+s.ground+'</option>').join('');
       if(prev && +prev<d.scenarios.length) sel.value=prev;
       const sl=document.getElementById('ssIdx');
+      const regrid=(+sl.max)!==d.n-1;  // 격자 변경 — 기존 인덱스는 의미 상실 (HTML 기본 26 포함)
       sl.max=d.n-1;
       if(+sl.value>d.n-1) sl.value=d.n-1;
       // 0A 위치 눈금 (채움 없는 트랙에 0 기준 마커 — 사용자 지시)
       const z=((0-(d.imin||0))/((d.imax-(d.imin||0))||1)*100).toFixed(1)+'%';
       sl.style.setProperty('--zero',z);
       document.getElementById('iovlR').style.setProperty('--zero',z);
+      // 격자가 바뀌면 스크럽을 spec 전류로 스냅 — 부팅 직후 -1.74A 방지 (사용자 지시 2026-07-29)
+      if(regrid) ssSnapTo((d.esd_spec&&d.esd_spec.default_amp)||1.33);
       dvRenderAll();
       info.textContent=DV.devs.length+' 소자 × '+DV.reg.length+' renderer · '
         +d.scenarios.length+' 시나리오 × '+d.n+' pts · model='+d.model_mode
@@ -973,6 +994,38 @@ function renderTable(){
 // ---------- wiring ----------
 // ---------- §2: MNA 기반 optimizer — loss 평가기 = schematic MNA (궁극 목표) ----------
 let OPT=null;
+// 실시간 그래프 5종 (사용자 지시 2026-07-29): loss·variables·worst SOA·cap spec·R metal
+function renderLiveCharts(rows){
+  const host=document.getElementById('optLive');
+  if(!rows||!rows.length) return;
+  host.hidden=false;
+  if(!host.dataset.init){
+    host.innerHTML=['lvLoss','lvVar','lvWorst','lvCap','lvR']
+      .map(id=>'<div id="'+id+'"></div>').join('');
+    host.dataset.init='1';
+  }
+  const its=rows.map(r=>r.it), S=k=>rows.map(r=>r[k]!=null?r[k]:null);
+  lineChart(document.getElementById('lvLoss'),{title:'loss (실시간)',w:380,h:168,
+    series:[{x:its,y:S('loss_rule'),color:CB.gray,label:'rule'},
+            {x:its,y:S('loss_soa'),color:CB.red,label:'SOA'},
+            {x:its,y:S('loss_spec'),color:'#00796b',label:'spec'},
+            {x:its,y:S('objective'),color:CB.blue,label:'objective'}],xlabel:'iteration'});
+  const sup=((SS&&SS.params)||[]).filter(q=>q.supported&&q.rule_lo!=null);
+  lineChart(document.getElementById('lvVar'),{title:'variables (창 정규화 z)',w:380,h:168,
+    series:sup.map((q,i)=>({x:its,
+      y:rows.map(r=>(r.vars&&r.vars[q.name]!=null)
+        ?(r.vars[q.name]-q.rule_lo)/((q.rule_hi-q.rule_lo)||1):null),
+      color:[CB.blue,'#00796b',CB.orange,CB.red][i%4],label:q.name})),
+    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'창 경계'}],xlabel:'iteration'});
+  lineChart(document.getElementById('lvWorst'),{title:'worst SOA usage',w:380,h:168,
+    series:[{x:its,y:rows.map(r=>r.worst!=null?r.worst*100:null),color:CB.red,label:'worst %'}],
+    hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
+  lineChart(document.getElementById('lvCap'),{title:'capacitance spec usage',w:380,h:168,
+    series:[{x:its,y:rows.map(r=>r.cap_u!=null?r.cap_u*100:null),color:'#00796b',label:'cap %'}],
+    hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
+  lineChart(document.getElementById('lvR'),{title:'R metal (rdd_r(L,W))',w:380,h:168,
+    series:[{x:its,y:S('r_metal'),color:'#6a3fb5',label:'R [Ω]'}],xlabel:'iteration'});
+}
 function startMnaOpt(useLegacy){
   const st=document.getElementById('status'), err=document.getElementById('err');
   const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
@@ -986,14 +1039,16 @@ function startMnaOpt(useLegacy){
   err.textContent='';
   document.getElementById('startBtn').disabled=true;
   document.getElementById('mnaLegacyBtn').disabled=true;
-  // 실시간 진행률 (sweep과 동일 패턴 — 서버 progress 엔드포인트 400ms 폴링)
+  // 실시간 진행률 + live 그래프 (400ms 폴링 — 사용자 지시 2026-07-29)
   let optDone=false;
+  document.getElementById('optLive').hidden=true;
   const OP=setInterval(()=>{
     fetch('api/optimize/mna/progress').then(r=>r.json()).then(pp=>{
       const lbl=pp.mode==='adjoint'?'MNA ± solve · adjoint ± solve'
         :'base+섭동 유한차분 MNA solve';  // mode별 정확한 문구 (#14 §10.1)
       if(!optDone&&pp.total) st.textContent='최적화 중 '+pp.pct.toFixed(0)+'% ('
         +pp.done+'/'+pp.total+' eval · '+lbl+')…';
+      if(pp.live&&pp.live.length) renderLiveCharts(pp.live);
     }).catch(()=>{});
   },400);
   // legacy는 별도 엔드포인트 병행 (이슈 #13, 사용자 확정) — barrier=off는 legacy에 없음
@@ -1017,7 +1072,9 @@ function startMnaOpt(useLegacy){
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{OPT=d;renderOptResult();
       st.textContent=(useLegacy?'legacy':'feasibility')+' 최적화 완료 ('+d.iters+' iters'
-        +(d.status?(' · '+d.status):'')+') — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';})
+        +(d.status?(' · '+d.status):'')+') — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';
+      // 완료 후 current 스크럽을 spec 전류(1.33A)로 배치 + overlay 동기화 (사용자 지시 2026-07-29)
+      ssSnapTo(d.i_spec||1.33);})
     .catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
     .finally(()=>{optDone=true;clearInterval(OP);
       document.getElementById('startBtn').disabled=false;
@@ -1108,6 +1165,16 @@ function renderOptIter(){
       +(+g).toExponential(1)).join(' ')):'')
     +(cur.candidate_status&&cur.candidate_status!=='VALID'?(' · '+cur.candidate_status)
       :(cur.feasible!==undefined?(cur.feasible?' · feasible':' · infeasible'):''))+')';
+  // 표 바로 위 category 판정 — 슬라이더 iteration과 연동 (사용자 지시 2026-07-29)
+  const pr=document.getElementById('optPassRow');
+  if(cur.pass){
+    const PF=(t,v)=>t+' '+(v?'<b style="color:#0a7d38">PASS</b>'
+      :'<b style="color:#b3261e">FAIL</b>');
+    pr.innerHTML='iteration '+cur.it+' 판정: '+PF('rule',cur.pass.rule)
+      +' · '+PF('soa',cur.pass.soa)+' · '+PF('spec',cur.pass.spec)
+      +' · overall '+(cur.feasible?'<b style="color:#0a7d38">PASS</b>'
+        :'<b style="color:#b3261e">FAIL</b>');
+  } else pr.innerHTML='';
   // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
   const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
   const u0=t0.usages||{}, uc=cur.usages||{};
@@ -1115,20 +1182,23 @@ function renderOptIter(){
   //    설계변수 = 서버 variables descriptor, 집계 spec = usage 키↔detail[동일 키],
   //    소자 행 = usage 키 전수. spec/SOA 열은 종류(rule/spec/SOA)를 밝혀 표기.
   //    미러 소자(XD_up·V+ ↔ XD_down·V− 등)의 동일 값은 대칭 시나리오+공유 곡선의 물리 결과.
-  let html='<tr><th>항목</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '+cur.it+(isBest?'★':'')
-    +')</th><th>diff</th><th>type</th><th>spec/SOA</th><th>판정</th></tr>';
+  // diff열은 항목 바로 오른쪽, 열 이름 rule/soa/spec (사용자 지시 2026-07-29)
+  let html='<tr><th>항목</th><th>diff</th><th>AS-IS (iter 0)</th><th>TO-BE (iter '
+    +cur.it+(isBest?'★':'')+')</th><th>type</th><th>rule/soa/spec</th><th>판정</th></tr>';
   const VER=v=>v===null?'<span style="color:#8a94a0">—</span>'
     :(v?'<b style="color:#0a7d38">PASS</b>':'<b style="color:#b3261e">FAIL</b>');
   const drow=(name,at,bt,dtext,col,type,spec,verdict)=>{
-    html+='<tr><td>'+name+'</td><td>'+at+'</td><td>'+bt
-      +'</td><td style="color:'+(col||'#5b6673')+';font-weight:700">'+dtext
+    html+='<tr><td>'+name+'</td>'
+      +'<td style="color:'+(col||'#5b6673')+';font-weight:700">'+dtext
+      +'</td><td>'+at+'</td><td>'+bt
       +'</td><td>'+(type||'—')+'</td><td>'+(spec===undefined||spec===null?'—':spec)
       +'</td><td>'+VER(verdict===undefined?null:verdict)+'</td></tr>';};
   const numRow=(name,a,b,dec,unit,lower,type,spec,verdict)=>{
     if(a===undefined||b===undefined) return;
     const dd=b-a, rel=Math.abs(a)>1e-12?' ('+(dd>=0?'+':'')+(dd/Math.abs(a)*100).toFixed(1)+'%)':'';
+    // 회색 제거 — 증가=빨강, 감소=초록, 0=중립 (사용자 지시 2026-07-29)
     drow(name,f(a,dec)+unit,f(b,dec)+unit,(dd>=0?'+':'')+f(dd,dec)+unit+rel,
-      lower?(dd<=0?'#0a7d38':'#b3261e'):'#5b6673',type,spec,verdict);
+      dd>0?'#b3261e':(dd<0?'#0a7d38':'#5b6673'),type,spec,verdict);
   };
   const fmtF=v=>Math.abs(v)>=1e-12?f(v*1e12,2)+'pF':f(v*1e15,0)+'fF';  // F 단위 공학 표기
   // ── row 순서 규칙 (사용자 확정 2026-07-28): ① loss(목적함수) → ② spec 관련
@@ -1156,7 +1226,7 @@ function renderOptIter(){
     if(bound) return;  // 소자별 size 행이 대표
     numRow(vd.name,t0[vd.key],cur[vd.key],vd.dec,vd.unit,false,
       vd.frozen?'고정':'size',
-      vd.frozen?null:('rule '+vd.lo+' ~ '+vd.hi+vd.unit),
+      vd.frozen?null:('['+vd.lo+', '+vd.hi+']'+(vd.unit||'')),
       vd.frozen?undefined:(cur[vd.key]>=vd.lo&&cur[vd.key]<=vd.hi));
   });
   // ③ 소자별 — SOA(usage) 행 먼저, size 등 parameter 행 나중
@@ -1183,7 +1253,7 @@ function renderOptIter(){
       const vd=(d.variables||[]).find(v=>v.key===expr);  // 순수 바인딩이면 rule 창·판정
       numRow(devk+' · size'+(expr?(' (='+expr+')'):''), s0, sc, 4, '', false,
         (vd&&vd.frozen)?'고정':'size',
-        (vd&&vd.frozen)?null:(vd?('rule '+vd.lo+' ~ '+vd.hi):(expr?('파생 = '+expr):null)),
+        (vd&&vd.frozen)?null:(vd?('['+vd.lo+', '+vd.hi+']'):(expr?('파생 = '+expr):null)),
         (vd&&vd.frozen)?undefined:(vd?(sc>=vd.lo&&sc<=vd.hi):undefined));
     }
   });

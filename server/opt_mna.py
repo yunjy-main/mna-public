@@ -106,11 +106,11 @@ def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
 
 
 def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
-                 ground="VSS", hbm_kv=1.0, cap_lim=5e-12,
+                 ground="VSS", hbm_kv=1.0, cap_lim=M.IO_CAP_LIM,
                  windows=None, weights=None,
                  mu_soa=12.0, mu_rule=20.0, lr=0.06, iters=30, n=OPT_N,
                  progress_cb=None, freeze=(), pset=None,
-                 barrier="log", mu_bar=0.01):
+                 barrier="log", mu_bar=0.01, live_cb=None):
     """승계된 초기조건 pset에서 spec(HBM 레벨·capLim) 하의 Adam 최적화 (N-차원 자동).
 
     설계변수 = registry supported 파라미터 (순서 = registry 정본 순서).
@@ -218,6 +218,8 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
     vel = [0.0] * len(var_spec)
     b1, b2, eps_ = 0.9, 0.999, 1e-9
     history = [_hist(0, f0, initial, us0, det0)]
+    if live_cb:
+        live_cb(history[-1])
     for it in range(1, iters + 1):
         f_base, us_base, _d0 = evaluate(z)
         grad = {}  # 활성 변수만 FD — 고정 변수는 probe·update 모두 생략(마스크)
@@ -236,6 +238,8 @@ def optimize_mna(layout, x1=None, x2=None, L=None, corner="worst", force="IO",
         if f_new < best_f:
             best_f, best_z, best_us, best_it = f_new, list(z), us_new, it
         history.append(_hist(it, f_new, summarize(z, us_new), us_new, det_new))
+        if live_cb:  # 실시간 그래프 피드 (사용자 지시 2026-07-29)
+            live_cb(history[-1])
     # 최종 후보를 정밀 격자(N)로 재평가 — 저해상도 편향 제거.
     # 탐색 중 이차 복원벽 안쪽의 미세 grazing(<0.002 창폭)이 있을 수 있어 창으로 클램프
     # — 납품 설계는 rule 창을 정확히 준수한다.

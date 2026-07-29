@@ -84,11 +84,9 @@ CAP = {
     "clamp": {"c0": 2.1e-12, "x0": 1415.232, "vbi": 0.80, "mj": 0.40, "fc": 0.5},
 }
 
-# capLim: IO pad에서 바라본 총 capacitance 예산 (사용자 정의 2026-07-28 —
-# "일반적인 GPIO에서 요구하는 IO단에서 바라본 spec, 작을수록 좋음").
-# 관례: 범용 GPIO Cio max ≈ 5 pF (여유형 10 pF, 엄격형 3 pF; 고속 pad 0.5~1.5 pF).
-# 판정은 소자 개별이 아니라 IO에 매달린 소자들의 합 ≤ IO_CAP_LIM.
-IO_CAP_LIM = 5e-12
+# capLim: IO pad에서 바라본 총 capacitance 예산 — 0.7 pF 이하
+# (사용자 지시 2026-07-29 — 고속 pad급으로 강화; 판정은 contributor 합 ≤ IO_CAP_LIM).
+IO_CAP_LIM = 0.7e-12
 
 # I_ESD spec: HBM 레벨 ↔ 요구 전류 (사용자 지시 2026-07-28; 환산은 D9: 1 kV ↔ 1.33 A).
 # 관례 레벨(JS-001 class 계열): 0.5 / 1 / 2 / 4 kV — 설계는 해당 전류까지 생존해야 한다.
@@ -104,11 +102,12 @@ PARAM_META = {
     # 측정 유효창 xwindow와 구분·없으면 변수화 불가=강제 고정 E3), label/dec: 표시,
     # cost_w: loss 자원 cost 기본 가중치, freeze_default: 자물쇠 기본,
     # min_valid: API 값 하한(초과 필수, E5 — 기본 0)
-    "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (0.64, 3.84),
+    # rule 창 갱신 (사용자 지시 2026-07-29): x1 min 2.5, x2 max 3024, L max 350
+    "x1": {"default": 2.56, "unit": "", "dev": "diode", "rule": (2.5, 3.84),
            "label": "x1 (diode size)", "dec": 3, "cost_w": 1.0, "freeze_default": False},
-    "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 2628.288),
+    "x2": {"default": 1415.232, "unit": "", "dev": "clamp", "rule": (1415.232, 3024.0),
            "label": "x2 (clamp size)", "dec": 1, "cost_w": 1.0, "freeze_default": False},
-    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 1400.0),
+    "L": {"default": 350.0, "unit": "µm", "lo": 70.0, "hi": 1400.0, "rule": (70.0, 350.0),
           "label": "L (RDD 금속)", "dec": 1, "cost_w": 0.0, "freeze_default": True},
     # W: RDD 금속 폭 — rdd_r(L,W) 기준 5µm. rule 창 [1,12]µm (사용자 확정 2026-07-28)
     "W": {"default": 5.0, "unit": "µm", "rule": (1.0, 12.0),

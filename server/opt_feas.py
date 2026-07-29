@@ -294,11 +294,11 @@ def _violation_score(ev):
 
 
 def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
-                  hbm_kv=1.0, cap_lim=5e-12, windows=None,
+                  hbm_kv=1.0, cap_lim=M.IO_CAP_LIM, windows=None,
                   alphas=(1.0, 1.0, 1.0), barrier="off", mu_bar=0.01, mu_rule=20.0,
                   lr=0.06, iters=30, n=FEAS_N, grad="adjoint",
                   freeze=(), pset=None, stop_on_feasible=False,
-                  feasible_policy="max_margin", progress_cb=None):
+                  feasible_policy="max_margin", progress_cb=None, live_cb=None):
     """Feasibility optimizer 본체 (이슈 #13 §3·§4.1) — Adam + adjoint gradient(기본).
 
     grad: adjoint(기본 — ± 케이스당 전치 선형해 1회로 전 변수 gradient)
@@ -450,6 +450,8 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         for k in keys:
             row[k] = pv[k]
         history.append(row)
+        if live_cb:  # 실시간 그래프 피드 (사용자 지시 2026-07-29)
+            live_cb(row)
 
     def _round_gd(gd):
         return {sec: {k: round(v, 6) for k, v in m.items()} for sec, m in gd.items()}

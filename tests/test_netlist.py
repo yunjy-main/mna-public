@@ -462,7 +462,7 @@ chk("cap: IO에서 보이는 소자 4종", on_io == ["XD_down", "XD_down2", "XD_
 from server.netlist import direct_io_cap  # noqa: E402
 
 io_total = direct_io_cap(nl)
-chk("cap 정본: direct up/down 합 500fF ≤ capLim 5pF (up2/down2·b2b·clamp 제외)",
+chk("cap 정본: direct up/down 합 500fF ≤ capLim 0.7pF (up2/down2·b2b·clamp 제외)",
     abs(io_total - 500e-15) < 1e-18 and io_total < M.IO_CAP_LIM
     and abs(direct_io_cap(nl, pset={"x2": 2628.0}) - io_total) < 1e-20, str(io_total))
 chk("I_esd spec: HBM 1kV=1.33A, 2kV=2.66A (D9)", abs(M.hbm_current(1) - 1.33) < 1e-12
@@ -1120,6 +1120,49 @@ for _args, _msg in (((0.0, 5.0, (1, 1, 1), 0.06, 0.01, 20.0, 30), "hbm 0"),
     chk("#14 S4: 입력 검증 거부 — " + _msg, _feas_input_error(*_args) is not None, "")
 chk("#14 S4: 정상 입력 통과", _feas_input_error(1.0, 5.0, (1, 1, 1), 0.06, 0.01, 20.0, 30)
     is None, "")
+
+# 22) 2026-07-29 소규모 갱신 — rule 창·cap spec 정본 + 실시간 live 피드
+import inspect  # noqa: E402
+
+chk("갱신 rule 창: x1 [2.5,3.84] · x2 [1415.232,3024] · L [70,350] · W [1,12]",
+    M.PARAM_META["x1"]["rule"] == (2.5, 3.84)
+    and M.PARAM_META["x2"]["rule"] == (1415.232, 3024.0)
+    and M.PARAM_META["L"]["rule"] == (70.0, 350.0)
+    and M.PARAM_META["W"]["rule"] == (1.0, 12.0), "")
+chk("cap spec 정본 0.7pF — 양 optimizer 기본값이 M.IO_CAP_LIM 연동",
+    abs(M.IO_CAP_LIM - 0.7e-12) < 1e-24
+    and inspect.signature(optimize_feas).parameters["cap_lim"].default == M.IO_CAP_LIM
+    and inspect.signature(optimize_mna).parameters["cap_lim"].default == M.IO_CAP_LIM,
+    "")
+_lv = []
+r_lvf = optimize_feas(DEFAULT_LAYOUT, iters=2, freeze=("L", "x1", "x2"),
+                      live_cb=_lv.append)
+chk("live 피드(feas): history와 1:1 동행 — it·losses 포함",
+    len(_lv) == len(r_lvf["history"]) and _lv[0]["it"] == 0
+    and _lv[-1]["it"] == r_lvf["history"][-1]["it"] and "losses" in _lv[-1],
+    str(len(_lv)))
+_lv2 = []
+r_lv2 = optimize_mna(DEFAULT_LAYOUT, iters=1, n=200, live_cb=_lv2.append)
+chk("live 피드(legacy): initial 포함 history와 동행",
+    len(_lv2) == len(r_lv2["history"]) and _lv2[0]["it"] == 0, str(len(_lv2)))
+from server.main import _OPT_LIVE, _opt_live_push  # noqa: E402
+
+_OPT_LIVE["rows"] = []
+for _r in r_lvf["history"]:
+    _opt_live_push(_r)
+_s = _OPT_LIVE["rows"][-1]
+chk("live 요약: it·loss 3종·worst·cap_u·vars·r_metal 포함, detail 제외",
+    len(_OPT_LIVE["rows"]) == len(r_lvf["history"])
+    and _s["loss_rule"] is not None and _s["worst"] is not None
+    and _s["cap_u"] is not None and "W" in _s["vars"] and "L" in _s["vars"]
+    and _s["r_metal"] is not None and "detail" not in _s,
+    str({k: _s.get(k) for k in ("it", "loss_rule", "worst", "r_metal")}))
+_OPT_LIVE["rows"] = []
+_opt_live_push(r_lv2["history"][0])
+chk("live 요약(legacy 스키마): loss→objective·usages→cap_u fallback",
+    len(_OPT_LIVE["rows"]) == 1 and _OPT_LIVE["rows"][0]["objective"] is not None
+    and _OPT_LIVE["rows"][0]["cap_u"] is not None, str(_OPT_LIVE["rows"][:1]))
+_OPT_LIVE["rows"] = []
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))

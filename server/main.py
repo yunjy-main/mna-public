@@ -899,6 +899,7 @@ def optimize_mna_progress():
     t = _OPT_PROG["total"]
     return {"done": _OPT_PROG["done"], "total": t,
             "mode": _OPT_PROG.get("mode"),  # adjoint|fd|fd-legacy (#14 §10.1)
+            "live": _OPT_LIVE["rows"],  # 실시간 그래프 피드 (2026-07-29)
             # pool 정밀 재평가(#15 §4)로 추정 total을 넘을 수 있어 100% 클램프
             "pct": min(100.0, 100.0 * _OPT_PROG["done"] / t) if t else 0.0}
 
@@ -907,9 +908,32 @@ def _opt_tick(done, total):
     _OPT_PROG["done"], _OPT_PROG["total"] = done, total
 
 
+_OPT_LIVE = {"rows": []}  # 실시간 그래프 피드 (사용자 지시 2026-07-29)
+
+
+def _opt_live_push(row):
+    """optimizer iteration마다 호출 — 그래프에 필요한 요약만 보관 (detail 제외)."""
+    try:
+        losses = row.get("losses") or {}
+        _OPT_LIVE["rows"].append({
+            "it": row.get("it"),
+            "objective": losses.get("objective", row.get("loss")),
+            "loss_rule": losses.get("rule"), "loss_soa": losses.get("soa"),
+            "loss_spec": losses.get("spec"),
+            "worst": row.get("worst"),
+            "cap_u": row.get("cap_u", (row.get("usages") or {}).get("cap(IO)")),
+            "vars": {k: row.get(k) for k in ("x1", "x2", "W", "L")
+                     if row.get(k) is not None},
+            "r_metal": (M.rdd_r(row["L"], row.get("W", M.RDD_W0))
+                        if row.get("L") is not None else None),
+            "feasible": row.get("feasible")})
+    except (TypeError, KeyError, ValueError):
+        pass
+
+
 @app.get(PREFIX + "/api/optimize/mna")
 def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO",
-                      ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
+                      ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 0.7,
                       alpha_rule: float = 1.0, alpha_soa: float = 1.0,
                       alpha_spec: float = 1.0,
                       barrier: str = "off", mu_bar: float = 0.01, mu_rule: float = 20.0,
@@ -953,6 +977,7 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, grad
+    _OPT_LIVE["rows"] = []
     try:
         return _save_opt_run("feas", request.query_params, optimize_feas(
             layout, corner=corner, force=force, ground=ground,
@@ -963,14 +988,14 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
             lr=lr, iters=iters, freeze=fz, pset=p,
             stop_on_feasible=bool(stop_on_feasible), grad=grad,
             feasible_policy=feasible_policy,
-            progress_cb=_opt_tick))
+            progress_cb=_opt_tick, live_cb=_opt_live_push))
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 
 
 @app.get(PREFIX + "/api/optimize/mna/legacy")
 def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
-                     ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
+                     ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 0.7,
                      mu_soa: float = 12.0, mu_rule: float = 20.0,
                      lr: float = 0.06, iters: int = 30, freeze: str = None,
                      barrier: str = "log", mu_bar: float = 0.01):
@@ -1013,6 +1038,7 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, "fd-legacy"
+    _OPT_LIVE["rows"] = []
     try:
         return _save_opt_run("legacy", request.query_params, optimize_mna(
             layout, corner=corner, force=force, ground=ground,
@@ -1020,7 +1046,7 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
             windows=windows, weights=weights,
             mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
             progress_cb=_opt_tick, freeze=fz, pset=p,
-            barrier=barrier, mu_bar=mu_bar))
+            barrier=barrier, mu_bar=mu_bar, live_cb=_opt_live_push))
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 
