@@ -1151,17 +1151,22 @@ _OPT_LIVE["rows"] = []
 for _r in r_lvf["history"]:
     _opt_live_push(_r)
 _s = _OPT_LIVE["rows"][-1]
-chk("live 요약: it·loss 3종·worst·cap_u·vars·r_metal 포함, detail 제외",
+chk("live 요약: it·loss 3종·worst·cap_u·vars·r_metal·pass 포함, detail 제외",
     len(_OPT_LIVE["rows"]) == len(r_lvf["history"])
     and _s["loss_rule"] is not None and _s["worst"] is not None
     and _s["cap_u"] is not None and "W" in _s["vars"] and "L" in _s["vars"]
-    and _s["r_metal"] is not None and "detail" not in _s,
-    str({k: _s.get(k) for k in ("it", "loss_rule", "worst", "r_metal")}))
+    and _s["r_metal"] is not None and "detail" not in _s
+    and set(_s["pass"]) == {"rule", "soa", "spec", "all"}
+    and _s["pass"]["all"] == (_s["pass"]["rule"] and _s["pass"]["soa"]
+                              and _s["pass"]["spec"])
+    and _s["status"] == "VALID",  # 비수렴 row 구분용 candidate_status 동반
+    str({k: _s.get(k) for k in ("it", "loss_rule", "worst", "r_metal", "pass")}))
 _OPT_LIVE["rows"] = []
 _opt_live_push(r_lv2["history"][0])
-chk("live 요약(legacy 스키마): loss→objective·usages→cap_u fallback",
+chk("live 요약(legacy 스키마): loss→objective·usages→cap_u fallback·pass 없음(None)",
     len(_OPT_LIVE["rows"]) == 1 and _OPT_LIVE["rows"][0]["objective"] is not None
-    and _OPT_LIVE["rows"][0]["cap_u"] is not None, str(_OPT_LIVE["rows"][:1]))
+    and _OPT_LIVE["rows"][0]["cap_u"] is not None
+    and _OPT_LIVE["rows"][0]["pass"] is None, str(_OPT_LIVE["rows"][:1]))
 _OPT_LIVE["rows"] = []
 
 if fails:

@@ -994,13 +994,13 @@ function renderTable(){
 // ---------- wiring ----------
 // ---------- §2: MNA 기반 optimizer — loss 평가기 = schematic MNA (궁극 목표) ----------
 let OPT=null;
-// 실시간 그래프 5종 (사용자 지시 2026-07-29): loss·variables·worst SOA·cap spec·R metal
+// 실시간 그래프 6종 (사용자 지시 2026-07-29): loss·variables·worst SOA·cap spec·R metal·판정
 function renderLiveCharts(rows){
   const host=document.getElementById('optLive');
   if(!rows||!rows.length) return;
   host.hidden=false;
   if(!host.dataset.init){
-    host.innerHTML=['lvLoss','lvVar','lvWorst','lvCap','lvR']
+    host.innerHTML=['lvLoss','lvVar','lvWorst','lvCap','lvR','lvPass']
       .map(id=>'<div id="'+id+'"></div>').join('');
     host.dataset.init='1';
   }
@@ -1025,6 +1025,22 @@ function renderLiveCharts(rows){
     hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
   lineChart(document.getElementById('lvR'),{title:'R metal (rdd_r(L,W))',w:380,h:168,
     series:[{x:its,y:S('r_metal'),color:'#6a3fb5',label:'R [Ω]'}],xlabel:'iteration'});
+  // 판정 타임라인 (사용자 지시 2026-07-29): lane별 rule/soa/spec/total — 초록=PASS·빨강=FAIL.
+  // total은 server pass.all(전 category 동시 PASS)이 정본 — 클라이언트 재판정 금지.
+  // 비수렴(SOLVER/MONITOR_ERROR) row는 SOA 미평가라 pass가 공허 — 회색=판정 무효로 구분.
+  // legacy history에는 pass 분해가 없어 이 그래프만 생략된다.
+  const lanes=[['rule',4],['soa',3],['spec',2],['total',1]];
+  const pv=(p,k)=>k==='total'?p.all:p[k];
+  const dotC=(r,k)=>(r.status&&r.status!=='VALID')?'#8a94a0'
+    :(pv(r.pass,k)?'#0a7d38':'#b3261e');
+  const withPass=rows.filter(r=>r.pass);
+  if(withPass.length)
+    lineChart(document.getElementById('lvPass'),{title:'판정 (초록=PASS · 빨강=FAIL · 회색=무효)',w:380,h:168,
+      hlines:lanes.map(([k,y])=>({y,color:'#aeb7c2',label:k})),
+      points:withPass.flatMap(r=>lanes.map(([k,y])=>({x:r.it,y,r:k==='total'?3.6:2.8,
+        color:dotC(r,k)}))),
+      xlabel:'iteration'});
+  else document.getElementById('lvPass').innerHTML='';
 }
 function startMnaOpt(useLegacy){
   const st=document.getElementById('status'), err=document.getElementById('err');
@@ -1074,7 +1090,12 @@ function startMnaOpt(useLegacy){
       st.textContent=(useLegacy?'legacy':'feasibility')+' 최적화 완료 ('+d.iters+' iters'
         +(d.status?(' · '+d.status):'')+') — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';
       // 완료 후 current 스크럽을 spec 전류(1.33A)로 배치 + overlay 동기화 (사용자 지시 2026-07-29)
-      ssSnapTo(d.i_spec||1.33);})
+      ssSnapTo(d.i_spec||1.33);
+      // 마지막 폴링 이후 도착분 반영 — live 그래프 6종 최종 갱신.
+      // 성공 경로 한정: 422 즉시 실패 시 서버 _OPT_LIVE 리셋 전이라
+      // 이전 run rows가 남아 있어 .finally에서 하면 잔상이 부활한다 (리뷰 확정 결함)
+      fetch('api/optimize/mna/progress').then(r=>r.json())
+        .then(pp=>{if(pp.live&&pp.live.length) renderLiveCharts(pp.live);}).catch(()=>{});})
     .catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
     .finally(()=>{optDone=true;clearInterval(OP);
       document.getElementById('startBtn').disabled=false;

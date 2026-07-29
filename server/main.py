@@ -926,6 +926,9 @@ def _opt_live_push(row):
                      if row.get(k) is not None},
             "r_metal": (M.rdd_r(row["L"], row.get("W", M.RDD_W0))
                         if row.get("L") is not None else None),
+            "pass": row.get("pass"),  # category별 판정 그래프용 (사용자 지시 2026-07-29)
+            # 비수렴 row의 공허한 PASS(all([]))를 그래프가 구분하도록 status 동반
+            "status": row.get("candidate_status"),
             "feasible": row.get("feasible")})
     except (TypeError, KeyError, ValueError):
         pass
@@ -946,6 +949,9 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
     from server.schematic import load_layout
     from server.opt_feas import optimize_feas
     from server.netlist import extract_netlist
+    # 새 실행 요청 즉시 이전 live 피드 무효화 — 검증 실패(422)여도 stale rows가
+    # progress에 남아 프론트 잔상을 만들지 않게 검증 앞에서 리셋 (리뷰 확정 결함)
+    _OPT_LIVE["rows"] = []
     if corner not in ("worst", "best"):
         return PlainTextResponse("corner must be worst|best", status_code=422)
     verr = _feas_input_error(hbm_kv, cap_lim_pf, (alpha_rule, alpha_soa, alpha_spec),
@@ -977,7 +983,6 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, grad
-    _OPT_LIVE["rows"] = []
     try:
         return _save_opt_run("feas", request.query_params, optimize_feas(
             layout, corner=corner, force=force, ground=ground,
@@ -1004,6 +1009,7 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
     from server.schematic import load_layout
     from server.opt_mna import optimize_mna
     from server.netlist import extract_netlist
+    _OPT_LIVE["rows"] = []  # 검증 앞 리셋 — feas 엔드포인트와 동일 이유
     if corner not in ("worst", "best"):
         return PlainTextResponse("corner must be worst|best", status_code=422)
     if not (1 <= iters <= 200):
@@ -1038,7 +1044,6 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, "fd-legacy"
-    _OPT_LIVE["rows"] = []
     try:
         return _save_opt_run("legacy", request.query_params, optimize_mna(
             layout, corner=corner, force=force, ground=ground,
