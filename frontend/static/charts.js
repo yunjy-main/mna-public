@@ -14,6 +14,31 @@ window.MNA = (function () {
     grid: '#eceff3', frame: '#c6ccd4',
   };
 
+  // 보기 배율 (사용자 지시 2026-07-29, viewctl.js overlay가 구동):
+  // font = SVG 내부 글자 크기 배율(생성된 font-size 후처리),
+  // h = lineChart/soaMap viewBox 높이 배율 — viewBox라 내부 그래프가 좌표계째 확대.
+  // radar는 방사형(폭 구속)이라 높이 배율 비적용, gauge는 HTML이라 페이지 배율이 담당.
+  const SZ = { font: 1, h: 1 };
+  const REG = new Map();  // el → {fn, args}: 마지막 렌더 재현용 (배율 변경 시 전체 재렌더)
+  function remember(el, fn, args) {
+    if (REG.size > 400) REG.forEach((v, k) => { if (!document.contains(k)) REG.delete(k); });
+    REG.set(el, { fn: fn, args: args });
+  }
+  function setScale(font, h) {
+    SZ.font = (isFinite(font) && font > 0) ? font : 1;
+    SZ.h = (isFinite(h) && h > 0) ? h : 1;
+    REG.forEach((r, el) => {
+      if (!document.contains(el)) { REG.delete(el); return; }
+      r.fn.apply(null, r.args);
+    });
+  }
+  function emit(el, s) {  // SVG 문자열 마감 — font 배율은 생성물 후처리로 일괄 적용
+    if (SZ.font !== 1)
+      s = s.replace(/font-size="([0-9.]+)"/g,
+        (m, v) => 'font-size="' + (parseFloat(v) * SZ.font).toFixed(2) + '"');
+    el.innerHTML = s + '</svg>';
+  }
+
   function fmtN(v) {
     const a = Math.abs(v);
     if (a >= 1000) return v.toFixed(0);
@@ -28,7 +53,8 @@ window.MNA = (function () {
 
   // 공통 선형 차트: series[{x,y,color,label,dash?}], hlines/vlines, points, shade[x0,x1]
   function lineChart(el, o) {
-    const W = o.w || 340, H = o.h || 205, mL = 44, mR = 8, mT = o.title ? 20 : 8, mB = 28;
+    remember(el, lineChart, arguments);
+    const W = o.w || 340, H = (o.h || 205) * SZ.h, mL = 44, mR = 8, mT = o.title ? 20 : 8, mB = 28;
     let xs = [], ys = [];
     (o.series || []).forEach(s => { xs = xs.concat(s.x); ys = ys.concat(s.y); });
     (o.hlines || []).forEach(h => ys.push(h.y));
@@ -110,11 +136,12 @@ window.MNA = (function () {
         + '<text x="' + (lx + 17) + '" y="' + ly + '" font-size="8.5" fill="' + C.gray + '">' + sr.label + '</text>';
       ly += 11;
     });
-    el.innerHTML = s + '</svg>';
+    emit(el, s);
   }
 
   // 방사형: 바깥=위험, 200% 스케일, 100% 경계 점선 — v4 원형(꼭짓점 점·100%/200% 라벨 포함)
   function radar(el, title, labels, vals, ghosts, size) {
+    remember(el, radar, arguments);
     const W = size || 230, H = W, cx = W / 2, cy = H / 2 + 5, R = W * 0.34, n = labels.length, MAX = 2.0;
     const pt = (k, v) => {
       const a = -Math.PI / 2 + 2 * Math.PI * k / n, r = R * Math.max(0, Math.min(v, MAX)) / MAX;
@@ -150,7 +177,7 @@ window.MNA = (function () {
     s += '<text x="' + cx + '" y="11" text-anchor="middle" font-size="10.5" fill="#20242a">' + title + '</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 0.5) + '" text-anchor="middle" font-size="7.5" fill="' + C.fail + '">100%</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 1.02) + '" text-anchor="middle" font-size="7.5" fill="' + C.gray + '">200%</text>';
-    el.innerHTML = s + '</svg>';
+    emit(el, s);
   }
 
   // 게이지 — v4 gaugeHtml 원형: 값 텍스트 + min/max 라벨 + marker + PASS/FAIL
@@ -178,7 +205,8 @@ window.MNA = (function () {
 
   // V-I SOA map — v4 drawSOAMap 원형: safe region 음영 + Vlim/Ilim 점선 + sweep 궤적 + 동작점
   function soaMap(el, o) {
-    const W = o.w || 340, H = o.h || 225, mL = 44, mR = 12, mT = o.title ? 20 : 10, mB = 30;
+    remember(el, soaMap, arguments);
+    const W = o.w || 340, H = (o.h || 225) * SZ.h, mL = 44, mR = 12, mT = o.title ? 20 : 10, mB = 30;
     const iw = W - mL - mR, ih = H - mT - mB;
     const pairs = o.pairs || [];
     const vmax = Math.max(o.Vlim * 2.0, o.V * 1.15, ...pairs.map(p => p.V * 1.05), 1e-9);
@@ -201,8 +229,9 @@ window.MNA = (function () {
       + (pass ? C.pass : C.fail) + '">' + o.V.toFixed(3) + (o.unitV || 'V') + ', ' + o.fmtI(o.I) + '</text>';
     if (o.title) s += '<text x="' + (mL + 2) + '" y="12" font-size="10.5" fill="#20242a">' + o.title + '</text>';
     s += '<text x="' + (mL + iw / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + (o.xlabel || 'Voltage') + '</text>';
-    el.innerHTML = s + '</svg>';
+    emit(el, s);
   }
 
-  return { C: C, lineChart: lineChart, radar: radar, gauge: gauge, soaMap: soaMap, f: f, pct: pct, fmtN: fmtN };
+  return { C: C, lineChart: lineChart, radar: radar, gauge: gauge, soaMap: soaMap,
+           setScale: setScale, f: f, pct: pct, fmtN: fmtN };
 })();

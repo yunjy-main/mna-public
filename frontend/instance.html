@@ -32,6 +32,7 @@
   </div>
 </main>
 <script src="static/charts.js"></script>
+<script src="static/viewctl.js" defer></script>
 <script>
 'use strict';
 const f=MNA.f, pct=MNA.pct, lineChart=MNA.lineChart;
@@ -84,12 +85,12 @@ fetch('api/instance/info?'+qp.toString())
                   {y:i.soa.inn,color:'#e0663a',label:'inn '+f(i.soa.inn,3)+'A'});
           pts.push({x:i.soa.vp,y:0,r:0,color:'none'},{x:i.soa.vn,y:0,r:0,color:'none'});
         }
-        lineChart(cdiv,{title:'I-V 특성 ('+(i.model||i.cell)+' · '+f((i.soa||{}).size||0,3)+')',
+        lineChart(cdiv,{title:'I-V ('+(i.model||i.cell)+' · '+f((i.soa||{}).size||0,3)+')',
           w:390,h:190,sym:true,
           series:[{x:i.curve.V,y:i.curve.I,color:'#1f5f99',label:'measured'}],
           vlines:vl,hlines:hl,points:pts,
           shadeRect:i.soa?[i.soa.vn,i.soa.inn,i.soa.vp,i.soa.ip]:null,
-          xlabel:'V(양단, element 방향) [V]'});
+          xlabel:'V(device, element dir) [V]'});
         if(i.cap){ // C-V 곡선 (생성 모델)
           const cv=document.createElement('div'); g2.appendChild(cv);
           const xs=[],ys=[];
@@ -97,7 +98,7 @@ fetch('api/instance/info?'+qp.toString())
             const veff=Math.min(v,i.cap.fc*i.cap.vbi);
             xs.push(v); ys.push(i.cap.c0*1e15/Math.pow(1-veff/i.cap.vbi,i.cap.mj));
           }
-          lineChart(cv,{title:'C-V (접합 모델)',w:390,h:190,origin:true,
+          lineChart(cv,{title:'C-V (junction model)',w:390,h:190,origin:true,
             series:[{x:xs,y:ys,color:'#00796b',label:'C [fF]'}],xlabel:'V [V]'});
         }
       }

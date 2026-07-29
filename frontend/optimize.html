@@ -6,6 +6,7 @@
 <title>mna — PAD-to-VSS Optimizer (main)</title>
 <link rel="stylesheet" href="static/style.css">
 <script src="static/charts.js"></script>
+<script src="static/viewctl.js" defer></script>
 <style>
   /* optimize 전용 (v4 구조) */
   .kv{font-size:12px;color:var(--muted);white-space:pre-line}
@@ -683,17 +684,17 @@ dvRegister({host:'ssDev', applies:d=>d.role!=='soa_monitor'&&d.kind!=='sourcei',
       if(v>=xlo&&v<=xhi&&Math.abs(i)<=iCap){cx.push(v);cy.push(i);}});
     if(cx.length>1) series.push({x:cx,y:cy,color:'#b9c2cc',label:'model',dash:'4 3'});
   }
-  series.push({x:Vs,y:Ys,color:CB.blue,label:hasI?'I(소자)':'I inj'});
+  series.push({x:Vs,y:Ys,color:CB.blue,label:hasI?'I(dev)':'I inj'});
   if(!d.soa&&!hasI){ // 한계선 없는 fallback 소자(victim): 극성별 자기 한계 초과 전류
     const k0=dvIdxOf(c,0);
     for(let k=k0;k<c.pts.length;k++){const u=dvUsage(d,c,k);
-      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
+      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'limit @'+f(c.I[k],2)+'A'});break;}}
     for(let k=k0;k>=0;k--){const u=dvUsage(d,c,k);
-      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'한계 @'+f(c.I[k],2)+'A'});break;}}
+      if(u&&u.u>=1){hl.push({y:c.I[k],color:CB.red,label:'limit @'+f(c.I[k],2)+'A'});break;}}
   }
   lineChart(el,{title:d.key,w:380,h:150,series,points:pts,vlines:vl,hlines:hl,sym:true,
     shadeRect:d.soa?[d.soa.vn,d.soa.inn,d.soa.vp,d.soa.ip]:null,  // SOA 내부 연초록
-    xlabel:'V(양단) [V]'});
+    xlabel:'V(device) [V]'});
 }});
 // [renderer] victim monitor stress — 동일 pivot: X=stress V, Y=주입전류 (한계=세로선)
 dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
@@ -704,7 +705,7 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   const QS=['VGS','VGD','VDS'], QC=[CB.blue,CB.green,CB.purple];
   const s=QS.map((q,i)=>{const pr=pick(q);return{x:pr.xs,y:pr.ys,color:QC[i],label:q};})
     .filter(t=>t.x.length);
-  if(!s.length){el.className='hint';el.textContent=d.key+': monitor 무효(unresolved/비수렴)';return;}
+  if(!s.length){el.className='hint';el.textContent=d.key+': monitor invalid (unresolved / non-convergence)';return;}
   // SOA 한계는 양/음 모두 표시 (단자쌍 순서 반전 동치 — 사용자 지시.
   // 비대칭 값(oxide inv +2.9 / acc −3.3)은 실측이 명시한 예외)
   const vl=[], g=lim('VGS'), t=lim('VDS');
@@ -728,11 +729,11 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
 // [renderer] 전류원 참고 곡선 — SOA 없음, I-V victim 섹션에 참고용으로 배치 (사용자 지시)
 dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
   const Vs=c.I.map((_,k)=>dvV(d,c,k));
-  lineChart(el,{title:d.key+' (참고 — SOA 없음)',w:380,h:170,
+  lineChart(el,{title:d.key+' (ref — no SOA)',w:380,h:170,
     series:[{x:Vs,y:c.I,color:CB.gray,label:'I inj'}],
     // SOA 없는 참고 곡선 — 동작점도 곡선 색 (사용자 지시 2026-07-29: 빨강=이탈 전용)
     points:[{x:Vs[c.idx],y:c.iNow,r:4.5,color:CB.gray}],
-    sym:true,xlabel:'V(양단) [V]'});
+    sym:true,xlabel:'V(device) [V]'});
 }});
 // (소자별 radar는 §2 optimizer 결과로 이동 — 사용자 확정 2026-07-28:
 //  radar는 trade-off 뷰 = optimizer 도구. MNA 층 판정은 gauge/metric/ranking이 담당.)
@@ -754,7 +755,7 @@ dvRegister({host:'ssGauge', applies:d=>d.soa||d.role==='soa_monitor', render:(el
   const u=dvUsage(d,c,c.idx);
   el.insertAdjacentHTML('beforeend','<div class="hint" style="font-weight:700">'
     +d.key+' · '+(d.model||d.cell)+'</div>');
-  if(!u){el.insertAdjacentHTML('beforeend','<div class="hint">무효(unresolved/비수렴)</div>');return;}
+  if(!u){el.insertAdjacentHTML('beforeend','<div class="hint">invalid (unresolved / non-convergence)</div>');return;}
   if(d.role==='soa_monitor'){gauge(el,'SOA usage (worst '+(u.worst||'—')+')',u.u,1);}
   else{
     gauge(el,'V usage',u.uV,1,undefined,{valueText:f(dvV(d,c,c.idx),3)+' V'});
@@ -771,7 +772,7 @@ dvRegister({host:'ssRank', applies:()=>false, after:(host,c)=>{
     const vi='V='+f(dvV(d,c,c.idx),3)+'V'+(I!==null?' · I='+f(I,3)+'A':'');
     if(u) withU.push({name:d.key+(u.worst?' ('+u.worst+')':''), vi, u:u.u});
     else noU.push({name:d.key, vi,
-      note:(d.soa||d.role==='soa_monitor')?'무효(unresolved)':'한계 없음'});
+      note:(d.soa||d.role==='soa_monitor')?'invalid (unresolved)':'no limit'});
   });
   withU.sort((a,b)=>b.u-a.u);
   host.innerHTML=withU.map(it=>{const bad=it.u>1;
@@ -894,10 +895,10 @@ function renderGauges(fin,p){
   const L=g.children[0],R=g.children[1],e=cur();
   const grp=(col,t)=>col.insertAdjacentHTML('beforeend','<div class="hint" style="margin-top:5px;font-weight:700">'+t+'</div>');
   // ---- 좌: non-victim (type별 그룹) ----
-  grp(L,'Rule / 설계변수');
+  grp(L,'Rule / design variables');
   gauge(L,'x1 size window',fin.x1pos,1,'window',{valueText:'x1='+f(fin.x1),minLabel:'min '+p.x1min,maxLabel:'max '+p.x1max,pass:fin.x1>=p.x1min&&fin.x1<=p.x1max});
   gauge(L,'x2 size window',fin.x2pos,1,'window',{valueText:'x2='+f(fin.x2,1),minLabel:'min '+p.x2min,maxLabel:'max '+p.x2max,pass:fin.x2>=p.x2min&&fin.x2<=p.x2max});
-  gauge(L,'L (RDD 공유) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
+  gauge(L,'L (RDD shared) window',fin.lpos,1,'window',{valueText:'L='+f(fin.L,1)+'µm',minLabel:'min '+p.lmin,maxLabel:'max '+p.lmax,pass:fin.L>=p.lmin&&fin.L<=p.lmax});
   // 소자별 V/I SOA gauge는 §2-0에서 schematic 소자 리스트로 동적 생성
   grp(L,'Metal (R device)');
   gauge(L,'V drop',fin.uRV,1);
@@ -905,7 +906,7 @@ function renderGauges(fin,p){
   gauge(L,'Joule heating',fin.uPJ,1);
   gauge(L,'Routing resource',fin.uRes,1);
   // ---- 우: victim (analytic probe 종합 — schematic monitor gauge는 §2-0) ----
-  grp(R,'Victim 종합 (analytic probe)');
+  grp(R,'Victim overall (analytic probe)');
   gauge(R,'voltage SOA — U overall ('+fin.vWorst+')',fin.uV,1,undefined,{valueText:f(fin.vnds)+' / '+f(fin.limNterm,1)+' V',maxLabel:'U=100% at limit'});
   gauge(R,'current SOA (I_v)',fin.uBI,1,undefined,{valueText:f(1000*fin.iv,2)+' / '+f(1000*p.bILim,0)+' mA'});
   grp(R,'NMOS (SG '+p.vTopo+')');
@@ -1005,18 +1006,18 @@ function renderLiveCharts(rows){
     host.dataset.init='1';
   }
   const its=rows.map(r=>r.it), S=k=>rows.map(r=>r[k]!=null?r[k]:null);
-  lineChart(document.getElementById('lvLoss'),{title:'loss (실시간)',w:380,h:168,
+  lineChart(document.getElementById('lvLoss'),{title:'loss (live)',w:380,h:168,
     series:[{x:its,y:S('loss_rule'),color:CB.gray,label:'rule'},
             {x:its,y:S('loss_soa'),color:CB.red,label:'SOA'},
             {x:its,y:S('loss_spec'),color:'#00796b',label:'spec'},
             {x:its,y:S('objective'),color:CB.blue,label:'objective'}],xlabel:'iteration'});
   const sup=((SS&&SS.params)||[]).filter(q=>q.supported&&q.rule_lo!=null);
-  lineChart(document.getElementById('lvVar'),{title:'variables (창 정규화 z)',w:380,h:168,
+  lineChart(document.getElementById('lvVar'),{title:'variables (window-normalized z)',w:380,h:168,
     series:sup.map((q,i)=>({x:its,
       y:rows.map(r=>(r.vars&&r.vars[q.name]!=null)
         ?(r.vars[q.name]-q.rule_lo)/((q.rule_hi-q.rule_lo)||1):null),
       color:[CB.blue,'#00796b',CB.orange,CB.red][i%4],label:q.name})),
-    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'창 경계'}],xlabel:'iteration'});
+    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],xlabel:'iteration'});
   lineChart(document.getElementById('lvWorst'),{title:'worst SOA usage',w:380,h:168,
     series:[{x:its,y:rows.map(r=>r.worst!=null?r.worst*100:null),color:CB.red,label:'worst %'}],
     hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
@@ -1035,7 +1036,7 @@ function renderLiveCharts(rows){
     :(pv(r.pass,k)?'#0a7d38':'#b3261e');
   const withPass=rows.filter(r=>r.pass);
   if(withPass.length)
-    lineChart(document.getElementById('lvPass'),{title:'판정 (초록=PASS · 빨강=FAIL · 회색=무효)',w:380,h:168,
+    lineChart(document.getElementById('lvPass'),{title:'verdict (green=PASS · red=FAIL · gray=invalid)',w:380,h:168,
       hlines:lanes.map(([k,y])=>({y,color:'#aeb7c2',label:k})),
       points:withPass.flatMap(r=>lanes.map(([k,y])=>({x:r.it,y,r:k==='total'?3.6:2.8,
         color:dotC(r,k)}))),
@@ -1301,7 +1302,7 @@ function renderOptIter(){
   const bh=(d.best_it!==undefined)?h[d.best_it]:null;
   lineChart(document.getElementById('optWorst'),{title:'worst SOA usage (★=best)',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.worst),color:CB.red,label:'worst u'}],
-    hlines:[{y:1,color:CB.red,label:'SOA 경계'}],
+    hlines:[{y:1,color:CB.red,label:'SOA limit'}],
     points:[{x:cur.it,y:cur.worst,r:4,color:CB.red}]
       .concat(bh?[{x:bh.it,y:bh.worst,r:4.5,color:CB.gold}]:[]),
     vlines:vl,xlabel:'iter'});
