@@ -99,15 +99,19 @@ open dot. 도메인1(VDD/IO/VSS/MVSS, x=−3) 라벨은 좌상단(lofst [−0.45
 - Clamp cell: 두 rail 칸을 가로지르는 [6.4,7.8](±0.7)×[0.9,5.1], port (7.1,5.1)/(7.1,0.9).
 - b2b cell: 묶음 전체를 감싸고 port는 stub 교차점 (세로 (7.1,−0.6)/(7.1,−2.4),
   가로 (8.05,0)/(9.35,0), 상자 y=±0.65).
-- **victim**: 상자 [3.4,5.45]×[0.9,5.1], 3 port: **IN**(좌변 중앙) / **VDD**(상변 5.1) / **VSS**(하변 0.9).
-  FET는 gate 왼쪽(theta 180 + flip), drain 공통(5.1, IO행 y=3),
-  **bulk 단자 표시**(`"bulk": True`) + bulk→source 직결선 (렌더러 자동, source y=drain±0.96).
-  **NMOS bulk 화살표는 채널 반대 방향**(사용자 지시 — 렌더러가 SVG 후처리로 반전,
-  PMOS는 채널 방향 유지).
-  **IN 배선은 gate까지만**(gate x = drain − 1.367·symbol_scale = 4.225, tie dot) —
-  gate→drain(junction) 경로는 그리지 않는다(2026-07-27 사용자 지시). drain은 별도
-  OUT 노드(주석은 drain 위치). 내부 소자는 레이아웃 JSON에서 교체 가능.
-  상자는 FET 심볼 기준 좌우 대칭(±0.35).
+- **victim (이슈 #10, 2026-07-28: NMOS 1stk SOA monitor, cell=victim_n)**: 상자
+  [3.4,5.45]×[0.9,5.1], **3 port**: **IN**(좌변 중앙) / **상변 (5.1,5.1)** /
+  **하변 (5.1,0.9)**. 내부는 **NFET 1개**(gate 왼쪽, theta 180 + flip, drain (5.1,3)).
+  **drain은 상단 port를 거쳐 VDD rail에 직결**(사용자 지시): line [5.1,3]→[5.1,6] +
+  dot (5.1,6) — 별도 OUT 노드는 삭제되고 D 단자 net=N2. 터미널 D=N2·G=IN·S=B=VSSR.
+  **bulk 단자 표시**(`"bulk": True`) + bulk→source 직결선 (렌더러 자동, source y=drain−0.96).
+  **NMOS bulk 화살표는 채널 반대 방향**(사용자 지시 — 렌더러가 SVG 후처리로 반전).
+  **IN 배선은 gate까지만**: 수평 [2.6,3]→[4.225,3] + 수직 stub [4.225,3]→[4.225,2.52]
+  (gate x = drain − 1.367·symbol_scale). gate→drain 경로는 그리지 않는다(2026-07-27
+  사용자 지시). rect에 `"cell": "victim_n"`(Subcircuit Set의 기존 cell을 instant화),
+  `"role": "soa_monitor"`, `"equation": null` — 라벨은 model 아래
+  "SOA monitor · no equation" 한 줄 추가. PFET·gates helper·inverter victim cell은
+  #10에서 삭제.
 
 - 전류원 cell: 1-port (R6) — 상자 내부에 소스+전용 ground.
 - 저항 cell: **compact 상자** [center±0.65] × [rail±0.45] (몸체 0.64 기준 여백 0.33/0.29),
@@ -148,18 +152,18 @@ node 전압 = 파랑(`#0b57a4`) · 전류(I, I_v) = 청록(`#00796b`) · 구조 
 현재 model list: D_up=esdvpnp·esdvpnp_rg / D_down=esdndsx·esdndsx_rg·esdnwsx /
 R=rmres·metal / Clamp=nfet_clamp / D_b2b=essvpnp ×2 (나머지는 미지정 — 추후 추가).
 Resd 제외 저항(RDL 3·RDD 2)은 동일 model **metal**에 저항값만 달리 쓴 instance.
-형태 기준 중복 제거 cell 12종:
+형태 기준 중복 제거 cell **11종**(이슈 #10에서 inverter `Victim` 삭제 — 중복 없는 set 원칙):
 `I_ESD`(1-port 소스+ground) · `GND`(1-port, I_ESD와 동일 크기) · `R` ·
 `short`(2-port 직결) · `open`(2-port 미연결, R와 동일 크기) ·
 `D_up` · `D_down`(검게 채움) · `Clamp` · `D_b2b`(역병렬 묶음) ·
-`Victim`(inverter FET쌍+bulk) · `Victim (NMOS)` · `Victim (PMOS)`(단일 FET,
-gate 좌/drain·source 상하 port, 서로 거울 대칭).
+`Victim (NMOS)`(단일 NFET — **XVictim SOA monitor가 instant화하는 cell**,
+models=[SG_NFET 1stk_1rx]) · `Victim (PMOS)`(단일 PFET, 거울 대칭,
+models=[SG_PFET 1stk_1rx]).
 각 cell은 본 회로와 동일한 subcircuit 문법(점선 상자+경계 port)이되,
 **상자 밖 실선 배선 금지** — 소자 endpoints를 상자 경계에 맞춰 트림한다.
 라이브러리 라벨: **type 이름(title)은 상자 밖 좌상단**(instance와 동일 위치·서식),
 **model/equation은 상자 안**(R13과 동일) — D_up/D_down(model1+softplus_bi),
-Clamp(model2+softplus_bi), Victim(SG_PFET+SG_NFET 2개 — 좌상단 순차 스택),
-Victim (NMOS)/(PMOS)(각자 SG 모델 1개).
+Clamp(model2+softplus_bi), Victim (NMOS)/(PMOS)(각자 SG 모델 1개).
 인접 상자 간 간격 0.8. 새 '형태'가 회로에 추가되면 이 목록에도 추가한다.
 
 ## R12. 수정 후 검증 절차
@@ -172,7 +176,7 @@ SVG의 `<circle>` 좌표를 32.4px/unit로 환산해 접점 전수 대조(juncti
 | 계층 | 내용 | 위치 | 서식 |
 |---|---|---|---|
 | **instance** | subcircuit instant화 시 부여되는 고유 이름 — **X 접두**(SPICE 관례): XD_up, XRDD_un1, XVictim, XI_ESD (IO→VDD)... | **상자 밖**, 좌상단 기본 — 겹치면 반시계 fallback 좌상단→좌하단→우하단→우상단 (`instance_loc`: tl/bl/br/tr) | fs−1, 진한 색(#20242a); open cell은 회색+"(open)" |
-| **model** | 내부 심볼의 **process 모델명** — cell의 model list에서 선택 (esdvpnp, esdndsx, nfet_clamp, metal, rmres(Resd), SG_PFET/SG_NFET 1stk_1rx). solver 내부명(model1/model2)은 화면에 쓰지 않는다 | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트 허용 (victim: PFET=tl, NFET=bl) | **fs−3(6pt)**, MUT |
+| **model** | 내부 심볼의 **process 모델명** — cell의 model list에서 선택 (esdvpnp, esdndsx, nfet_clamp, metal, rmres(Resd), SG_NFET 1stk_1rx). solver 내부명(model1/model2)은 화면에 쓰지 않는다 | **상자 안**, 좌상단부터 동일 반시계 순서 — 리스트면 위→아래 순차 스택. `role: soa_monitor`면 "SOA monitor · no equation" 한 줄 추가(#10) | **fs−3(6pt)**, MUT |
 | **equation** | 특성 equation의 **이름**만 (softplus_bi, rdd(L)) 또는 상수 (0.1Ω, 500Ω) — 파라미터 값(x1=2.56, L=350 등)은 표기하지 않는다(UI 입력이 원본) | **model 라벨 바로 아래**(같은 코너, 0.33 아래); model 없으면 model 자리 | **fs−3(6pt)**, MUT |
 
 **회로 canvas에는 3계층 라벨만 표시한다**(2026-07-27 사용자 지시) — 노드 전압·전류
@@ -202,13 +206,14 @@ fallback은 충돌이 실재할 때만 유지한다 — 충돌 원인이 사라�
 
 **회로의 모든 instance는 Subcircuit Set의 cell을 골라 instant화한 것이다.** 데이터로:
 
-- 각 instance rect는 `"cell": "<id>"` 참조 필수 (i_esd/r/d_up/d_down/clamp/d_b2b/victim...).
+- 각 instance rect는 `"cell": "<id>"` 참조 필수 (i_esd/r/d_up/d_down/clamp/d_b2b/victim_n...).
 - `model`은 해당 cell의 **model list에서 선택**한 process 모델명 (목록이 비어 있으면 무제약).
 - **회전/미러 변형 허용**: 같은 cell을 가로/세로로 눕혀 쓸 수 있고 `"variant"` 키로 표기
   (예: d_b2b — XD_b2b_m/m2=vertical, XD_b2b=horizontal).
 - **파라미터 바인딩** `"params"`: instance가 쓰는 solver/UI 변수 또는 상수
   (XD_up {size:x1}, XClamp {size:x2}, XRDD {R:rdd(L), L:L}, RDL {R:0.1}, XResd(rmres) {R:500},
-  I_ESD {I:I_sweep}, XVictim {topology:vTopo}; 2차 보호는 미바인딩 {}).
+  I_ESD {I:I_sweep}, XVictim {}(SOA monitor — role/model이 semantics, 이슈 #10);
+  2차 보호는 미바인딩 {}).
 - 검증: `GET /api/schematic/mapping` — cell 존재·model 소속·바인딩 표를 반환하고
   위반을 issues로 보고한다. 레이아웃 수정 후 이 API로 확인.
 
