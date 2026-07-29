@@ -14,15 +14,15 @@ This package proposes a local SOA correction while retaining the original raw So
 ## Requested integration work
 
 1. Review the proposed equations in `MODEL_SPEC.md`.
-2. Inspect `tools/apply_model_recalibration.py`; do not apply it blindly.
-3. Integrate the accepted calibration core into `server/model.py` manually or by adapting the patcher.
+2. Inspect `model_core_reference.py` as a reference fragment; do not copy it blindly.
+3. Integrate the accepted calibration core into `server/model.py` manually on a separate implementation branch.
 4. Preserve all current public contracts used by:
    - `server/calibtable.py`
    - `server/optimizer.py`
    - `server/main.py`
    - `tests/regression.py`
    - netlist/MNA/victim/capacitance code
-5. Regenerate `assets/calib_table.json` and Python golden values.
+5. Regenerate `assets/calib_table.json` and Python golden values only after numerical review.
 6. Port the same equations to `tests/regression.js` before treating the independent JS witness as required.
 7. Update `docs/two_device_complete_iv_soa_model.html` after runtime behavior is accepted.
 
