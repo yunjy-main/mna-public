@@ -18,7 +18,7 @@ window.MNA = (function () {
   // font = SVG 내부 글자 크기 배율(생성된 font-size 후처리),
   // h = lineChart/soaMap viewBox 높이 배율 — viewBox라 내부 그래프가 좌표계째 확대.
   // radar는 방사형(폭 구속)이라 높이 배율 비적용, gauge는 HTML이라 페이지 배율이 담당.
-  const SZ = { font: 1, h: 1 };
+  const SZ = { font: 1, h: 1, lw: 1 };
   // 기본 차트 높이 배율 — 높이 +버튼 10회(×2.0)를 기본으로 (사용자 지시 2026-07-29).
   // SZ.h는 이 기본 위에 곱해지므로 0(리셋)은 이 높이로 돌아온다.
   const H_BASE = 2.0;
@@ -27,18 +27,34 @@ window.MNA = (function () {
     if (REG.size > 400) REG.forEach((v, k) => { if (!document.contains(k)) REG.delete(k); });
     REG.set(el, { fn: fn, args: args });
   }
-  function setScale(font, h) {
+  function setScale(font, h, lw) {
     SZ.font = (isFinite(font) && font > 0) ? font : 1;
     SZ.h = (isFinite(h) && h > 0) ? h : 1;
+    SZ.lw = (isFinite(lw) && lw > 0) ? lw : 1;
     REG.forEach((r, el) => {
       if (!document.contains(el)) { REG.delete(el); return; }
       r.fn.apply(null, r.args);
     });
   }
-  function emit(el, s) {  // SVG 문자열 마감 — font 배율은 생성물 후처리로 일괄 적용
+  // 선 굵기 배율 — 축·grid·plot 등 stroke를 가진 모든 요소에 일괄 적용 (사용자 지시
+  // 2026-07-29). 명시 stroke-width는 곱하고, 없으면 기본 1로 보고 주입해 grid까지 굵어진다.
+  function scaleStrokes(s) {
+    if (SZ.lw === 1) return s;
+    return s.replace(/<(line|polyline|polygon|path|rect|circle)\b([^>]*?)(\/?)>/g,
+      function (m, tag, attrs, close) {
+        if (!/stroke="(?!none)/.test(attrs)) return m;   // 채우기 전용 요소는 제외
+        if (/stroke-width="[0-9.]+"/.test(attrs))
+          attrs = attrs.replace(/stroke-width="([0-9.]+)"/,
+            (mm, v) => 'stroke-width="' + (parseFloat(v) * SZ.lw).toFixed(2) + '"');
+        else attrs += ' stroke-width="' + SZ.lw.toFixed(2) + '"';
+        return '<' + tag + attrs + close + '>';
+      });
+  }
+  function emit(el, s) {  // SVG 문자열 마감 — font/선 배율은 생성물 후처리로 일괄 적용
     if (SZ.font !== 1)
       s = s.replace(/font-size="([0-9.]+)"/g,
         (m, v) => 'font-size="' + (parseFloat(v) * SZ.font).toFixed(2) + '"');
+    s = scaleStrokes(s);
     el.innerHTML = s + '</svg>';
     spreadAnn(el.firstChild);   // 주석 라벨 겹침 해소(가로 이동만)
     clampText(el.firstChild);   // 그 뒤 viewBox 안으로 최종 클램프
@@ -113,8 +129,17 @@ window.MNA = (function () {
     const tw = t => String(t).length * 0.65 * TFS;  // 숫자 라벨 폭 추정(−·% 등 넓은 글리프 여유)
     const grow = Math.max(0, SZ.font - 1);
     const W = o.w || 340, H = (o.h || 205) * SZ.h * H_BASE;
-    // 하단 여백은 눈금 행 + xlabel 행이 겹치지 않을 만큼만 (xlabel 없으면 눈금 행만)
-    const mT = (o.title ? 20 : 8) + grow * 14, mB = (o.xlabel ? 31 : 28) + grow * 20;
+    // 하단 여백 = 눈금 행 + xlabel 행이 겹치지 않는 최소치. 글자 배율에 비례해야
+    // 큰 배율에서도 두 행이 붙지 않는다(ascent≈1.34·fs 기준). 기본 배율에서는 종전 값.
+    const mT = (o.title ? 20 : 8) + grow * 14;
+    // 글자 배율이 1보다 클 때만 키운다 — 기본 배율의 레이아웃은 종전 그대로.
+    const up = SZ.font > 1;
+    const mB = o.xlabel ? Math.max(31, up ? 4.3 * TFS + 2 : 0)
+                        : Math.max(28, up ? 2.2 * TFS + 4 : 0);
+    // x 눈금 baseline은 최하단 y 눈금(하강부 ≈0.63·fs)보다 글자 높이(≈1.09·fs)만큼
+    // 더 내려가야 좌하단 코너에서 두 축 라벨이 겹치지 않는다.
+    const tickDy = Math.max(13, up ? 1.8 * TFS + 2 : 0);   // plot 하단 → x 눈금 baseline
+    const legDy = Math.max(11, up ? 1.4 * TFS + 2 : 0);    // 범례 행 간격
     // 좌우 여백은 절반으로(사용자 지시 2026-07-29) — 우측은 클램프가 잘림을 막고,
     // 좌측은 고정 44 대신 실제 y 라벨 폭으로 산정한다.
     let mL = 22, mR = 4;
@@ -133,15 +158,36 @@ window.MNA = (function () {
     }
     if (x0 === x1) { x0 -= 1; x1 += 1; } if (y0 === y1) { y0 -= 1; y1 += 1; }
     const px = (x1 - x0) * .03, py = (y1 - y0) * .07; x0 -= px; x1 += px; y0 -= py; y1 += py;
-    // graph 기본: 눈금은 1-2-5 계열의 '딱 떨어지는' step, 0에 정렬 —
-    // 축 경계를 step 배수로 snap하면 0이 범위 안에 있을 때 항상 정확한 눈금이 된다.
-    function niceStep(span, target) {
-      const raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
-      return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+    // 눈금 step 후보 = {1, 2, 2.5, 5}×10^k — 1·2.5배수 허용 (사용자 지시 2026-07-29).
+    // 2·5단위만 쓰면 축 max가 데이터보다 훨씬 커지는 경우가 생겨(예: ±7.9 → ±10),
+    // 후보 중 축이 데이터에 가장 밀착(overshoot 최소)하는 step을 고른다.
+    // 동률이면 눈금이 촘촘한(step 작은) 쪽. lo=−hi(sym)면 floor/ceil이 대칭이라
+    // 원점 정중앙 대칭은 그대로 유지된다.
+    function niceAxis(lo, hi, maxN) {
+      const span = (hi - lo) || 1;
+      let best = null;
+      const p0 = Math.pow(10, Math.floor(Math.log10(span / Math.max(2, maxN))) - 1);
+      for (let p = p0; p <= p0 * 1e5; p *= 10)
+        for (const m of [1, 2, 2.5, 5]) {
+          const s = m * p;
+          const a = Math.floor(lo / s) * s, b = Math.ceil(hi / s) * s;
+          const n = Math.round((b - a) / s);
+          if (n < 2 || n > maxN) continue;
+          const over = (b - a) - span;
+          if (!best || over < best.over - 1e-9
+              || (Math.abs(over - best.over) < 1e-9 && s < best.s)) best = { s: s, a: a, b: b, over: over };
+        }
+      return best || { s: span / 4, a: lo, b: hi };
     }
-    const xst = niceStep(x1 - x0, 4), yst = niceStep(y1 - y0, 4);
-    x0 = Math.floor(x0 / xst) * xst; x1 = Math.ceil(x1 / xst) * xst;
-    y0 = Math.floor(y0 / yst) * yst; y1 = Math.ceil(y1 / yst) * yst;
+    // x 눈금 수는 라벨 폭에 맞춰 상한 — 촘촘해져도 라벨끼리 붙지 않게.
+    // 음수 라벨은 부호 한 자가 더 붙으므로 양 끝 중 넓은 쪽으로 산정한다.
+    const nX = Math.max(3, Math.min(8, Math.floor((W - 48)
+      / (Math.max(tw(fmtN(x0)), tw(fmtN(x1))) + 16))));
+    // y 눈금 수도 plot 높이 대비 글자 높이로 상한 (큰 배율에서 라벨끼리 겹침 방지)
+    const nY = Math.max(2, Math.min(8, Math.floor((H - mT - mB) / (1.34 * TFS + 4))));
+    const axX = niceAxis(x0, x1, nX), axY = niceAxis(y0, y1, nY);
+    const xst = axX.s, yst = axY.s;
+    x0 = axX.a; x1 = axX.b; y0 = axY.a; y1 = axY.b;
     // 우측 여백은 원복(8) — 마지막 x 눈금의 넘침은 라벨 위치 클램프가 전담한다
     // (사용자 지시 2026-07-29: clamp가 있으니 margin은 늘리지 않는다).
     // y 눈금만은 우측정렬(mL−4 기준)이라 클램프가 불가 — 최장 라벨 폭을 mL로 확보.
@@ -169,7 +215,7 @@ window.MNA = (function () {
         + (zero ? '#aeb7c2' : C.grid) + '"/>'
         // 양 끝 눈금 라벨은 viewBox 안으로 클램프 — 여백을 늘리지 않고 잘림만 막는다
         + '<text x="' + Math.min(Math.max(X(xv), tw(fmtN(xv)) / 2 + 1), W - tw(fmtN(xv)) / 2 - 1)
-        + '" y="' + (H - mB + TFS + 4.5) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
+        + '" y="' + (H - mB + tickDy) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
     }
     for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++) {
       const yv = n * yst, zero = n === 0;
@@ -206,13 +252,13 @@ window.MNA = (function () {
         + '" fill="#20242a">' + o.title + '</text>';
     }
     if (o.xlabel) s += '<text x="' + ((mL + W - mR) / 2) + '" y="' + (H - Math.max(6, TFS * .7)) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + o.xlabel + '</text>';
-    let lx = mL + 5, ly = mT + TFS + 2.5;
+    let lx = mL + 5, ly = mT + legDy;
     (o.series || []).forEach(sr => {
       if (!sr.label) return;
       s += '<line x1="' + lx + '" y1="' + (ly - 3) + '" x2="' + (lx + 13) + '" y2="' + (ly - 3) + '" stroke="' + sr.color + '" stroke-width="2"'
         + (sr.dash ? ' stroke-dasharray="4 3"' : '') + '/>'
         + '<text x="' + (lx + 17) + '" y="' + ly + '" font-size="8.5" fill="' + C.gray + '">' + sr.label + '</text>';
-      ly += TFS + 2.5;
+      ly += legDy;
     });
     emit(el, s);
   }
@@ -220,12 +266,18 @@ window.MNA = (function () {
   // 방사형: 바깥=위험, 200% 스케일, 100% 경계 점선 — v4 원형(꼭짓점 점·100%/200% 라벨 포함)
   function radar(el, title, labels, vals, ghosts, size) {
     remember(el, radar, arguments);
-    const W = size || 230, H = W, cx = W / 2, cy = H / 2 + 5, n = labels.length, MAX = 2.0;
+    // 방사형은 높이 배율 대상이 아니지만(폭 구속), 글자를 키우면 축 라벨·제목·%표기가
+    // 서로 부딪힌다 → 글자 배율에 맞춰 viewBox 자체를 키워 배치 여유를 확보한다.
+    const W = (size || 230) * (SZ.font > 1 ? 1 + (SZ.font - 1) * 0.75 : 1);
+    const H = W, cx = W / 2, cy = H / 2 + 5, n = labels.length, MAX = 2.0;
     // 축 라벨(R*1.3 링)이 viewBox 밖으로 나가지 않게 R을 라벨 최장폭으로 제한 —
     // 좌우 라벨은 start/end 정렬이라 전폭이 필요하다 (사용자 지시 2026-07-29)
     const LFS = 8 * SZ.font;
     const lw = Math.max(0, ...labels.map(l => String(l).length * 0.65 * LFS));  // −·% 등 넓은 글리프 여유
-    const R = Math.max(W * 0.16, Math.min(W * 0.34, (W / 2 - lw - 5) / 1.3));
+    const titleY = Math.max(11, 13.3 * SZ.font);
+    // R 상한 3가지: 기본 비율 · 좌우 라벨 폭 · 최상단 라벨이 제목 아래로 내려오는 높이
+    const R = Math.max(W * 0.16, Math.min(W * 0.34, (W / 2 - lw - 5) / 1.3,
+      (cy - titleY - 3 - 1.34 * LFS) / 1.3));
     const pt = (k, v) => {
       const a = -Math.PI / 2 + 2 * Math.PI * k / n, r = R * Math.max(0, Math.min(v, MAX)) / MAX;
       return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
@@ -260,7 +312,7 @@ window.MNA = (function () {
     // 제목 baseline·크기도 글자 배율을 따라간다 (상단/좌우 잘림 방지)
     const rtNeed = String(title).length * 0.62 * 10.5 * SZ.font;
     const rtFs = rtNeed > W - 6 ? Math.max(5, 10.5 * (W - 6) / rtNeed) : 10.5;
-    s += '<text x="' + cx + '" y="' + (11 + Math.max(0, SZ.font - 1) * 14)
+    s += '<text x="' + cx + '" y="' + titleY
       + '" text-anchor="middle" font-size="' + rtFs.toFixed(2) + '" fill="#20242a">' + title + '</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 0.5) + '" text-anchor="middle" font-size="7.5" fill="' + C.fail + '">100%</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 1.02) + '" text-anchor="middle" font-size="7.5" fill="' + C.gray + '">200%</text>';
