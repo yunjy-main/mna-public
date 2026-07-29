@@ -457,9 +457,13 @@ chk("cap: 전류원/monitor None", caps["XI_ESD (IO→VSS)"] is None and caps["X
 on_io = sorted(k for k, c in caps.items() if c and c["on_io"])
 chk("cap: IO에서 보이는 소자 4종", on_io == ["XD_down", "XD_down2", "XD_up", "XD_up2"],
     str(on_io))
-io_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
-chk("cap: IO 합산 550fF ≤ capLim 5pF (usage 11%)", abs(io_total - 550e-15) < 1e-18
-    and io_total < M.IO_CAP_LIM, str(io_total))
+# cap spec 정본 = direct up/down 0V 합 (이슈 #13 완전 교체) — on_io는 페이지 표시 정보로만
+from server.netlist import direct_io_cap  # noqa: E402
+
+io_total = direct_io_cap(nl)
+chk("cap 정본: direct up/down 합 500fF ≤ capLim 5pF (up2/down2·b2b·clamp 제외)",
+    abs(io_total - 500e-15) < 1e-18 and io_total < M.IO_CAP_LIM
+    and abs(direct_io_cap(nl, pset={"x2": 2628.0}) - io_total) < 1e-20, str(io_total))
 chk("I_esd spec: HBM 1kV=1.33A, 2kV=2.66A (D9)", abs(M.hbm_current(1) - 1.33) < 1e-12
     and abs(M.hbm_current(2) - 2.66) < 1e-12 and 2.0 in M.HBM_LEVELS_KV, "")
 chk("HBM default = 1kV (1.33A)", M.HBM_DEFAULT_KV == 1.0
@@ -721,6 +725,48 @@ try:
 finally:
     del M.PARAM_META["T"]
     del M.BINDING_FUNCS["rddt"]
+
+# 15) Feasibility optimizer S1/S2 (이슈 #12/#13): loss 분리·constraint 스키마·best 분리
+from server.opt_feas import evaluate_candidate, optimize_feas  # noqa: E402
+
+_win = {"x1": (0.64, 3.84), "x2": (1415.232, 2628.288), "W": (1.0, 12.0), "L": (70.0, 1400.0)}
+_ispec = M.hbm_current(1.0)
+ev0f = evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0},
+                          "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=500)
+chk("S1 평가: 스키마(solver/constraints/losses/feasible/usages)",
+    set(ev0f) >= {"solver", "constraints", "losses", "feasible", "usages"}
+    and set(ev0f["losses"]) == {"rule", "soa", "spec", "total"}
+    and {c["category"] for c in ev0f["constraints"]["soa"]} == {"soa"}, "")
+chk("S1 평가: 초기 설계 — SOA만 FAIL (loss_rule=loss_spec=0)",
+    ev0f["losses"]["soa"] > 0 and ev0f["losses"]["rule"] == 0.0
+    and ev0f["losses"]["spec"] == 0.0 and ev0f["feasible"] is False, str(ev0f["losses"]))
+evWf = evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0},
+                          "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=M.N)
+chk("S1 평가: W=12 전 constraint PASS → 세 loss 0·feasible (cost·guard band 없음)",
+    evWf["feasible"] is True and evWf["losses"]["total"] == 0.0, str(evWf["losses"]))
+evRf = evaluate_candidate(nl, {"x1": 5.0, "x2": 1415.232, "L": 350.0, "W": 12.0},
+                          "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=500)
+chk("S1 평가: rule 위반 검출 (x1>max → loss_rule>0·infeasible)",
+    evRf["losses"]["rule"] > 0 and evRf["feasible"] is False,
+    str(evRf["losses"]["rule"]))
+try:
+    optimize_feas(DEFAULT_LAYOUT, iters=1, barrier="bogus")
+    chk("S2 opt: barrier 검증 거부", False, "예외 없음")
+except ValueError:
+    chk("S2 opt: barrier 검증 거부", True, "")
+r_fs = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"))
+chk("S2 opt: W 단독·barrier off — status PASS·loss 0 (clamp 없이 창 내 feasible)",
+    r_fs["status"] == "PASS" and r_fs["best_feasible"] is not None
+    and r_fs["best_feasible"]["losses"]["total"] == 0.0
+    and 11.5 < r_fs["best_feasible"]["W"] <= 12.0 + 1e-9,
+    "W={} status={}".format(r_fs.get("best_feasible", {}).get("W"), r_fs["status"]))
+chk("S2 opt: history에 loss 3종·feasibility·gradient·solver 기록",
+    all(("losses" in h and "feasible" in h and "solver" in h) for h in r_fs["history"])
+    and any(h.get("gradient") for h in r_fs["history"]), "")
+r_stop = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"),
+                       stop_on_feasible=True)
+chk("S2 opt: stop_on_feasible 옵션 — 조기 종료", r_stop["stopped_on_feasible"] is True
+    and len(r_stop["history"]) < len(r_fs["history"]), str(len(r_stop["history"])))
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))

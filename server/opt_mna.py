@@ -18,9 +18,9 @@ import math
 
 from server import model as M
 from server.netlist import (extract_netlist, assemble_and_solve, measured_context,
-                            soa_endpoints, device_caps, device_voltages,
+                            soa_endpoints, device_voltages,
                             device_currents, evaluate_soa_monitors,
-                            params_registry, _pset)
+                            direct_io_cap, params_registry, _pset)
 
 OPT_N = 500     # loss 평가용 calib 격자 (판정·표시는 정밀 N=4000 경로 그대로)
 FD_H = 2e-3     # 정규화 좌표 forward 차분 스텝
@@ -64,7 +64,6 @@ def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
     비수렴/monitor 무효는 큰 usage(3.0)로 penalty (해 신뢰 불가)."""
     ctx = measured_context(corner=corner, n=n, cache=calib_cache, pset=pset)
     eps = soa_endpoints(nl, corner=corner, pset=pset)
-    caps = device_caps(nl, pset=pset)
     out, detail = {}, {}
     warm = warm if warm is not None else {}
     for sgn, tag in ((1.0, "+"), (-1.0, "-")):
@@ -98,7 +97,8 @@ def design_usages(nl, pset, corner, force, ground, i_spec, cap_lim,
                     dd[c["quantity"] + tag] = round(v, 4)
             elif not m["valid"]:
                 out["{}·invalid{}".format(m["instance"], tag)] = 3.0
-    cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
+    # cap spec 완전 교체 (이슈 #13): 0V direct up/down 합 — ESD 해와 분리
+    cap_total = direct_io_cap(nl, pset=pset)
     out["cap(IO)"] = cap_total / cap_lim
     # 집계 spec 항목은 usage 키와 동일 키로 detail 기록 (frontend 표의 동적 생성 원천)
     detail["cap(IO)"] = {"value": cap_total, "lim": cap_lim, "unit": "F", "kind": "spec"}

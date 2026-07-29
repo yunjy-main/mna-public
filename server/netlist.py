@@ -334,6 +334,23 @@ def eval_binding(parsed, pset):
     return fn(*args)
 
 
+def solve_linear(A, rhs):
+    """부분 pivoting Gauss-Jordan 선형해 — Newton(정방향)과 adjoint(전치계)가
+    공용하는 단일 solver (이슈 #13 4.2.E)."""
+    n = len(rhs)
+    aug = [row[:] + [rhs[i]] for i, row in enumerate(A)]
+    for c in range(n):
+        p = max(range(c, n), key=lambda r: abs(aug[r][c]))
+        aug[c], aug[p] = aug[p], aug[c]
+        piv = aug[c][c]
+        for r in range(n):
+            if r != c and aug[r][c] != 0.0:
+                f = aug[r][c] / piv
+                for j in range(c, n + 1):
+                    aug[r][j] -= f * aug[c][j]
+    return [aug[i][n] / aug[i][i] for i in range(n)]
+
+
 def binding_ok(expr):
     """식을 엔진이 평가할 수 있는가 — supported 자동 판정의 원천 (이슈 #11 §1.4).
     parse 실패 또는 미등록 함수(E1)=False. 화이트리스트(ENGINE_PARAMS) 대체."""
@@ -635,19 +652,7 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=None,
                             G[idx[n]][idx[m]] += s * s2 * g
         return G, F
 
-    def solve_lin(A, rhs):
-        n = len(rhs)
-        M = [row[:] + [rhs[i]] for i, row in enumerate(A)]
-        for c in range(n):
-            p = max(range(c, n), key=lambda r: abs(M[r][c]))
-            M[c], M[p] = M[p], M[c]
-            piv = M[c][c]
-            for r in range(n):
-                if r != c and M[r][c] != 0.0:
-                    f = M[r][c] / piv
-                    for j in range(c, n + 1):
-                        M[r][j] -= f * M[c][j]
-        return [M[i][n] / M[i][i] for i in range(n)]
+    solve_lin = solve_linear  # Newton과 adjoint가 동일 solver 공유 (이슈 #13 4.2.E)
 
     v = list(v0) if (v0 is not None and len(v0) == N) else [0.0] * N
     it, res, prev_res = 0, float("inf"), float("inf")
@@ -687,7 +692,9 @@ def assemble_and_solve(nl, inject="IO", ground="VSS", I=1.33, L=None,
         "unknowns": [names[n] for n in unknowns],
         "ref_nets": sorted(names[n] for n in ref if n in names),
         "v": vmap,
-        "G": G, "residual": res,
+        # J_s = ∂F_s/∂v_s (수렴점 Newton Jacobian) — adjoint 재사용 계약 (이슈 #13 4.2.A)
+        "G": G, "jacobian": G, "residual_vector": F, "residual_norm": res,
+        "residual": res,
         "converged": res < 1e-6,
         "newton_iters": it,
         "size": "{0}×{0}".format(N),
@@ -726,6 +733,20 @@ def soa_rules_for(model):
 
 
 IO_VIEW_NETS = ("IO", "N1", "IN")  # pad에서 바라본 노드 섬 (Rio_rdl·Resd 경유 lumped view)
+
+
+def direct_io_cap(nl, pset=None, x1=None, x2=None):
+    """IO cap spec 정본 (이슈 #13 4.3.A, 사용자 확정 '완전 교체') — 일반 동작·0V
+    small-signal에서 IO 직결 primary up/down diode만 합산. 선택은 이름 추측이 아니라
+    schematic semantic role(io_primary_up/io_primary_down). up2/down2·b2b·clamp 제외,
+    ESD operating point 무관."""
+    from server import model as M
+    p = _pset(pset, x1=x1, x2=x2)
+    total = 0.0
+    for d in nl["devices"]:
+        if d.get("role") in ("io_primary_up", "io_primary_down") and not d["open"]:
+            total += M.cap_of(M.D1, _size_of(d, p), 0.0)
+    return total
 
 
 def device_caps(nl, x1=None, x2=None, pset=None):

@@ -823,7 +823,9 @@ def analysis_sweep(request: Request, imax: float = 2.0, n: int = 21,
     for k, d in device_keys(nl):
         if d.get("role") == "soa_monitor" and d.get("model"):
             monitor_rules[d["model"]] = soa_rules_for(d["model"])
-    io_cap_total = sum(c["c0"] for c in caps.values() if c and c["on_io"])
+    # cap spec 완전 교체 (이슈 #13, 사용자 확정): 0V direct up/down 합이 정본
+    from server.netlist import direct_io_cap
+    io_cap_total = direct_io_cap(nl, pset=p)
     # spec 입력(UI) 반영 — 미지정 시 model 기본값 (capLim 5pF, HBM 1kV)
     cap_lim = (cap_lim_pf * 1e-12) if (cap_lim_pf and cap_lim_pf > 0) else M.IO_CAP_LIM
     spec_kv = hbm_kv if (hbm_kv and hbm_kv > 0) else M.HBM_DEFAULT_KV
@@ -857,16 +859,65 @@ def _opt_tick(done, total):
 
 
 @app.get(PREFIX + "/api/optimize/mna")
+def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO",
+                      ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
+                      alpha_rule: float = 1.0, alpha_soa: float = 1.0,
+                      alpha_spec: float = 1.0,
+                      barrier: str = "off", mu_bar: float = 0.01, mu_rule: float = 20.0,
+                      lr: float = 0.06, iters: int = 30, freeze: str = None,
+                      stop_on_feasible: int = 0, grad: str = "fd"):
+    """Constraint·feasibility optimizer (이슈 #12/#13) — 기본 엔드포인트.
+    J_obj = α·(L_rule+L_SOA+L_spec) squared hinge, PASS=전 g_j≤0, barrier 기본 off,
+    best_feasible/best_infeasible 분리, final clamp 없음. legacy는 /legacy."""
+    from server.schematic import load_layout
+    from server.opt_feas import optimize_feas
+    from server.netlist import extract_netlist
+    if corner not in ("worst", "best"):
+        return PlainTextResponse("corner must be worst|best", status_code=422)
+    if not (1 <= iters <= 200):
+        return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
+    layout = load_layout()[0]
+    reg = _params_registry(extract_netlist(layout))
+    q = dict(request.query_params)
+    p, err = _pset_from_query(q, reg)
+    if err:
+        return err
+    windows = {}
+    for r in reg:
+        if not r["supported"]:
+            continue
+        lo, hi = q.get(r["name"] + "_min"), q.get(r["name"] + "_max")
+        try:
+            if lo is not None and hi is not None:
+                windows[r["name"]] = (float(lo), float(hi))
+        except ValueError:
+            return PlainTextResponse("{} 창 숫자 아님".format(r["name"]), status_code=422)
+    if freeze is None:
+        fz = tuple(r["name"] for r in reg if r["supported"] and r["freeze_default"])
+    else:
+        fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
+    _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
+    try:
+        return optimize_feas(layout, corner=corner, force=force, ground=ground,
+                             hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
+                             windows=windows,
+                             alphas=(alpha_rule, alpha_soa, alpha_spec),
+                             barrier=barrier, mu_bar=mu_bar, mu_rule=mu_rule,
+                             lr=lr, iters=iters, freeze=fz, pset=p,
+                             stop_on_feasible=bool(stop_on_feasible), grad=grad,
+                             progress_cb=_opt_tick)
+    except ValueError as ex:
+        return PlainTextResponse(str(ex), status_code=422)
+
+
+@app.get(PREFIX + "/api/optimize/mna/legacy")
 def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
                      ground: str = "VSS", hbm_kv: float = 1.0, cap_lim_pf: float = 5.0,
                      mu_soa: float = 12.0, mu_rule: float = 20.0,
                      lr: float = 0.06, iters: int = 30, freeze: str = None,
                      barrier: str = "log", mu_bar: float = 0.01):
-    """Schematic MNA 기반 optimizer (궁극 목표 마지막 조각) — loss 평가기가
-    analytic 직렬 모델이 아니라 표시 중 회로도의 netlist MNA(±HBM spec 전류).
-    설계변수는 registry에서 N-차원 자동 구성 (이슈 #11 §2.5) — 초기값=pset(query),
-    창=<name>_min/<name>_max, cost 가중치=w_<name>, freeze=쉼표 목록
-    (미지정 시 META freeze_default). legacy 이름(x1min…lmax·wA/wC/wL)은 전환기 별칭."""
+    """Legacy optimizer (cost+softplus+barrier+FD) — 별도 엔드포인트 병행 보존
+    (사용자 확정 2026-07-29, 기능 삭제 금지). S5 adjoint 검증의 oracle 겸용."""
     from server.schematic import load_layout
     from server.opt_mna import optimize_mna
     from server.netlist import extract_netlist

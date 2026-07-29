@@ -121,9 +121,9 @@
       <div><label>μ SOA</label><input id="muSOA" type="number" step="any" value="12"></div>
       <div><label>μ Rule (min측)<span class="info" title="min 위반 = 가혹 FAIL 급경사 barrier 가중치 (창립 비대칭 — barrier 선택과 무관하게 항상 적용). softplus 모드에서는 max측 완경사에도 사용.">ⓘ</span></label>
         <input id="muRule" type="number" step="any" value="20"></div>
-      <div><label>max barrier<span class="info" title="log(기본): 내부 log barrier −μb·ln((hi−v)/span) — 창 내부에서 힘이 미미해 margin을 끝까지 소모하고 limit에서 발산(불가침). 잔여 margin ≈ μb/F.&#10;softplus: 기존 준-rule 완경사 — 경계 접근 자체에 비용(경계 앞 여유를 남김).">ⓘ</span></label>
-        <select id="mnaBarrier"><option value="log" selected>log (margin 소모)</option><option value="softplus">softplus (준-rule)</option></select></div>
-      <div><label>μ barrier (log)</label><input id="muBar" type="number" step="any" value="0.01"></div>
+      <div><label>max barrier<span class="info" title="off(기본, 신규 optimizer): hinge만 사용 — 탐색 중 경계 통과 허용, rule 위반은 L_rule이 복원 (이슈 #13).&#10;log: 내부 log barrier −μb·ln((hi−v)/span) — margin 소모 후 limit 앞 정지. legacy 기본.&#10;softplus: 준-rule 완경사 — 경계 앞 여유를 남김.">ⓘ</span></label>
+        <select id="mnaBarrier"><option value="off" selected>off (hinge만)</option><option value="log">log (margin 소모)</option><option value="softplus">softplus (준-rule)</option></select></div>
+      <div><label>μ barrier (log)</label><input id="muBar" type="number" step="any" value="0.01" disabled></div>
       <div><label>learning rate (MNA)</label><input id="mnaLr" type="number" step="any" value="0.06"></div>
       <div><label>iterations (MNA)</label><input id="mnaIters" type="number" step="1" value="30"></div>
     </div>
@@ -178,7 +178,8 @@
   <div class="card" id="optRunCard">
     <h2>4. Optimizing 실행·결과<span class="info" title="§2 초기조건·spec + §3 설정 하에서 MNA-loss 최적화 실행.&#10;결과 요약의 '최적'은 궤적 중 loss 최소(best) iteration을 정밀(N=4000) 재평가한 값 — 슬라이더 마지막 지점이 아닐 수 있다(Adam 관성). ★=best.">ⓘ</span></h2>
     <div style="margin-top:8px">
-      <button id="startBtn">Optimizing 시작 (MNA loss)</button>
+      <button id="startBtn">Optimizing 시작 (constraint·feasibility)<span class="info" title="이슈 #12/#13 신규 optimizer — J_obj=α·(L_rule+L_SOA+L_spec) squared hinge, PASS=모든 constraint g≤0, cost·guard band 없음, barrier 기본 off.">ⓘ</span></button>
+      <button id="mnaLegacyBtn" style="background:#fff;color:var(--c-accent)" title="기존 optimizer(cost+softplus+barrier) — 별도 엔드포인트 병행 보존">legacy 실행</button>
       <button id="legacyBtn" style="background:#fff;color:var(--c-accent)">analytic 참고 실행(§5)</button>
       <button id="resetBtn" style="background:#fff;color:var(--c-accent)">Reset</button>
       <span class="status" id="status">Ready.</span>
@@ -964,7 +965,7 @@ function renderTable(){
 // ---------- wiring ----------
 // ---------- §2: MNA 기반 optimizer — loss 평가기 = schematic MNA (궁극 목표) ----------
 let OPT=null;
-function startMnaOpt(){
+function startMnaOpt(useLegacy){
   const st=document.getElementById('status'), err=document.getElementById('err');
   const sc=SS?SS.scenarios[+document.getElementById('ssScn').value||0]:null;
   const sup=((SS&&SS.params)||[]).filter(q=>q.supported);
@@ -976,6 +977,7 @@ function startMnaOpt(){
   st.textContent='MNA 최적화 시작…';
   err.textContent='';
   document.getElementById('startBtn').disabled=true;
+  document.getElementById('mnaLegacyBtn').disabled=true;
   // 실시간 진행률 (sweep과 동일 패턴 — 서버 progress 엔드포인트 400ms 폴링)
   let optDone=false;
   const OP=setInterval(()=>{
@@ -984,11 +986,13 @@ function startMnaOpt(){
         +pp.done+'/'+pp.total+' eval · 유한차분×±spec 전류 solve)…';
     }).catch(()=>{});
   },400);
+  // legacy는 별도 엔드포인트 병행 (이슈 #13, 사용자 확정) — barrier=off는 legacy에 없음
+  const bar=val('mnaBarrier');
   const q=new URLSearchParams({
     corner:val('ssCorner'),force:(sc&&sc.force)||'IO',ground:(sc&&sc.ground)||'VSS',
     hbm_kv:val('specHbm'),cap_lim_pf:val('specCapLim'),
     mu_soa:val('muSOA'),mu_rule:val('muRule'),lr:val('mnaLr'),iters:val('mnaIters'),
-    barrier:val('mnaBarrier'),mu_bar:val('muBar'),
+    barrier:(useLegacy&&bar==='off')?'log':bar,mu_bar:val('muBar'),
     freeze:fzList.join(',')});  // 항상 명시 전송 (빈 문자열=전부 자유, API 기본값 무시)
   sup.forEach(p=>{ // 초기값·창·cost — registry 루프 (이슈 #11 신규약: <name>_min/max, w_<name>)
     q.set(p.name,pv(p.name));
@@ -997,13 +1001,15 @@ function startMnaOpt(){
     const w=val('pw_'+p.name);
     if(w!=='')q.set('w_'+p.name,w);
   });
-  fetch('api/optimize/mna?'+q.toString())
+  fetch('api/optimize/mna'+(useLegacy?'/legacy':'')+'?'+q.toString())
     .then(async r=>{if(!r.ok)throw new Error(await r.text());return r.json();})
     .then(d=>{OPT=d;renderOptResult();
-      st.textContent='MNA 최적화 완료 ('+d.iters+' iters) — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';})
+      st.textContent=(useLegacy?'legacy':'feasibility')+' 최적화 완료 ('+d.iters+' iters'
+        +(d.status?(' · '+d.status):'')+') — [적용]을 누르면 §1이 최적 설계로 재해석됩니다.';})
     .catch(e=>{err.textContent=String(e.message||e);st.textContent='실패';})
     .finally(()=>{optDone=true;clearInterval(OP);
-      document.getElementById('startBtn').disabled=false;});
+      document.getElementById('startBtn').disabled=false;
+      document.getElementById('mnaLegacyBtn').disabled=false;});
 }
 function renderOptResult(){
   const d=OPT; if(!d) return;
@@ -1171,8 +1177,9 @@ document.getElementById('applyBtn').addEventListener('click',()=>{
   });
   loadSchematic(); loadSchemSweep();  // §1 전체를 최적 설계로 재해석 (닫힌 루프)
 });
-document.getElementById('startBtn').addEventListener('click',startMnaOpt);
-// max barrier 선택 ↔ μ barrier 연계 (softplus 모드에서는 μb 미사용 → 비활성)
+document.getElementById('startBtn').addEventListener('click',()=>startMnaOpt(false));
+document.getElementById('mnaLegacyBtn').addEventListener('click',()=>startMnaOpt(true));
+// max barrier 선택 ↔ μ barrier 연계 (log 모드에서만 μb 사용 → 그 외 비활성)
 document.getElementById('mnaBarrier').addEventListener('change',()=>{
   document.getElementById('muBar').disabled=val('mnaBarrier')!=='log';});
 document.getElementById('optIdx').addEventListener('input',renderOptIter);
