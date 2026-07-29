@@ -910,8 +910,9 @@ try:
 finally:
     OF.assemble_and_solve = _orig_solve
 
-# 19) #14 S2 — direct cap role 무결성 (negative 먼저): silent 0 pF 금지
-from server.netlist import validate_direct_io_cap_roles  # noqa: E402
+# 19) IO cap contributor 일반화 (#15 §3, negative 먼저): 1..N contributor·silent 0 금지
+from server.netlist import (validate_io_cap_contributors, io_cap_at_zero,  # noqa: E402
+                            has_role, io_cap_contributors)
 
 
 def _mutate_layout(fn):
@@ -922,30 +923,53 @@ def _mutate_layout(fn):
     return extract_netlist(L2)
 
 
-nl_no_up = _mutate_layout(lambda el: el.pop("role", None)
-                          if el.get("instance") == "XD_up" else None)
-chk("#14 S2: up role 누락 — validator 검출 + strict ValueError",
-    validate_direct_io_cap_roles(nl_no_up)["valid"] is False
-    and "io_primary_up role missing" in validate_direct_io_cap_roles(nl_no_up)["errors"][0], "")
+chk("#15 cap: 기본 2 contributor — up/down 합 500fF·명단·cell cap_model",
+    validate_io_cap_contributors(nl)["count"] == 2
+    and abs(io_cap_at_zero(nl) - 500e-15) < 1e-18
+    and {c["instance"] for c in validate_io_cap_contributors(nl)["contributors"]}
+    == {"XD_up", "XD_down"}, str(validate_io_cap_contributors(nl)))
+nl_zero = _mutate_layout(lambda el: el.pop("roles", None))
+chk("#15 cap: contributor 0개 — configuration error (silent 0 금지)",
+    validate_io_cap_contributors(nl_zero)["valid"] is False, "")
 try:
-    direct_io_cap(nl_no_up)
-    chk("#14 S2: strict 기본 — 누락 시 예외 (silent 0 금지)", False, "예외 없음")
+    io_cap_at_zero(nl_zero)
+    chk("#15 cap: strict 기본 — 0개 시 예외", False, "예외 없음")
 except ValueError:
-    chk("#14 S2: strict 기본 — 누락 시 예외 (silent 0 금지)", True, "")
-chk("#14 S2: strict=False 진단 경로는 값 반환(경고용)",
-    abs(direct_io_cap(nl_no_up, strict=False) - 250e-15) < 1e-18, "")
-nl_dup = _mutate_layout(lambda el: el.update({"role": "io_primary_up"})
-                        if el.get("instance") == "XD_up2" else None)
-chk("#14 S2: role 중복 검출", any("duplicated" in e
-    for e in validate_direct_io_cap_roles(nl_dup)["errors"]), "")
+    chk("#15 cap: strict 기본 — 0개 시 예외", True, "")
+chk("#15 cap: strict=False 진단 경로", io_cap_at_zero(nl_zero, strict=False) == 0.0, "")
+nl_one = _mutate_layout(lambda el: el.pop("roles", None)
+                        if el.get("instance") == "XD_down" else None)
+chk("#15 cap: contributor 1개 정상 (정확히 2 강제 금지)",
+    validate_io_cap_contributors(nl_one)["count"] == 1
+    and abs(io_cap_at_zero(nl_one) - 250e-15) < 1e-18, "")
+nl_three = _mutate_layout(lambda el: el.update({"roles": ["io_cap_contributor"]})
+                          if el.get("instance") == "XClamp" else None)
+chk("#15 cap: contributor 3개 + 혼합 cap model(D1×2 + clamp D2) 합산",
+    validate_io_cap_contributors(nl_three)["count"] == 3
+    and abs(io_cap_at_zero(nl_three) - (500e-15 + 2.1e-12)) < 1e-16
+    and {c["cap_model"] for c in
+         validate_io_cap_contributors(nl_three)["contributors"]} == {"diode", "clamp"},
+    str(io_cap_at_zero(nl_three)))
+chk("#15 cap: 혼합 파라미터 바인딩 — clamp contributor는 x2, diode는 x1 의존",
+    io_cap_at_zero(nl_three, pset={"x2": 2 * 1415.232})
+    > io_cap_at_zero(nl_three) + 1e-13
+    and abs(io_cap_at_zero(nl_three, pset={"x1": 5.12})
+            - (1000e-15 + 2.1e-12)) < 1e-16, "")
 nl_open = _mutate_layout(lambda el: el.update({"enabled": False})
                          if el.get("instance") == "XD_up" else None)
-chk("#14 S2: role 소자 open 검출", any("open" in e
-    for e in validate_direct_io_cap_roles(nl_open)["errors"]),
-    str(validate_direct_io_cap_roles(nl_open)["errors"]))
-chk("#14 S2: 정상 layout은 valid + 소자 명단",
-    validate_direct_io_cap_roles(nl)["valid"] is True
-    and validate_direct_io_cap_roles(nl)["devices"]["io_primary_up"] == ["XD_up"], "")
+chk("#15 cap: contributor open 검출", any("open" in e
+    for e in validate_io_cap_contributors(nl_open)["errors"]),
+    str(validate_io_cap_contributors(nl_open)["errors"]))
+nl_legacy = _mutate_layout(lambda el: el.update({"roles": None, "role": "io_primary_up"})
+                           if el.get("instance") == "XD_up" else
+                           (el.pop("roles", None)
+                            if el.get("instance") == "XD_down" else None))
+chk("#15 cap: 구 layout migration — 단일 role=io_primary_up도 contributor 인정",
+    validate_io_cap_contributors(nl_legacy)["count"] == 1
+    and has_role(io_cap_contributors(nl_legacy)[0], "io_primary_up"), "")
+chk("#15 cap: up2/down2/b2b는 role 없으면 제외",
+    all(c["instance"] in ("XD_up", "XD_down")
+        for c in validate_io_cap_contributors(nl)["contributors"]), "")
 
 # 20) #14 S3 — feasible_policy 명시 + best_it/final 일치
 r_mm = r_adj  # 기본 policy=max_margin 실행 재사용 (§16)

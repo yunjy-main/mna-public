@@ -88,11 +88,11 @@ DEFAULT_LAYOUT = {
         {"type": "port", "at": [-0.95, 0.0], "text": ""},
         {"type": "line", "from": [-0.6, 0.0], "to": [5.1, 0.0]},
         {"type": "diode", "from": "N1", "to": "N2", "instance_id": "XD_up"},
-        {"type": "rect", "corner1": [-0.9, 3.9], "corner2": [0.5, 5.1], "instance": "XD_up", "cell": "d_up", "model": "esdvpnp", "equation": "meas(x1)", "params": {"size": "x1"}, "role": "io_primary_up"},
+        {"type": "rect", "corner1": [-0.9, 3.9], "corner2": [0.5, 5.1], "instance": "XD_up", "cell": "d_up", "model": "esdvpnp", "equation": "meas(x1)", "params": {"size": "x1"}, "roles": ["io_primary_up", "io_cap_contributor"]},
         {"type": "port", "at": [-0.2, 5.1], "text": ""},
         {"type": "port", "at": [-0.2, 3.9], "text": ""},
         {"type": "diode", "from": [-0.2, 0.0], "to": "N1", "fill": "black", "instance_id": "XD_down"},
-        {"type": "rect", "corner1": [-0.9, 0.9], "corner2": [0.5, 2.1], "instance": "XD_down", "cell": "d_down", "model": "esdndsx", "equation": "meas(x1)", "params": {"size": "x1"}, "role": "io_primary_down"},
+        {"type": "rect", "corner1": [-0.9, 0.9], "corner2": [0.5, 2.1], "instance": "XD_down", "cell": "d_down", "model": "esdndsx", "equation": "meas(x1)", "params": {"size": "x1"}, "roles": ["io_primary_down", "io_cap_contributor"]},
         {"type": "port", "at": [-0.2, 2.1], "text": ""},
         {"type": "port", "at": [-0.2, 0.9], "text": ""},
         {"type": "dot", "at": "N1"},
@@ -234,25 +234,25 @@ LIBRARY_CELLS = [
         {"type": "port", "at": [3.5, -8.5], "text": ""},
         {"type": "port", "at": [4.8, -8.5], "text": ""},
     ]},
-    {"id": "d_up", "name": "D_up", "models": ["esdvpnp", "esdvpnp_rg"], "elements": [
+    {"id": "d_up", "cap_model": "D1", "name": "D_up", "models": ["esdvpnp", "esdvpnp_rg"], "elements": [
         {"type": "diode", "from": [6.1, -9.1], "to": [6.1, -7.9]},
         {"type": "rect", "corner1": [5.6, -9.1], "corner2": [6.6, -7.9], "title": "D_up", "model": "esdvpnp", "equation": "softplus_bi"},
         {"type": "port", "at": [6.1, -7.9], "text": ""},
         {"type": "port", "at": [6.1, -9.1], "text": ""},
     ]},
-    {"id": "d_down", "name": "D_down", "models": ["esdndsx", "esdndsx_rg", "esdnwsx"], "elements": [
+    {"id": "d_down", "cap_model": "D1", "name": "D_down", "models": ["esdndsx", "esdndsx_rg", "esdnwsx"], "elements": [
         {"type": "diode", "from": [7.9, -9.1], "to": [7.9, -7.9], "fill": "black"},
         {"type": "rect", "corner1": [7.4, -9.1], "corner2": [8.4, -7.9], "title": "D_down", "model": "esdndsx", "equation": "softplus_bi"},
         {"type": "port", "at": [7.9, -7.9], "text": ""},
         {"type": "port", "at": [7.9, -9.1], "text": ""},
     ]},
-    {"id": "clamp", "name": "Clamp", "models": ["nfet_clamp"], "elements": [
+    {"id": "clamp", "cap_model": "D2", "name": "Clamp", "models": ["nfet_clamp"], "elements": [
         {"type": "zener", "from": [9.7, -9.1], "to": [9.7, -7.9]},
         {"type": "rect", "corner1": [9.2, -9.1], "corner2": [10.2, -7.9], "title": "Clamp", "model": "nfet_clamp", "equation": "softplus_bi"},
         {"type": "port", "at": [9.7, -7.9], "text": ""},
         {"type": "port", "at": [9.7, -9.1], "text": ""},
     ]},
-    {"id": "d_b2b", "name": "D_b2b", "models": ["essvpnp ×2"], "elements": [
+    {"id": "d_b2b", "cap_model": "D1", "name": "D_b2b", "models": ["essvpnp ×2"], "elements": [
         {"type": "line", "from": [11.0, -8.5], "to": [11.2, -8.5]},
         {"type": "dot", "at": [11.2, -8.5]},
         {"type": "line", "from": [11.2, -8.5], "to": [11.2, -8.2]},

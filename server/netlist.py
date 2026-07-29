@@ -84,6 +84,7 @@ def extract_netlist(layout):
                           "model": e.get("model"), "params": e.get("params", {}),
                           "variant": e.get("variant"),
                           "equation": e.get("equation"), "role": e.get("role"),
+                          "roles": e.get("roles"),
                           "bb": (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)),
                           "open": e.get("enabled") is False})  # P0-3: 색이 아니라 enabled가 semantics
         elif t in ("resistor", "diode", "zener", "sourcei"):
@@ -241,6 +242,7 @@ def extract_netlist(layout):
             "instance": r.get("instance"), "cell": r.get("cell"),
             "model": r.get("model"), "params": r.get("params", {}),
             "equation": r.get("equation"), "role": r.get("role"),
+            "roles": r.get("roles"),
             "a": net(d["a"]), "b": net(d["b"]),
         })
     for f in fets:
@@ -251,6 +253,7 @@ def extract_netlist(layout):
             "instance": r.get("instance"), "cell": r.get("cell"),
             "model": r.get("model"), "params": r.get("params", {}),
             "equation": r.get("equation"), "role": r.get("role"),
+            "roles": r.get("roles"),
             "drain": dn, "source": sn, "gate": gn,
             # 명시 terminal map (이슈 #10 §6) — bulk는 렌더러의 bulk→source 직결로 b=s
             "terminals": {"d": dn, "g": gn, "s": sn, "b": sn},
@@ -812,56 +815,83 @@ def residual_param_derivatives(nl, sol, pset, corner="worst", n=None, cache=None
     return out
 
 
-def validate_direct_io_cap_roles(nl):
-    """direct IO cap의 semantic role 무결성 검증 (이슈 #14 §3.2) — silent 0 방지.
-    io_primary_up/down 각 정확히 1개, open 아님, diode kind, cap model(D1) 적용
-    가능(diode 계열 cell), size 바인딩 평가 가능."""
-    found = {"io_primary_up": [], "io_primary_down": []}
-    errors = []
-    for d in nl["devices"]:
-        r = d.get("role")
-        if r in found:
-            found[r].append(d)
-    for role, ds in found.items():
-        names = [d.get("instance") or "?" for d in ds]
-        if not ds:
-            errors.append("{} role missing".format(role))
+def has_role(dev, role):
+    """semantic role 조회 — 단일 role 필드(구)와 roles 리스트(신) 겸용 (이슈 #15 §3.2)."""
+    if dev.get("role") == role:
+        return True
+    return role in (dev.get("roles") or [])
+
+
+def io_cap_contributors(nl):
+    """IO cap spec contributor 집합 J_IO_CAP (이슈 #15 §3.3) — 정본은
+    io_cap_contributor role. 구 layout migration(§3.9): io_primary_up/down role만
+    있는 소자도 contributor로 인정 — runtime 이름 추측은 하지 않는다."""
+    return [d for d in nl["devices"]
+            if (has_role(d, "io_cap_contributor") or has_role(d, "io_primary_up")
+                or has_role(d, "io_primary_down"))]
+
+
+def cap_model_of_device(dev):
+    """소자의 0V cap model — cell metadata의 cap_model이 정본 (이슈 #15 §3.5,
+    instance 이름 추측 금지). 미정의 cell은 None."""
+    from server import model as M
+    from server.schematic import LIBRARY_CELLS
+    cm = next((c.get("cap_model") for c in LIBRARY_CELLS
+               if c["id"] == dev.get("cell")), None)
+    return {"D1": M.D1, "D2": M.D2}.get(cm)
+
+
+def validate_io_cap_contributors(nl, pset=None):
+    """IO cap contributor 무결성 (이슈 #15 §3.4) — silent 0 pF 방지.
+    count≥1(정확히 2 강제 금지), open 아님, 소자별 cap model 존재,
+    size 바인딩 평가 가능, C_i(0) finite·≥0."""
+    from server import model as M
+    p = _pset(pset)
+    contributors, errors = [], []
+    for d in io_cap_contributors(nl):
+        nm = d.get("instance") or "?"
+        if d["open"]:
+            errors.append("contributor {} 이(가) open/disabled".format(nm))
             continue
-        if len(ds) > 1:
-            errors.append("{} duplicated: {}".format(role, ", ".join(names)))
-        for d in ds:
-            nm = d.get("instance") or "?"
-            if d["open"]:
-                errors.append("{} ({}) is open/disabled".format(role, nm))
-            if d["kind"] not in ("diode", "zener"):
-                errors.append("{} ({}) kind={} — diode 아님".format(role, nm, d["kind"]))
-            if d.get("cell") not in ("d_up", "d_down", "d_b2b"):
-                errors.append("{} ({}) cell={} — D1 cap model 부적용"
-                              .format(role, nm, d.get("cell")))
-            e = size_expr_of(d)
-            if e is not None and parse_binding(e) is None:
-                errors.append("{} ({}) size 바인딩 해석 불가: {}".format(role, nm, e))
-    return {"valid": not errors, "errors": errors,
-            "devices": {r: [d.get("instance") for d in ds] for r, ds in found.items()}}
+        dev = cap_model_of_device(d)
+        if dev is None:
+            errors.append("contributor {} (cell={}) — cap model 미정의"
+                          .format(nm, d.get("cell")))
+            continue
+        e = size_expr_of(d)
+        if e is not None and parse_binding(e) is None:
+            errors.append("contributor {} size 바인딩 해석 불가: {}".format(nm, e))
+            continue
+        try:
+            c0 = M.cap_of(dev, _size_of(d, p), 0.0)
+        except (ValueError, ZeroDivisionError, OverflowError) as ex:
+            errors.append("contributor {} cap 평가 실패: {}".format(nm, ex))
+            continue
+        if not math.isfinite(c0) or c0 < 0:
+            errors.append("contributor {} C(0)={} — finite·≥0 필요".format(nm, c0))
+            continue
+        contributors.append({"instance": nm, "cap_model": dev["id"], "c0": c0})
+    if not contributors and not errors:
+        errors.append("io_cap_contributor role을 가진 소자가 없음")
+    return {"valid": not errors and len(contributors) >= 1,
+            "count": len(contributors), "contributors": contributors,
+            "errors": errors}
+
+
+def io_cap_at_zero(nl, pset=None, strict=True):
+    """IO cap spec 정본 (이슈 #15 §3.6) — C_IO(pset) = Σ_i C_i(0, pset),
+    i ∈ contributor 집합(1..N개, cap model·파라미터 바인딩은 소자별).
+    일반 동작·0V small-signal — ESD operating point 무관.
+    strict=True(기본): contributor 0개·무효 시 ValueError (silent 0 금지)."""
+    chk = validate_io_cap_contributors(nl, pset)
+    if strict and not chk["valid"]:
+        raise ValueError("IO cap contributor 오류: " + "; ".join(chk["errors"]))
+    return sum(item["c0"] for item in chk["contributors"])
 
 
 def direct_io_cap(nl, pset=None, x1=None, x2=None, strict=True):
-    """IO cap spec 정본 (이슈 #13 4.3.A, 사용자 확정 '완전 교체') — 일반 동작·0V
-    small-signal에서 IO 직결 primary up/down diode만 합산. 선택은 이름 추측이 아니라
-    schematic semantic role(io_primary_up/io_primary_down). up2/down2·b2b·clamp 제외,
-    ESD operating point 무관. strict=True(기본): role 누락·중복·무효 시 ValueError —
-    configuration error를 0 pF PASS로 위장하지 않는다 (이슈 #14 §3.3)."""
-    from server import model as M
-    if strict:
-        chk = validate_direct_io_cap_roles(nl)
-        if not chk["valid"]:
-            raise ValueError("direct IO cap role 오류: " + "; ".join(chk["errors"]))
-    p = _pset(pset, x1=x1, x2=x2)
-    total = 0.0
-    for d in nl["devices"]:
-        if d.get("role") in ("io_primary_up", "io_primary_down") and not d["open"]:
-            total += M.cap_of(M.D1, _size_of(d, p), 0.0)
-    return total
+    """transition alias — 정본은 io_cap_at_zero (이슈 #15 §3.6)."""
+    return io_cap_at_zero(nl, pset=_pset(pset, x1=x1, x2=x2), strict=strict)
 
 
 def device_caps(nl, x1=None, x2=None, pset=None):

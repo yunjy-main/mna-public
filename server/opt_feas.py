@@ -8,7 +8,7 @@ legacy(opt_mna.py: cost+softplus+barrier)와 별도 엔드포인트로 병행한
 
 - L_rule: x1/x2/W/L의 min/max 창 위반 (span 정규화)
 - L_SOA : (stress case, device, quantity)별 signed usage u_j, g = u_j − 1
-- L_spec: 0V direct up/down diode cap 합(direct_io_cap) — ESD 해와 분리, x1만의 함수
+- L_spec(pset): 0V contributor 집합 cap 합(io_cap_at_zero) — ESD 해와 분리 (#15 §3.7)
 - size/resource cost 없음, U_TARGET guard band 없음 (기준은 정확히 u ≤ 1)
 - barrier 기본 off (탐색 중 design-rule 위반 허용 — hinge가 복원), final clamp 금지
 - best_feasible / best_infeasible 분리, 비수렴은 solver status로 격리 (usage 혼합 금지)
@@ -24,7 +24,7 @@ import math
 from server import model as M
 from server.netlist import (extract_netlist, assemble_and_solve, measured_context,
                             soa_endpoints, device_voltages, device_keys,
-                            evaluate_soa_monitors, direct_io_cap, params_registry,
+                            evaluate_soa_monitors, io_cap_at_zero, params_registry,
                             solve_linear, residual_param_derivatives,
                             _pset, _clamp_iv, _diode_iv)
 
@@ -142,8 +142,8 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
                 cons["soa"].append(rec)
                 dd[c["quantity"] + tag] = round(val, 4)
 
-    # ── spec: 0V direct up/down cap (ESD 해와 분리 — x1만의 함수)
-    c_io = direct_io_cap(nl, pset=pset)
+    # ── spec: L_spec(pset) — 0V contributor 집합 cap 합 (ESD 해와 분리, #15 §3.7)
+    c_io = io_cap_at_zero(nl, pset=pset)
     u_cap = c_io / cap_lim
     cons["spec"].append({"key": "cap(IO)", "category": "spec", "stress_case": None,
                          "device": None, "quantity": "C_IO", "value": c_io,
@@ -218,7 +218,7 @@ def adjoint_gradient(nl, pset, ev, param_keys, windows, alphas, cap_lim,
             pp, pm = dict(pset), dict(pset)
             pp[p] += hs[p]
             pm[p] -= hs[p]
-            dC = (direct_io_cap(nl, pset=pp) - direct_io_cap(nl, pset=pm)) / (2 * hs[p])
+            dC = (io_cap_at_zero(nl, pset=pp) - io_cap_at_zero(nl, pset=pm)) / (2 * hs[p])
             grad[p] += a_spec * c["g"] * dC / cap_lim
 
     # ── SOA: 위반 항목만 (hinge) — 필요한 섭동 컨텍스트 준비
