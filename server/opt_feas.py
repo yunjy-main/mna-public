@@ -154,6 +154,7 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
               "soa": sum(_phi(c["g"]) for c in cons["soa"]),
               "spec": sum(_phi(c["g"]) for c in cons["spec"])}
     losses["total"] = a_rule * losses["rule"] + a_soa * losses["soa"] + a_spec * losses["spec"]
+    losses["constraint_total"] = losses["total"]  # 명시 이름 (#14 §6.2 — total은 별칭)
     all_cons = cons["rule"] + cons["soa"] + cons["spec"]
     # candidate 상태 3분법 (이슈 #14 §2.2) — 비수렴 candidate의 J=0을 정상
     # infeasible로 오인하지 않도록 feasibility와 평가 유효성을 분리한다.
@@ -165,11 +166,17 @@ def evaluate_candidate(nl, pset, corner, force, ground, i_spec, cap_lim,
         candidate_status = "MONITOR_ERROR"
     else:
         candidate_status = "VALID"
-    feasible = candidate_status == "VALID" and all(c["passed"] for c in all_cons)
+    # category별 PASS 분리 (#14 §7) — soa_pass가 rule/spec FAIL을 흡수하지 않도록
+    pass_cat = {"rule": all(c["passed"] for c in cons["rule"]),
+                "soa": all(c["passed"] for c in cons["soa"]),
+                "spec": all(c["passed"] for c in cons["spec"])}
+    pass_cat["all"] = (candidate_status == "VALID" and pass_cat["rule"]
+                       and pass_cat["soa"] and pass_cat["spec"])
+    feasible = pass_cat["all"]
     usages = {c["key"]: c["usage"] for c in all_cons if c["usage"] is not None}
     out = {"solver": solver, "constraints": cons, "losses": losses,
            "candidate_status": candidate_status, "solver_valid": solver_valid,
-           "constraints_valid": constraints_valid,
+           "constraints_valid": constraints_valid, "pass": pass_cat,
            "feasible": feasible, "detail": detail, "usages": usages}
     if keep_aux:
         out["aux"] = aux
@@ -411,9 +418,14 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         worst_c = max((ev["constraints"]["soa"] + ev["constraints"]["spec"]) or [],
                       key=lambda c: (c["usage"] if c["usage"] is not None else -1e9),
                       default=None)
+        bt = jv - ev["losses"]["constraint_total"]  # barrier 항 (#14 §6 — 표시=실사용)
+        losses_row = {k: round(x, 6) for k, x in ev["losses"].items()}
+        losses_row["barrier"] = round(bt, 6)
+        losses_row["objective"] = round(jv, 6)
         row = {"it": it, "J_obj": jv, "loss": jv,  # loss=legacy 호환 별칭
-               "losses": {k: round(x, 6) for k, x in ev["losses"].items()},
-               "feasible": ev["feasible"], "soa_pass": ev["feasible"],
+               "losses": losses_row,
+               "feasible": ev["feasible"], "soa_pass": ev["pass"]["soa"],
+               "pass": ev["pass"],  # category별 (#14 §7)
                "candidate_status": ev["candidate_status"],
                "solver": {t: s["converged"] for t, s in ev["solver"].items()},
                "gradient": gradient,
@@ -425,6 +437,9 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         for k in keys:
             row[k] = pv[k]
         history.append(row)
+
+    def _round_gd(gd):
+        return {sec: {k: round(v, 6) for k, v in m.items()} for sec, m in gd.items()}
 
     def _consider(it_now, z_now, ev):
         nonlocal best_feasible, best_infeasible, best_solver_error
@@ -482,8 +497,12 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             ga = adjoint_gradient(nl, pv, ev_base, act_keys, win, alphas, cap_lim,
                                   corner=corner, n=n, cache=ccache)
             gb = barrier_grad(pv)
-            # Adam은 정규화 좌표(z)에서 동작 — 물리 gradient × span으로 좌표 일치
-            gradient = {k: (ga[k] + gb[k]) * spans[k] for k in act_keys}
+            # Adam은 정규화 좌표(z)에서 동작 — 물리 gradient × span으로 좌표 일치.
+            # constraint/barrier 분리 기록 (#14 §6.3)
+            g_con = {k: ga[k] * spans[k] for k in act_keys}
+            g_bar = {k: gb[k] * spans[k] for k in act_keys}
+            gradient = {k: g_con[k] + g_bar[k] for k in act_keys}
+            gradient_detail = {"constraint": g_con, "barrier": g_bar, "total": gradient}
         else:
             f_base, ev_base = evaluate(z)
             _consider(it - 1, z, ev_base)
@@ -498,6 +517,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 gradient[var_spec[i]["key"]] = (
                     0.0 if ev_p["candidate_status"] != "VALID"
                     else (fp - f_base) / FD_H)  # 무효 probe는 기여 제외
+            gradient_detail = {"total": dict(gradient)}
         # Adam 제안 (미커밋 — #14 §2.4: 비수렴 trial에는 상태를 갱신하지 않는다)
         prop = {}
         for i in active:
@@ -519,14 +539,12 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 for i in active:  # 수락 시에만 Adam 상태 커밋
                     mom[i], vel[i] = prop[i][0], prop[i][1]
                 z = z_trial
-                _record(it, j_new, ev_new, z,
-                        {k: round(g, 6) for k, g in gradient.items()})
+                _record(it, j_new, ev_new, z, _round_gd(gradient_detail))
                 accepted = True
                 break
             scale *= 0.5  # rollback + 절반 step 재시도
         if not accepted:  # 재시도 소진 — solver error로 기록하고 종료 (#14 §2.4)
-            _record(it, j_new, ev_new, z_trial,
-                    {k: round(g, 6) for k, g in gradient.items()})
+            _record(it, j_new, ev_new, z_trial, _round_gd(gradient_detail))
             solver_terminated = True
 
     # best 후보를 정밀 격자로 재평가·재판정 (저해상 편향으로 feasibility가 뒤집힐 수 있음.
@@ -539,17 +557,22 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                                 windows=win, alphas=alphas,
                                 warm={}, calib_cache={}, n=M.N)
         _tick(w_final)
-        return {"pset": pv, "losses": ev["losses"], "feasible": ev["feasible"],
+        bt = barrier_term(pv)
+        losses_p = dict(ev["losses"])
+        losses_p["barrier"] = bt
+        losses_p["objective"] = losses_p["constraint_total"] + bt  # 표시=실사용 (#14 §6)
+        return {"pset": pv, "losses": losses_p, "feasible": ev["feasible"],
                 "candidate_status": ev["candidate_status"],
                 "source_it": entry["it"],  # UI ★best·slider·[적용] 일치 (#14 §4.2)
                 "constraints": ev["constraints"], "solver": ev["solver"],
                 "usages": ev["usages"], "detail": ev["detail"],
-                # legacy 표시 호환 필드
+                "pass": ev["pass"],  # category별 (#14 §7)
+                # legacy 표시 호환 필드 — soa_pass는 실제 SOA만 의미 (#14 §7.2)
                 "worst": max([u for u in ev["usages"].values()] or [0.0]),
                 "worst_name": max(ev["usages"], key=lambda k: ev["usages"][k])
                 if ev["usages"] else None,
                 "cap_u": ev["usages"].get("cap(IO)", 0.0),
-                "soa_pass": ev["feasible"],
+                "soa_pass": ev["pass"]["soa"],
                 "loss": ev["losses"]["total"],
                 **{k: pv[k] for k in keys}}
     valid_seen = (best_feasible is not None) or (best_infeasible is not None)

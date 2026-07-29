@@ -10,6 +10,7 @@ Phase 2 will grow this into the solver API. For now:
 Run: python -m uvicorn server.main:app --host 127.0.0.1 --port 8807  (cwd = repo root)
 """
 import json
+import math
 import os
 import subprocess
 import sys
@@ -140,11 +141,31 @@ def _pset_from_query(q, registry):
                 return None, PlainTextResponse("{}={} 숫자 아님".format(name, raw),
                                                status_code=422)
         mv = (meta or {}).get("min_valid", 0.0)
-        if not (v > mv):
+        if not math.isfinite(v) or not (v > mv):
             return None, PlainTextResponse(
-                "{}={} 무효 — > {} 필요 (이슈 #11 E5)".format(name, v, mv), status_code=422)
+                "{}={} 무효 — finite·> {} 필요 (이슈 #11 E5/#14 §8)".format(name, v, mv),
+                status_code=422)
         p[name] = v
     return p, None
+
+
+def _feas_input_error(hbm_kv, cap_lim_pf, alphas, lr, mu_bar, mu_rule, iters):
+    """신규 optimizer 수치 입력 검증 (#14 §8) — 위반 시 메시지 반환(422용)."""
+    for name, v, kind in (("hbm_kv", hbm_kv, "pos"), ("cap_lim_pf", cap_lim_pf, "pos"),
+                          ("lr", lr, "pos"), ("alpha_rule", alphas[0], "nn"),
+                          ("alpha_soa", alphas[1], "nn"), ("alpha_spec", alphas[2], "nn"),
+                          ("mu_bar", mu_bar, "nn"), ("mu_rule", mu_rule, "nn")):
+        if not math.isfinite(v):
+            return "{}={} — finite 필요".format(name, v)
+        if kind == "pos" and v <= 0:
+            return "{}={} — > 0 필요".format(name, v)
+        if kind == "nn" and v < 0:
+            return "{}={} — ≥ 0 필요".format(name, v)
+    if alphas[0] == alphas[1] == alphas[2] == 0:
+        return "alpha 전부 0 — objective가 비어 있음"
+    if not (1 <= iters <= 200):
+        return "iters∈[1,200] 필요"
+    return None
 
 
 @app.get(PREFIX + "/api/params")
@@ -901,8 +922,10 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
     from server.netlist import extract_netlist
     if corner not in ("worst", "best"):
         return PlainTextResponse("corner must be worst|best", status_code=422)
-    if not (1 <= iters <= 200):
-        return PlainTextResponse("iters∈[1,200] 필요", status_code=422)
+    verr = _feas_input_error(hbm_kv, cap_lim_pf, (alpha_rule, alpha_soa, alpha_spec),
+                             lr, mu_bar, mu_rule, iters)
+    if verr:
+        return PlainTextResponse(verr, status_code=422)
     layout = load_layout()[0]
     reg = _params_registry(extract_netlist(layout))
     q = dict(request.query_params)
@@ -917,6 +940,10 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
         try:
             if lo is not None and hi is not None:
                 windows[r["name"]] = (float(lo), float(hi))
+                if not (math.isfinite(windows[r["name"]][0])
+                        and math.isfinite(windows[r["name"]][1])):
+                    return PlainTextResponse("{} 창 finite 필요".format(r["name"]),
+                                             status_code=422)
         except ValueError:
             return PlainTextResponse("{} 창 숫자 아님".format(r["name"]), status_code=422)
     if freeze is None:

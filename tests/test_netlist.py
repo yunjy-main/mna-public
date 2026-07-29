@@ -736,7 +736,7 @@ ev0f = evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0}
                           "worst", "IO", "VSS", _ispec, 5e-12, windows=_win, n=500)
 chk("S1 평가: 스키마(solver/constraints/losses/feasible/usages)",
     set(ev0f) >= {"solver", "constraints", "losses", "feasible", "usages"}
-    and set(ev0f["losses"]) == {"rule", "soa", "spec", "total"}
+    and set(ev0f["losses"]) >= {"rule", "soa", "spec", "total", "constraint_total"}
     and {c["category"] for c in ev0f["constraints"]["soa"]} == {"soa"}, "")
 chk("S1 평가: 초기 설계 — SOA만 FAIL (loss_rule=loss_spec=0)",
     ev0f["losses"]["soa"] > 0 and ev0f["losses"]["rule"] == 0.0
@@ -812,7 +812,8 @@ chk("S6 opt: adjoint(기본)로 W 단독 PASS — FD 경로와 동일 결말",
     and 11.5 < r_adj["best_feasible"]["W"] <= 12.0 + 1e-9,
     "W={} status={}".format((r_adj.get("best_feasible") or {}).get("W"), r_adj["status"]))
 chk("S6 opt: freeze 변수는 gradient에서 제외",
-    all(set(h["gradient"]) == {"W"} for h in r_adj["history"] if h.get("gradient")), "")
+    all(set(h["gradient"]["total"]) == {"W"} for h in r_adj["history"]
+        if h.get("gradient")), "")
 
 # 17) 실행 자동 기록 (사용자 지시 2026-07-29): query+응답 아티팩트 저장 + run_file echo
 from server.main import _save_opt_run, RUNS_DIR  # noqa: E402
@@ -937,6 +938,39 @@ try:
     chk("#14 S3: 미지 policy 거부", False, "예외 없음")
 except ValueError:
     chk("#14 S3: 미지 policy 거부", True, "")
+
+# 21) #14 S4 — 응답 의미론: pass 분해·barrier/objective 분리·API 검증
+from server.main import _feas_input_error  # noqa: E402
+
+ev_spec = evaluate_candidate(nl, {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0},
+                             "worst", "IO", "VSS", _ispec, 0.4e-12, windows=_win, n=500)
+chk("#14 S4: spec-only FAIL — pass 분해·soa_pass는 SOA만 의미",
+    ev_spec["pass"]["spec"] is False and ev_spec["pass"]["soa"] is True
+    and ev_spec["pass"]["rule"] is True and ev_spec["pass"]["all"] is False
+    and ev_spec["feasible"] is False, str(ev_spec["pass"]))
+chk("#14 S4: rule-only 위반의 pass 분해", evRf["pass"]["rule"] is False, "")
+chk("#14 S4: losses에 constraint_total 별칭", evWf["losses"]["constraint_total"]
+    == evWf["losses"]["total"], "")
+r_bar = optimize_feas(DEFAULT_LAYOUT, iters=2, freeze=("L", "x1", "x2"), barrier="log")
+h_bar = r_bar["history"][-1]
+chk("#14 S4: barrier=log — objective=constraint+barrier·gradient 분리 기록",
+    abs(h_bar["losses"]["objective"]
+        - (h_bar["losses"]["constraint_total"] + h_bar["losses"]["barrier"])) < 2e-6
+    and h_bar["losses"]["barrier"] > 0
+    and set(h_bar["gradient"]) == {"constraint", "barrier", "total"},
+    str(h_bar["losses"]))
+h_off = r_adj["history"][-1]
+chk("#14 S4: barrier=off — barrier loss 정확히 0", h_off["losses"]["barrier"] == 0.0
+    and h_off["losses"]["objective"] == h_off["losses"]["constraint_total"], "")
+for _args, _msg in (((0.0, 5.0, (1, 1, 1), 0.06, 0.01, 20.0, 30), "hbm 0"),
+                    ((1.0, -1.0, (1, 1, 1), 0.06, 0.01, 20.0, 30), "capLim 음수"),
+                    ((1.0, 5.0, (1, -1, 1), 0.06, 0.01, 20.0, 30), "alpha 음수"),
+                    ((1.0, 5.0, (0, 0, 0), 0.06, 0.01, 20.0, 30), "alpha 전부 0"),
+                    ((1.0, 5.0, (1, 1, 1), 0.0, 0.01, 20.0, 30), "lr 0"),
+                    ((float("nan"), 5.0, (1, 1, 1), 0.06, 0.01, 20.0, 30), "NaN")):
+    chk("#14 S4: 입력 검증 거부 — " + _msg, _feas_input_error(*_args) is not None, "")
+chk("#14 S4: 정상 입력 통과", _feas_input_error(1.0, 5.0, (1, 1, 1), 0.06, 0.01, 20.0, 30)
+    is None, "")
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))

@@ -1042,8 +1042,14 @@ function renderOptResult(){
     const SB={'PASS':P('PASS'),'INFEASIBLE':F('INFEASIBLE'),
               'SOLVER_ERROR':F('SOLVER ERROR')}[d.status]||d.status;
     const ls=fn.losses||{};
-    extra='<br>status: '+SB+' · loss_rule '+f(ls.rule,5)+' · loss_SOA '+f(ls.soa,5)
-      +' · loss_spec '+f(ls.spec,5)+' · J_total <b>'+f(ls.total,5)+'</b>'
+    const PF=v=>v?P('PASS'):F('FAIL');
+    extra='<br>status: '+SB
+      +(fn.pass?(' — Rule '+PF(fn.pass.rule)+' / SOA '+PF(fn.pass.soa)
+        +' / Spec '+PF(fn.pass.spec)):'')
+      +'<br>constraint loss '+f(ls.constraint_total!==undefined?ls.constraint_total:ls.total,5)
+      +' (rule '+f(ls.rule,5)+' · SOA '+f(ls.soa,5)+' · spec '+f(ls.spec,5)+')'
+      +(ls.barrier!==undefined?(' · barrier '+f(ls.barrier,5)):'')
+      +' · objective <b>'+f(ls.objective!==undefined?ls.objective:ls.total,5)+'</b>'
       +(d.feasible_policy?(' · policy '+d.feasible_policy
         +(d.secondary_objective_used?' (secondary '+pct(d.secondary_score)+')':'')):'')
       +(d.stopped_on_feasible?' · 조기 종료':'');
@@ -1065,9 +1071,11 @@ function renderOptResult(){
     'HBM '+d.hbm_kv+'kV(±'+f(d.i_spec,2)+'A) · '+d.force+'→'+d.ground+' · corner='+d.corner
     +extra
     +'<br>초기: '+vline(i)+' · worst '+pct(i.worst)
-    +' ('+i.worst_name+') '+(i.soa_pass?P('PASS'):F('FAIL'))
+    +' ('+i.worst_name+') '+((i.feasible!==undefined?i.feasible:i.soa_pass)?P('PASS'):F('FAIL'))
     +'<br>최적: '+vline(fn)+' · worst '+pct(fn.worst)
-    +' ('+fn.worst_name+') '+(fn.soa_pass?P('PASS'):F('FAIL'))+' · cap '+pct(fn.cap_u);
+    +' ('+fn.worst_name+') '
+    +((fn.feasible!==undefined?fn.feasible:fn.soa_pass)?P('PASS'):F('FAIL'))
+    +' · cap '+pct(fn.cap_u);
   const sl=document.getElementById('optIdx');
   sl.max=d.history.length-1;
   sl.value=(d.best_it!==undefined)?d.best_it:d.history.length-1;  // 기본 위치 = 최적해(best)
@@ -1084,10 +1092,13 @@ function renderOptIter(){
     +(isBest?' ★best':'')+'  ('+(d.variables||[]).map(v=>v.key+'='+f(cur[v.key],v.dec)
     +(v.unit||'')+(v.frozen?'(고정)':'')).join(' · ')+' · worst '+pct(cur.worst)
     +(cur.losses?(' · loss r/s/c '+f(cur.losses.rule,4)+'/'+f(cur.losses.soa,4)
-      +'/'+f(cur.losses.spec,4)):'')
-    +(cur.gradient?(' · ∇ '+Object.entries(cur.gradient).map(([k,g])=>k+'='
+      +'/'+f(cur.losses.spec,4)
+      +(cur.losses.barrier?(' · barrier '+f(cur.losses.barrier,4)):'')):'')
+    +((cur.gradient&&(cur.gradient.total||cur.gradient))?(' · ∇ '
+      +Object.entries(cur.gradient.total||cur.gradient).map(([k,g])=>k+'='
       +(+g).toExponential(1)).join(' ')):'')
-    +(cur.feasible!==undefined?(cur.feasible?' · feasible':' · infeasible'):'')+')';
+    +(cur.candidate_status&&cur.candidate_status!=='VALID'?(' · '+cur.candidate_status)
+      :(cur.feasible!==undefined?(cur.feasible?' · feasible':' · infeasible'):''))+')';
   // AS-IS → TO-BE 표 — 절대값(값/한계) 병기 + loss에 쓰인 모든 소자 파라미터 동적 (사용자 지시)
   const t0=h[0], d0=t0.detail||{}, dc=cur.detail||{};
   const u0=t0.usages||{}, uc=cur.usages||{};
