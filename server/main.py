@@ -846,6 +846,28 @@ def analysis_sweep(request: Request, imax: float = 2.0, n: int = 21,
 
 _OPT_PROG = {"done": 0, "total": 0}  # MNA optimizer 실시간 진행률 (sweep과 동일 패턴)
 
+RUNS_DIR = os.path.join(ROOT, "artifacts", "optimizer_runs")
+
+
+def _save_opt_run(kind, query, result):
+    """optimizer 실행 자동 기록 (사용자 지시 2026-07-29: 앞으로 데이터를 기록) —
+    요청 query+응답 전체를 artifacts/optimizer_runs/에 저장(리뷰·재현 아티팩트).
+    응답에 run_file 경로를 넣어 UI에서 확인 가능. 기록 실패는 API에 영향 없음."""
+    try:
+        import datetime
+        os.makedirs(RUNS_DIR, exist_ok=True)
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        status = result.get("status") or (
+            "PASS" if (result.get("final") or {}).get("soa_pass") else "FAIL")
+        fn = "{}_{}_{}.json".format(ts, kind, status)
+        with open(os.path.join(RUNS_DIR, fn), "w", encoding="utf-8") as fh:
+            json.dump({"kind": kind, "query": dict(query), "saved_at": ts,
+                       "response": result}, fh, ensure_ascii=False)
+        result["run_file"] = "artifacts/optimizer_runs/" + fn
+    except OSError:
+        pass
+    return result
+
 
 @app.get(PREFIX + "/api/optimize/mna/progress")
 def optimize_mna_progress():
@@ -898,14 +920,15 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
     try:
-        return optimize_feas(layout, corner=corner, force=force, ground=ground,
-                             hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
-                             windows=windows,
-                             alphas=(alpha_rule, alpha_soa, alpha_spec),
-                             barrier=barrier, mu_bar=mu_bar, mu_rule=mu_rule,
-                             lr=lr, iters=iters, freeze=fz, pset=p,
-                             stop_on_feasible=bool(stop_on_feasible), grad=grad,
-                             progress_cb=_opt_tick)
+        return _save_opt_run("feas", request.query_params, optimize_feas(
+            layout, corner=corner, force=force, ground=ground,
+            hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
+            windows=windows,
+            alphas=(alpha_rule, alpha_soa, alpha_spec),
+            barrier=barrier, mu_bar=mu_bar, mu_rule=mu_rule,
+            lr=lr, iters=iters, freeze=fz, pset=p,
+            stop_on_feasible=bool(stop_on_feasible), grad=grad,
+            progress_cb=_opt_tick))
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 
@@ -956,12 +979,13 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
     _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
     try:
-        return optimize_mna(layout, corner=corner, force=force, ground=ground,
-                            hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
-                            windows=windows, weights=weights,
-                            mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
-                            progress_cb=_opt_tick, freeze=fz, pset=p,
-                            barrier=barrier, mu_bar=mu_bar)
+        return _save_opt_run("legacy", request.query_params, optimize_mna(
+            layout, corner=corner, force=force, ground=ground,
+            hbm_kv=hbm_kv, cap_lim=cap_lim_pf * 1e-12,
+            windows=windows, weights=weights,
+            mu_soa=mu_soa, mu_rule=mu_rule, lr=lr, iters=iters,
+            progress_cb=_opt_tick, freeze=fz, pset=p,
+            barrier=barrier, mu_bar=mu_bar))
     except ValueError as ex:
         return PlainTextResponse(str(ex), status_code=422)
 

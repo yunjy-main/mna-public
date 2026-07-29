@@ -4,6 +4,7 @@
 - net 추출: 기대 net 이름·소속 pin 전수 대조 (회로도 기하가 유일한 원천)
 - 조립·해석: KCL residual, 직렬 경로 전류 보존, 부동 net, Jacobian 대칭
 """
+import json
 import math
 import os
 import sys
@@ -812,6 +813,19 @@ chk("S6 opt: adjoint(기본)로 W 단독 PASS — FD 경로와 동일 결말",
     "W={} status={}".format((r_adj.get("best_feasible") or {}).get("W"), r_adj["status"]))
 chk("S6 opt: freeze 변수는 gradient에서 제외",
     all(set(h["gradient"]) == {"W"} for h in r_adj["history"] if h.get("gradient")), "")
+
+# 17) 실행 자동 기록 (사용자 지시 2026-07-29): query+응답 아티팩트 저장 + run_file echo
+from server.main import _save_opt_run, RUNS_DIR  # noqa: E402
+
+_rr = _save_opt_run("feas", {"iters": "1"}, {"status": "PASS"})
+_saved = os.path.join(os.path.dirname(os.path.dirname(RUNS_DIR)),
+                      _rr.get("run_file", "").replace("/", os.sep))
+chk("실행 기록: 파일 생성 + run_file echo", "run_file" in _rr
+    and os.path.exists(_saved), str(_rr))
+_js = json.load(open(_saved, encoding="utf-8"))
+chk("실행 기록: query·응답 보존", _js["kind"] == "feas" and _js["query"] == {"iters": "1"}
+    and _js["response"]["status"] == "PASS", "")
+os.remove(_saved)  # 테스트 아티팩트는 남기지 않음
 
 if fails:
     print("FAIL: netlist/matrix ({}건)".format(len(fails)))
