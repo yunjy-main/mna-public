@@ -990,8 +990,10 @@ function startMnaOpt(useLegacy){
   let optDone=false;
   const OP=setInterval(()=>{
     fetch('api/optimize/mna/progress').then(r=>r.json()).then(pp=>{
-      if(!optDone&&pp.total) st.textContent='MNA 최적화 중 '+pp.pct.toFixed(0)+'% ('
-        +pp.done+'/'+pp.total+' eval · 유한차분×±spec 전류 solve)…';
+      const lbl=pp.mode==='adjoint'?'MNA ± solve · adjoint ± solve'
+        :'base+섭동 유한차분 MNA solve';  // mode별 정확한 문구 (#14 §10.1)
+      if(!optDone&&pp.total) st.textContent='최적화 중 '+pp.pct.toFixed(0)+'% ('
+        +pp.done+'/'+pp.total+' eval · '+lbl+')…';
     }).catch(()=>{});
   },400);
   // legacy는 별도 엔드포인트 병행 (이슈 #13, 사용자 확정) — barrier=off는 legacy에 없음

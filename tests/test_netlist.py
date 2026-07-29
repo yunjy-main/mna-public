@@ -781,31 +781,64 @@ def _jhat(ps, cap_lim=5e-12):
     return ev["losses"]["total"]
 
 
-def _grad_check(tag, ps, cap_lim=5e-12, tol=1e-2):
+def _central(ps, p, h, cap_lim):
+    pp, pm = dict(ps), dict(ps)
+    pp[p] += h
+    pm[p] -= h
+    return (_jhat(pp, cap_lim) - _jhat(pm, cap_lim)) / (2 * h)
+
+
+def _grad_check(tag, ps, cap_lim=5e-12, atol=1e-6, zero_tol=1e-9):
+    """adjoint vs central FD (#14 §9): abs_err ≤ atol + rtol·max(|adj|,|fd|).
+    step sweep(h, h/2)로 FD 안정성 판정 — 안정=1e-3(smooth), 불안정=1e-2(kink 인접).
+    부호는 양쪽 다 |g|≤zero_tol이 아니면 일치 필수."""
     ev = evaluate_candidate(nl, dict(ps), "worst", "IO", "VSS", _ispec, cap_lim,
                             windows=_win, n=500, keep_aux=True)
     ga = adjoint_gradient(nl, dict(ps), ev, _KEYS, _win, (1.0, 1.0, 1.0), cap_lim,
                           corner="worst", n=500)
     ok, msgs = True, []
     for p in _KEYS:
-        h = 5e-4 * max(1.0, abs(ps[p]))
-        pp, pm = dict(ps), dict(ps)
-        pp[p] += h
-        pm[p] -= h
-        g_fd = (_jhat(pp, cap_lim) - _jhat(pm, cap_lim)) / (2 * h)
-        err = abs(ga[p] - g_fd) / max(1.0, abs(ga[p]), abs(g_fd))
-        sign_ok = (abs(g_fd) < 1e-9) or (ga[p] * g_fd >= 0)
-        if err > tol or not sign_ok:
+        h0 = 5e-4 * max(1.0, abs(ps[p]))
+        fd1 = _central(ps, p, h0, cap_lim)
+        fd2 = _central(ps, p, h0 / 2, cap_lim)
+        stable = abs(fd1 - fd2) <= atol + 1e-2 * max(abs(fd1), abs(fd2))
+        # x1/x2는 실측 pwl 곡선 경로(hybrid 1단계 dI/dx — #13 4.2.D, analytic은 2단계
+        # 후속)라 항상 kink 인접 취급 1e-2; W/L은 해석 스탬프 — smooth 1e-3
+        rtol = 1e-2 if (p in ("x1", "x2") or not stable) else 1e-3
+        g_fd = fd2
+        abs_err = abs(ga[p] - g_fd)
+        lim_err = atol + rtol * max(abs(ga[p]), abs(g_fd))
+        sign_ok = (abs(g_fd) <= zero_tol and abs(ga[p]) <= zero_tol) \
+            or (ga[p] * g_fd >= 0)
+        if abs_err > lim_err or not sign_ok:
             ok = False
-        msgs.append("{}: adj={:.5g} fd={:.5g} err={:.2g}".format(p, ga[p], g_fd, err))
-    chk("S5 gradient check ({}): rel_err≤{}·부호 일치".format(tag, tol), ok,
-        " | ".join(msgs))
+        msgs.append("{}: adj={:.5g} fd={:.5g} err={:.2g}/{:.2g}{}".format(
+            p, ga[p], g_fd, abs_err, lim_err, "" if stable else "(kink)"))
+    chk("S5 gradient check ({}): atol+rtol·부호".format(tag), ok, " | ".join(msgs))
 
 
 _grad_check("SOA 활성 — 초기 설계", {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0})
-_grad_check("rule 활성 — x1>max", {"x1": 4.2, "x2": 1415.232, "L": 350.0, "W": 12.0})
+_grad_check("rule 활성 — x1>max", {"x1": 4.2, "x2": 1415.232, "L": 350.0, "W": 11.5})
 _grad_check("spec 활성 — capLim 0.4pF",
             {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 5.0}, cap_lim=0.4e-12)
+_grad_check("device I/V SOA 활성 — x1 축소", {"x1": 0.8, "x2": 1415.232, "L": 350.0, "W": 11.5})
+_grad_check("rule 경계 바로 안 — 비활성", {"x1": 3.8399, "x2": 1415.232, "L": 350.0, "W": 5.0})
+_grad_check("rule 경계 바로 밖 — 활성", {"x1": 3.8401, "x2": 1415.232, "L": 350.0, "W": 5.0})
+_grad_check("rule+SOA+spec 동시 활성",
+            {"x1": 4.2, "x2": 1415.232, "L": 350.0, "W": 5.0}, cap_lim=0.4e-12)
+# 경계 kink 좌우 분리 (#14 §9.3): W=12(rule max 경계) — adjoint는 내부(좌측) 분지,
+# 우측(위반) 분지는 양수 — one-sided behavior 명시 기록
+ps_k = {"x1": 2.56, "x2": 1415.232, "L": 350.0, "W": 12.0}
+ev_k = evaluate_candidate(nl, dict(ps_k), "worst", "IO", "VSS", _ispec, 5e-12,
+                          windows=_win, n=500, keep_aux=True)
+ga_k = adjoint_gradient(nl, dict(ps_k), ev_k, _KEYS, _win, (1.0, 1.0, 1.0), 5e-12,
+                        corner="worst", n=500)
+_hk = 6e-3
+g_back = (_jhat(ps_k) - _jhat({**ps_k, "W": 12.0 - _hk})) / _hk
+g_fwd = (_jhat({**ps_k, "W": 12.0 + _hk}) - _jhat(ps_k)) / _hk
+chk("S5 kink: 경계에서 adjoint=좌측(내부) 미분, 우측 분지와 분리",
+    abs(ga_k["W"] - g_back) <= 1e-6 + 1e-2 * abs(g_back) and g_fwd > g_back + 1e-6,
+    "adj={:.3g} back={:.3g} fwd={:.3g}".format(ga_k["W"], g_back, g_fwd))
 r_adj = optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"), grad="adjoint")
 chk("S6 opt: adjoint(기본)로 W 단독 PASS — FD 경로와 동일 결말",
     r_adj["status"] == "PASS" and r_adj["grad"] == "adjoint"

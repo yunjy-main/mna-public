@@ -898,6 +898,7 @@ def _save_opt_run(kind, query, result):
 def optimize_mna_progress():
     t = _OPT_PROG["total"]
     return {"done": _OPT_PROG["done"], "total": t,
+            "mode": _OPT_PROG.get("mode"),  # adjoint|fd|fd-legacy (#14 §10.1)
             "pct": (100.0 * _OPT_PROG["done"] / t) if t else 0.0}
 
 
@@ -950,7 +951,7 @@ def optimize_feas_api(request: Request, corner: str = "worst", force: str = "IO"
         fz = tuple(r["name"] for r in reg if r["supported"] and r["freeze_default"])
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
-    _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
+    _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, grad
     try:
         return _save_opt_run("feas", request.query_params, optimize_feas(
             layout, corner=corner, force=force, ground=ground,
@@ -1010,7 +1011,7 @@ def optimize_mna_api(request: Request, corner: str = "worst", force: str = "IO",
         fz = tuple(r["name"] for r in reg if r["supported"] and r["freeze_default"])
     else:
         fz = tuple(s for s in (t.strip() for t in freeze.split(",")) if s)
-    _OPT_PROG["done"], _OPT_PROG["total"] = 0, 0
+    _OPT_PROG["done"], _OPT_PROG["total"], _OPT_PROG["mode"] = 0, 0, "fd-legacy"
     try:
         return _save_opt_run("legacy", request.query_params, optimize_mna(
             layout, corner=corner, force=force, ground=ground,

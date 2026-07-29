@@ -14,7 +14,9 @@ legacy(opt_mna.py: cost+softplus+barrier)와 별도 엔드포인트로 병행한
 - best_feasible / best_infeasible 분리, 비수렴은 solver status로 격리 (usage 혼합 금지)
 - 최종 PASS = 모든 원래 constraint의 g_j ≤ 0 (objective 크기로 판정하지 않음)
 
-gradient: grad="fd"(S1, forward FD — S5 대조 oracle) → S3에서 adjoint 추가 예정.
+gradient 기본 = adjoint(±케이스당 전치 선형해 1회, central FD oracle 대조 검증);
+grad="fd"는 검증 oracle 겸 보존 옵션 (#14 §10.2). candidate 상태 3분법
+(VALID|SOLVER_ERROR|MONITOR_ERROR)·rollback/retry·feasible_policy는 이슈 #14.
 변수명 주의: L은 metal length — loss는 loss_*/J_obj로만 표기 (이슈 #13 원칙).
 """
 import math
