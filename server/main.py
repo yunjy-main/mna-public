@@ -899,7 +899,8 @@ def optimize_mna_progress():
     t = _OPT_PROG["total"]
     return {"done": _OPT_PROG["done"], "total": t,
             "mode": _OPT_PROG.get("mode"),  # adjoint|fd|fd-legacy (#14 §10.1)
-            "pct": (100.0 * _OPT_PROG["done"] / t) if t else 0.0}
+            # pool 정밀 재평가(#15 §4)로 추정 total을 넘을 수 있어 100% 클램프
+            "pct": min(100.0, 100.0 * _OPT_PROG["done"] / t) if t else 0.0}
 
 
 def _opt_tick(done, total):

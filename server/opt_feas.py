@@ -406,8 +406,11 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     for i, v in enumerate(var_spec):
         if v["lo"] is not None:
             z[i] = min(1.2, max(-0.2, (p0[v["key"]] - v["lo"]) / (v["hi"] - v["lo"])))
-    # candidate 통일 스키마 (이슈 #14 4.2): {"it","z","ev","score"} — 상태별 3분리(§2.3)
-    best_feasible = None
+    # candidate 통일 스키마 (이슈 #14 4.2): {"it","z","ev","score"} — 상태별 3분리(§2.3).
+    # feasible은 단일 best가 아니라 상위 K pool (#15 §4.2 — 정밀 재평가 fallback용)
+    MAX_FEASIBLE_CANDIDATES = 10
+    DEDUP_Z_TOL = 1e-6
+    feasible_pool = []  # policy score 오름차순 정렬 유지
     best_infeasible = None
     best_solver_error = None
     history = []
@@ -444,7 +447,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
         return {sec: {k: round(v, 6) for k, v in m.items()} for sec, m in gd.items()}
 
     def _consider(it_now, z_now, ev):
-        nonlocal best_feasible, best_infeasible, best_solver_error
+        nonlocal best_infeasible, best_solver_error
         if ev["candidate_status"] != "VALID":
             # solver/monitor error는 physical infeasible과 분리 저장 (#14 §2.3)
             sc = (0 if ev["solver_valid"] else 1,
@@ -455,20 +458,27 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             return
         if ev["feasible"]:
             # feasible 간 우열 = 명시 policy (#14 §5): first는 최초 보존,
-            # max_margin은 max usage 최소(정밀 재판정 뒤집힘 위험 최소),
-            # min_residual은 solver residual 최소
+            # max_margin은 SOA+spec max usage 최소(#15 §6 — rule은 PASS gate),
+            # min_residual은 solver residual 최소. 상위 K pool 유지 (#15 §4.2)
             if feasible_policy == "first":
-                if best_feasible is None:
-                    best_feasible = {"it": it_now, "z": list(z_now), "ev": ev,
-                                     "score": (it_now,)}
+                if not feasible_pool:
+                    feasible_pool.append({"it": it_now, "z": list(z_now), "ev": ev,
+                                          "score": (it_now,)})
                 return
             if feasible_policy == "min_residual":
                 sc = (max(s["residual"] for s in ev["solver"].values()),)
             else:
                 sc = (max([u for u in ev["usages"].values()] or [0.0]),
                       max(s["residual"] for s in ev["solver"].values()))
-            if best_feasible is None or sc < best_feasible["score"]:
-                best_feasible = {"it": it_now, "z": list(z_now), "ev": ev, "score": sc}
+            for c in feasible_pool:  # 근접 PSET dedup — 더 나은 score만 승격
+                if max(abs(a - b) for a, b in zip(c["z"], z_now)) < DEDUP_Z_TOL:
+                    if sc < c["score"]:
+                        c.update({"it": it_now, "z": list(z_now), "ev": ev, "score": sc})
+                        feasible_pool.sort(key=lambda x: x["score"])
+                    return
+            feasible_pool.append({"it": it_now, "z": list(z_now), "ev": ev, "score": sc})
+            feasible_pool.sort(key=lambda x: x["score"])
+            del feasible_pool[MAX_FEASIBLE_CANDIDATES:]
         else:
             sc = _violation_score(ev)
             if best_infeasible is None or sc < best_infeasible["score"]:
@@ -482,7 +492,7 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
     it = 0
     while not solver_terminated and it < iters:
         it += 1
-        if feasible_policy == "first" and best_feasible is not None:
+        if feasible_policy == "first" and feasible_pool:
             stopped_feasible = True  # first policy = 자동 조기 종료 (#14 §5.2)
             break
         # gradient 기준점 — 수락 로직이 z를 항상 VALID로 유지 (warm-start 변화 대비 방어)
@@ -577,12 +587,26 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
                 "soa_pass": ev["pass"]["soa"],
                 "loss": ev["losses"]["total"],
                 **{k: pv[k] for k in keys}}
-    valid_seen = (best_feasible is not None) or (best_infeasible is not None)
-    fin_feas = _precise(best_feasible)
+    valid_seen = bool(feasible_pool) or (best_infeasible is not None)
+    # feasible pool을 score 순으로 정밀 재평가 — 1위가 뒤집혀도 후순위 검증 (#15 §4.3)
+    fin_feas = None
+    rejected_its = []
+    tested = 0
+    for cand in feasible_pool:
+        tested += 1
+        pr = _precise(cand)
+        if pr["feasible"]:
+            fin_feas = pr
+            break
+        rejected_its.append(cand["it"])
+        fin_feas_rejected = pr  # 전부 뒤집힌 경우 infeasible fallback 후보
+    precise_validation = {"tested": tested, "pool_size": len(feasible_pool),
+                          "accepted_source_it": (fin_feas["source_it"]
+                                                 if fin_feas is not None else None),
+                          "rejected_source_iterations": rejected_its}
     fin_infeas = _precise(best_infeasible)
-    if fin_feas is not None and not fin_feas["feasible"]:
-        fin_infeas = fin_infeas if fin_infeas is not None else fin_feas
-        fin_feas = None  # 정밀 재판정에서 뒤집힘 — PASS로 보고하지 않는다
+    if fin_feas is None and rejected_its and fin_infeas is None:
+        fin_infeas = fin_feas_rejected  # 뒤집힌 후보라도 infeasible 보고에는 사용
     if not valid_seen:
         status = "SOLVER_ERROR"  # VALID candidate가 한 번도 없음 (#14 §2.3)
     elif fin_feas is not None:
@@ -603,10 +627,11 @@ def optimize_feas(layout, corner="worst", force="IO", ground="VSS",
             # selection policy 명시 (#14 §5.3)
             "feasible_policy": feasible_policy,
             "secondary_objective_used": (feasible_policy != "first"
-                                         and best_feasible is not None),
-            "secondary_score": (best_feasible["score"][0]
-                                if (feasible_policy != "first"
-                                    and best_feasible is not None) else None),
+                                         and bool(feasible_pool)),
+            "secondary_score": (feasible_pool[0]["score"][0]
+                                if (feasible_policy != "first" and feasible_pool)
+                                else None),
+            "precise_validation": precise_validation,
             "history": history,
             # legacy 프론트 호환 (전환기 유지 — 이슈 #13 4.4)
             "initial": history[0] if history else None,

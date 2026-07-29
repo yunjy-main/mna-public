@@ -994,6 +994,51 @@ chk("#15 S2: 혼합 바인딩 cap gradient — adjoint dJ/dx2 = FD (clamp contri
     abs(ga_c3["x2"] - _fd_x2) <= 1e-6 + 1e-2 * max(abs(ga_c3["x2"]), abs(_fd_x2))
     and abs(ga_c3["x2"]) > 1e-9, "adj={:.4g} fd={:.4g}".format(ga_c3["x2"], _fd_x2))
 
+# #15 S3 — 정밀 재평가 fallback pool: 1위 뒤집혀도 후순위 검증
+_orig_evalc = OF.evaluate_candidate
+
+
+def _flip_precise(n_flips):
+    state = {"n": 0}
+
+    def wrap(*a, **kw):
+        ev = _orig_evalc(*a, **kw)
+        if kw.get("n") == M.N and ev["feasible"] and state["n"] < n_flips:
+            state["n"] += 1
+            ev = dict(ev)
+            ev["feasible"] = False
+            ev["pass"] = dict(ev["pass"], all=False)
+        return ev
+    return wrap
+
+
+try:
+    OF.evaluate_candidate = _flip_precise(1)  # 정밀 1위만 뒤집기
+    r_fb = OF.optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"))
+    pv_fb = r_fb["precise_validation"]
+    chk("#15 S3: 1위 정밀 FAIL → 2위 후보로 PASS (fallback)",
+        r_fb["status"] == "PASS" and pv_fb["tested"] == 2
+        and len(pv_fb["rejected_source_iterations"]) == 1
+        and pv_fb["accepted_source_it"] == r_fb["best_it"]
+        and r_fb["best_it"] != pv_fb["rejected_source_iterations"][0],
+        str(pv_fb))
+    chk("#15 S3: fallback 후에도 final/history 일치",
+        all(abs(r_fb["history"][r_fb["best_it"]][k] - r_fb["final"][k]) < 1e-9
+            for k in ("x1", "x2", "W", "L")), "")
+    OF.evaluate_candidate = _flip_precise(99)  # 전 pool 뒤집기
+    r_all = OF.optimize_feas(DEFAULT_LAYOUT, iters=25, freeze=("L", "x1", "x2"))
+    chk("#15 S3: pool 전부 정밀 FAIL → INFEASIBLE (PASS 포기)",
+        r_all["status"] == "INFEASIBLE"
+        and r_all["precise_validation"]["tested"]
+        == r_all["precise_validation"]["pool_size"]
+        and r_all["precise_validation"]["accepted_source_it"] is None,
+        str(r_all["precise_validation"]))
+finally:
+    OF.evaluate_candidate = _orig_evalc
+chk("#15 S3: pool dedup·상한 — 1 ≤ pool ≤ 10",
+    1 <= r_fb["precise_validation"]["pool_size"] <= 10,
+    str(r_fb["precise_validation"]["pool_size"]))
+
 # 20) #14 S3 — feasible_policy 명시 + best_it/final 일치
 r_mm = r_adj  # 기본 policy=max_margin 실행 재사용 (§16)
 chk("#14 S3: 기본 policy=max_margin — 완주·secondary 명시",
