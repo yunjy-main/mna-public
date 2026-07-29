@@ -710,8 +710,10 @@ dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   if(!s.length){el.className='hint';el.textContent=d.key+': monitor invalid (unresolved / non-convergence)';return;}
   // SOA 한계는 양/음 모두 표시 (단자쌍 순서 반전 동치 — 사용자 지시.
   // 비대칭 값(oxide inv +2.9 / acc −3.3)은 실측이 명시한 예외)
+  // 두 SOA 한계선의 라벨은 같은 baseline을 쓰므로 x가 인접하면 겹친다(2.9 vs 3.1).
+  // 수직 위치는 유지한 채(사용자 지시 2026-07-29) 라벨을 서로 반대쪽 한계선에 붙여 분리.
   const vl=[], g=lim('VGS'), t=lim('VDS');
-  if(g) vl.push({x:g.max,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max},{x:g.min,color:CB.gray});
+  if(g) vl.push({x:g.max,color:CB.gray},{x:g.min,color:CB.gray,label:'VGS/VGD '+g.min+'~'+g.max});
   if(t) vl.push({x:t.max,color:CB.orange,label:'VDS ±'+t.max},{x:t.min,color:CB.orange});
   const m0=dvMon(d,c,c.idx);
   const ffl=[];
@@ -743,7 +745,7 @@ dvRegister({host:'ssMon', applies:d=>d.kind==='sourcei', render:(el,d,c)=>{
 // (소자별 SOA map은 I-V device가 전 기능 포함하므로 삭제 — 사용자 지시 2026-07-28)
 dvRegister({host:'ssMon', applies:d=>d.role==='soa_monitor', render:(el,d,c)=>{
   if(!DATA){el.className='hint';
-    el.textContent=d.key+' (V(OUT), I_v): analytic probe map — "계산" 실행 시 표시';return;}
+    el.textContent=d.key+' (V(OUT), I_v): analytic probe map — run §5 to show';return;}
   const s=DATA.sweep, p=DATA.settings;
   const k=Math.max(0,Math.min(s.length-1,Math.round(c.iNow/p.imax*(s.length-1))));
   const fin=s[k].final;
@@ -997,6 +999,7 @@ function renderTable(){
 // ---------- wiring ----------
 // ---------- §2: MNA 기반 optimizer — loss 평가기 = schematic MNA (궁극 목표) ----------
 let OPT=null;
+let LIVE_ROWS=null;  // 마지막 live 피드 — 슬라이더 이동 시 상단 6종 재렌더에 재사용
 // 실시간 그래프 6종 (사용자 지시 2026-07-29): loss·variables·worst SOA·cap spec·R metal·판정
 function renderLiveCharts(rows){
   const host=document.getElementById('optLive');
@@ -1008,11 +1011,29 @@ function renderLiveCharts(rows){
     host.dataset.init='1';
   }
   const its=rows.map(r=>r.it), S=k=>rows.map(r=>r[k]!=null?r[k]:null);
+  LIVE_ROWS=rows;
+  // 이동식 점 = 슬라이더 iteration(실행 중에는 최신), best 점 = 연한 큰 점
+  // (사용자 지시 2026-07-29 — §4 상단 6종에도 동일 적용)
+  const oi=document.getElementById('optIdx');
+  let curIt=rows[rows.length-1].it, bestIt=null;
+  if(OPT&&OPT.history&&oi&&!oi.disabled){
+    const hh=OPT.history, ix=Math.min(hh.length-1,Math.max(0,+oi.value||0));
+    if(hh[ix]) curIt=hh[ix].it;
+    if(OPT.best_it!==undefined&&hh[OPT.best_it]) bestIt=hh[OPT.best_it].it;
+  }
+  const at=it=>rows.find(r=>r.it===it)||null;
+  const rC=at(curIt)||rows[rows.length-1], rB=bestIt!=null?at(bestIt):null;
+  const P=(yOf,c)=>{const a=[];
+    if(rB&&yOf(rB)!=null) a.push({x:rB.it,y:yOf(rB),r:6.5,color:c+'59'});
+    if(rC&&yOf(rC)!=null) a.push({x:rC.it,y:yOf(rC),r:4,color:c});
+    return a;};
   lineChart(document.getElementById('lvLoss'),{title:'loss (live)',w:380,h:168,
     series:[{x:its,y:S('loss_rule'),color:CB.gray,label:'rule'},
             {x:its,y:S('loss_soa'),color:CB.red,label:'SOA'},
             {x:its,y:S('loss_spec'),color:'#00796b',label:'spec'},
-            {x:its,y:S('objective'),color:CB.blue,label:'objective'}],xlabel:'iteration'});
+            {x:its,y:S('objective'),color:CB.blue,label:'objective'}],
+    points:P(r=>r.loss_rule,CB.gray).concat(P(r=>r.loss_soa,CB.red),
+      P(r=>r.loss_spec,'#00796b'),P(r=>r.objective,CB.blue)),xlabel:'iteration'});
   const sup=((SS&&SS.params)||[]).filter(q=>q.supported&&q.rule_lo!=null);
   lineChart(document.getElementById('lvVar'),{title:'variables (window-normalized z)',w:380,h:168,
     series:sup.map((q,i)=>({x:its,
@@ -1020,15 +1041,21 @@ function renderLiveCharts(rows){
         ?(r.vars[q.name]-q.rule_lo)/((q.rule_hi-q.rule_lo)||1):null),
       color:[CB.blue,'#00796b',CB.orange,CB.red][i%4],
       label:q.name+(FZ[q.name]?' (frozen)':'')})),
-    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],xlabel:'iteration'});
+    hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],
+    points:sup.flatMap((q,i)=>{const z=r=>(r.vars&&r.vars[q.name]!=null)
+      ?(r.vars[q.name]-q.rule_lo)/((q.rule_hi-q.rule_lo)||1):null;
+      return P(z,[CB.blue,'#00796b',CB.orange,CB.red][i%4]);}),xlabel:'iteration'});
   lineChart(document.getElementById('lvWorst'),{title:'worst SOA usage',w:380,h:168,
     series:[{x:its,y:rows.map(r=>r.worst!=null?r.worst*100:null),color:CB.red,label:'worst %'}],
-    hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
+    hlines:[{y:100,color:CB.red,label:'100%'}],
+    points:P(r=>r.worst!=null?r.worst*100:null,CB.red),xlabel:'iteration'});
   lineChart(document.getElementById('lvCap'),{title:'capacitance spec usage',w:380,h:168,
     series:[{x:its,y:rows.map(r=>r.cap_u!=null?r.cap_u*100:null),color:'#00796b',label:'cap %'}],
-    hlines:[{y:100,color:CB.red,label:'100%'}],xlabel:'iteration'});
+    hlines:[{y:100,color:CB.red,label:'100%'}],
+    points:P(r=>r.cap_u!=null?r.cap_u*100:null,'#00796b'),xlabel:'iteration'});
   lineChart(document.getElementById('lvR'),{title:'R metal (rdd_r(L,W))',w:380,h:168,
-    series:[{x:its,y:S('r_metal'),color:'#6a3fb5',label:'R [Ω]'}],xlabel:'iteration'});
+    series:[{x:its,y:S('r_metal'),color:'#6a3fb5',label:'R [Ω]'}],
+    points:P(r=>r.r_metal,'#6a3fb5'),xlabel:'iteration'});
   // 판정 타임라인 (사용자 지시 2026-07-29): lane별 rule/soa/spec/total — 초록=PASS·빨강=FAIL.
   // total은 server pass.all(전 category 동시 PASS)이 정본 — 클라이언트 재판정 금지.
   // 비수렴(SOLVER/MONITOR_ERROR) row는 SOA 미평가라 pass가 공허 — 회색=판정 무효로 구분.
@@ -1041,8 +1068,10 @@ function renderLiveCharts(rows){
   if(withPass.length)
     lineChart(document.getElementById('lvPass'),{title:'verdict (green=PASS · red=FAIL · gray=invalid)',w:380,h:168,
       hlines:lanes.map(([k,y])=>({y,color:'#aeb7c2',label:k})),
-      points:withPass.flatMap(r=>lanes.map(([k,y])=>({x:r.it,y,r:k==='total'?3.6:2.8,
-        color:dotC(r,k)}))),
+      // best는 연한 큰 점, 현재(이동식)는 살짝 큰 점 — 판정 색은 유지
+      points:withPass.flatMap(r=>lanes.map(([k,y])=>({x:r.it,y,
+        r:r.it===bestIt?6.5:(r.it===curIt?4.6:(k==='total'?3.6:2.8)),
+        color:dotC(r,k)+(r.it===bestIt?'59':'')}))),
       xlabel:'iteration'});
   else document.getElementById('lvPass').innerHTML='';
 }
@@ -1294,9 +1323,15 @@ function renderOptIter(){
     ost.style.color=cur.worst<=1?'#0a7d38':'#b3261e';
   }
   const vl=[{x:cur.it}];
+  const bh=(d.best_it!==undefined)?h[d.best_it]:null;
+  // 슬라이더 연동 점 = 해당 line 색, best 점 = 같은 색 연하게(알파)·더 크게
+  // (사용자 지시 2026-07-29). best를 먼저 그려 이동식 점이 위에 오게 한다.
+  const MPT=(x,y,c)=>({x:x,y:y,r:4,color:c});
+  const BPT=(x,y,c)=>({x:x,y:y,r:6.5,color:c+'59'});
+  const pts=(yOf,c)=>(bh?[BPT(bh.it,yOf(bh),c)]:[]).concat([MPT(cur.it,yOf(cur),c)]);
   lineChart(document.getElementById('optLoss'),{title:'loss',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.loss),color:CB.blue,label:'loss'}],
-    points:[{x:cur.it,y:cur.loss,r:4,color:CB.red}],vlines:vl,xlabel:'iter'});
+    points:pts(r=>r.loss,CB.blue),vlines:vl,xlabel:'iter'});
   // 설계변수 곡선은 서버 variables descriptor로 동적 생성 (하드코딩 금지 — W 누락 회귀
   // 수정 2026-07-29). 창 정규화 z로 서로 다른 스케일을 한 축에 겹친다 (§4 live와 동일 규약)
   const VC=[CB.blue,'#00796b',CB.orange,CB.red,CB.purple,CB.gold];
@@ -1306,14 +1341,16 @@ function renderOptIter(){
       y:h.map(r=>r[v.key]!=null?(r[v.key]-v.lo)/(v.hi-v.lo):null),
       color:VC[i%VC.length],label:v.key+(v.frozen?' (frozen)':'')})),
     hlines:[{y:0,color:CB.gray},{y:1,color:CB.gray,label:'window'}],
+    points:vsup.flatMap((v,i)=>{const z=r=>r[v.key]!=null?(r[v.key]-v.lo)/(v.hi-v.lo):null;
+      return pts(z,VC[i%VC.length]);}),
     vlines:vl,xlabel:'iter'});
-  const bh=(d.best_it!==undefined)?h[d.best_it]:null;
   lineChart(document.getElementById('optWorst'),{title:'worst SOA usage (★=best)',w:380,h:150,
     series:[{x:h.map(r=>r.it),y:h.map(r=>r.worst),color:CB.red,label:'worst u'}],
     hlines:[{y:1,color:CB.red,label:'SOA limit'}],
-    points:[{x:cur.it,y:cur.worst,r:4,color:CB.red}]
-      .concat(bh?[{x:bh.it,y:bh.worst,r:4.5,color:CB.gold}]:[]),
+    points:pts(r=>r.worst,CB.red),
     vlines:vl,xlabel:'iter'});
+  // 상단 live 6종도 같은 슬라이더 iteration을 따라간다 (사용자 지시 2026-07-29)
+  if(LIVE_ROWS) renderLiveCharts(LIVE_ROWS);
   // 소자별 radar — ghost=초기(iter 0), 실선=현재 iteration (소자 리스트는 usage 키에서 동적)
   const box=document.getElementById('optRadar'); box.innerHTML='';
   const us=cur.usages||{}, us0=h[0].usages||{};

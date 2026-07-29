@@ -19,6 +19,9 @@ window.MNA = (function () {
   // h = lineChart/soaMap viewBox 높이 배율 — viewBox라 내부 그래프가 좌표계째 확대.
   // radar는 방사형(폭 구속)이라 높이 배율 비적용, gauge는 HTML이라 페이지 배율이 담당.
   const SZ = { font: 1, h: 1 };
+  // 기본 차트 높이 배율 — 높이 +버튼 10회(×2.0)를 기본으로 (사용자 지시 2026-07-29).
+  // SZ.h는 이 기본 위에 곱해지므로 0(리셋)은 이 높이로 돌아온다.
+  const H_BASE = 2.0;
   const REG = new Map();  // el → {fn, args}: 마지막 렌더 재현용 (배율 변경 시 전체 재렌더)
   function remember(el, fn, args) {
     if (REG.size > 400) REG.forEach((v, k) => { if (!document.contains(k)) REG.delete(k); });
@@ -37,6 +40,56 @@ window.MNA = (function () {
       s = s.replace(/font-size="([0-9.]+)"/g,
         (m, v) => 'font-size="' + (parseFloat(v) * SZ.font).toFixed(2) + '"');
     el.innerHTML = s + '</svg>';
+    spreadAnn(el.firstChild);   // 주석 라벨 겹침 해소(가로 이동만)
+    clampText(el.firstChild);   // 그 뒤 viewBox 안으로 최종 클램프
+  }
+  // 한계선 주석(hline/vline label)은 같은 baseline을 공유해 x가 가까우면 겹친다.
+  // 세로 위치는 유지하라는 요구(2026-07-29)에 따라 가로로만 밀어 분리한다.
+  function spreadAnn(svg) {
+    if (!svg || !svg.querySelectorAll) return;
+    const p = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    if (p.length < 4) return;
+    const lo = p[0] + 1, hi = p[0] + p[2] - 1;
+    const mv = (it, dx) => {
+      it.el.setAttribute('x', (parseFloat(it.el.getAttribute('x') || 0) + dx).toFixed(2));
+      it.x += dx;
+    };
+    const items = [];
+    svg.querySelectorAll('text[data-ann]').forEach(t => {
+      let b; try { b = t.getBBox(); } catch (e) { return; }
+      if (b && b.width) items.push({ el: t, x: b.x, y: b.y, w: b.width, h: b.height });
+    });
+    items.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < items.length; i++) {
+      const a = items[i - 1], c = items[i];
+      if (Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y) <= 1) continue;  // 다른 행
+      const need = (a.x + a.w + 3) - c.x;
+      if (need <= 0) continue;
+      if (c.x + c.w + need <= hi) mv(c, need);        // 뒤 라벨을 오른쪽으로
+      else {                                          // 자리가 없으면 앞 라벨을 왼쪽으로
+        const back = Math.min(need, a.x - lo);
+        if (back > 0) mv(a, -back);
+        if (need - back > 0) mv(c, need - back);
+      }
+    }
+  }
+  // 글자 폭은 폰트·글리프마다 달라 추정이 빗나간다(예: 1글자 라벨이 예상의 2배).
+  // SVG는 overflow:hidden이라 viewBox를 넘으면 잘리므로, 렌더 후 실측 bbox로
+  // 가로 위치를 안으로 밀어 넣는다 — 여백을 키우지 않고 잘림만 없앤다.
+  function clampText(svg) {
+    if (!svg || !svg.getAttribute) return;
+    const p = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    if (p.length < 4 || !isFinite(p[2])) return;
+    const lo = p[0] + 1, hi = p[0] + p[2] - 1;
+    svg.querySelectorAll('text').forEach(t => {
+      let b;
+      try { b = t.getBBox(); } catch (e) { return; }   // 미부착/비표시 → 건너뜀
+      if (!b || !b.width) return;
+      let dx = 0;
+      if (b.x + b.width > hi) dx = hi - (b.x + b.width);
+      if (b.x + dx < lo) dx = lo - b.x;
+      if (dx) t.setAttribute('x', (parseFloat(t.getAttribute('x') || 0) + dx).toFixed(2));
+    });
   }
 
   function fmtN(v) {
@@ -57,12 +110,14 @@ window.MNA = (function () {
     // 여백은 눈금 라벨 실폭에서 계산 — SVG는 overflow:hidden이라 viewBox를 넘는 글자가
     // 잘린다(우측 끝 x 눈금이 대표 증상). 글자 배율(SZ.font)도 함께 반영.
     const TFS = 8.5 * SZ.font;               // 눈금 글자 크기 (emit 후 실제 크기)
-    const tw = t => String(t).length * 0.56 * TFS;   // 숫자 글리프 평균 폭 (여백 산정용)
-    const twC = t => String(t).length * 0.65 * TFS;  // 클램프용 보수적 추정(−·% 등 넓은 글리프)
+    const tw = t => String(t).length * 0.65 * TFS;  // 숫자 라벨 폭 추정(−·% 등 넓은 글리프 여유)
     const grow = Math.max(0, SZ.font - 1);
-    const W = o.w || 340, H = (o.h || 205) * SZ.h;
-    const mT = (o.title ? 20 : 8) + grow * 14, mB = 31 + grow * 20;
-    let mL = 44, mR = 8;
+    const W = o.w || 340, H = (o.h || 205) * SZ.h * H_BASE;
+    // 하단 여백은 눈금 행 + xlabel 행이 겹치지 않을 만큼만 (xlabel 없으면 눈금 행만)
+    const mT = (o.title ? 20 : 8) + grow * 14, mB = (o.xlabel ? 31 : 28) + grow * 20;
+    // 좌우 여백은 절반으로(사용자 지시 2026-07-29) — 우측은 클램프가 잘림을 막고,
+    // 좌측은 고정 44 대신 실제 y 라벨 폭으로 산정한다.
+    let mL = 22, mR = 4;
     let xs = [], ys = [];
     (o.series || []).forEach(s => { xs = xs.concat(s.x); ys = ys.concat(s.y); });
     (o.hlines || []).forEach(h => ys.push(h.y));
@@ -87,10 +142,9 @@ window.MNA = (function () {
     const xst = niceStep(x1 - x0, 4), yst = niceStep(y1 - y0, 4);
     x0 = Math.floor(x0 / xst) * xst; x1 = Math.ceil(x1 / xst) * xst;
     y0 = Math.floor(y0 / yst) * yst; y1 = Math.ceil(y1 / yst) * yst;
-    // 마지막 x 눈금은 중앙정렬이라 반폭이 우측으로 넘친다. 여백은 필요분의 절반만 주고
-    // (사용자 지시 2026-07-29 — 그래프 간 간격 과다), 나머지는 라벨 위치 클램프로 흡수.
-    mR = Math.max(mR, (mR + tw(fmtN(x1)) / 2 + 2) / 2);
-    // y 눈금은 우측정렬(mL−4 기준)이라 최장 라벨 전폭이 mL 안에 들어와야 한다.
+    // 우측 여백은 원복(8) — 마지막 x 눈금의 넘침은 라벨 위치 클램프가 전담한다
+    // (사용자 지시 2026-07-29: clamp가 있으니 margin은 늘리지 않는다).
+    // y 눈금만은 우측정렬(mL−4 기준)이라 클램프가 불가 — 최장 라벨 폭을 mL로 확보.
     let ylw = 0;
     for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++)
       ylw = Math.max(ylw, tw(fmtN(n * yst)));
@@ -114,7 +168,7 @@ window.MNA = (function () {
       s += '<line x1="' + X(xv) + '" y1="' + mT + '" x2="' + X(xv) + '" y2="' + (H - mB) + '" stroke="'
         + (zero ? '#aeb7c2' : C.grid) + '"/>'
         // 양 끝 눈금 라벨은 viewBox 안으로 클램프 — 여백을 늘리지 않고 잘림만 막는다
-        + '<text x="' + Math.min(Math.max(X(xv), twC(fmtN(xv)) / 2 + 1), W - twC(fmtN(xv)) / 2 - 1)
+        + '<text x="' + Math.min(Math.max(X(xv), tw(fmtN(xv)) / 2 + 1), W - tw(fmtN(xv)) / 2 - 1)
         + '" y="' + (H - mB + TFS + 4.5) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + fmtN(xv) + '</text>';
     }
     for (let n = Math.round(y0 / yst); n <= Math.round(y1 / yst); n++) {
@@ -126,13 +180,13 @@ window.MNA = (function () {
     s += '<rect x="' + mL + '" y="' + mT + '" width="' + (W - mL - mR) + '" height="' + (H - mT - mB) + '" fill="none" stroke="' + C.frame + '"/>';
     (o.hlines || []).forEach(h => {
       s += '<line x1="' + mL + '" y1="' + Y(h.y) + '" x2="' + (W - mR) + '" y2="' + Y(h.y) + '" stroke="' + (h.color || C.fail) + '" stroke-dasharray="5 4"/>';
-      if (h.label) s += '<text x="' + (W - mR - 3) + '" y="' + (Y(h.y) - 3) + '" text-anchor="end" font-size="8.5" fill="' + (h.color || C.fail) + '">' + h.label + '</text>';
+      if (h.label) s += '<text data-ann="1" x="' + (W - mR - 3) + '" y="' + (Y(h.y) - 3) + '" text-anchor="end" font-size="8.5" fill="' + (h.color || C.fail) + '">' + h.label + '</text>';
     });
     (o.vlines || []).forEach(h => {
       s += '<line x1="' + X(h.x) + '" y1="' + mT + '" x2="' + X(h.x) + '" y2="' + (H - mB) + '" stroke="' + (h.color || C.gray) + '" stroke-dasharray="4 4"/>';
       if (h.label) {
         const right = X(h.x) > (mL + W - mR) / 2;  // 위치에 따라 선 안쪽으로 라벨
-        s += '<text x="' + (X(h.x) + (right ? -3 : 3)) + '" y="' + (H - mB - 4) + '" text-anchor="'
+        s += '<text data-ann="1" x="' + (X(h.x) + (right ? -3 : 3)) + '" y="' + (H - mB - 4) + '" text-anchor="'
           + (right ? 'end' : 'start') + '" font-size="8.5" fill="' + (h.color || C.gray) + '">' + h.label + '</text>';
       }
     });
@@ -145,12 +199,13 @@ window.MNA = (function () {
       s += '<circle cx="' + X(p.x) + '" cy="' + Y(p.y) + '" r="' + (p.r || 3) + '" fill="' + (p.color || C.gray) + '"/>';
     });
     if (o.title) {  // 긴 제목은 폭에 맞춰 축소 — viewBox 밖으로 잘리지 않게
-      const avail = W - mL - 4, need = String(o.title).length * 0.55 * 10.5 * SZ.font;
+      const avail = W - mL - 4, need = String(o.title).length * 0.62 * 10.5 * SZ.font;
       const tfs = need > avail ? Math.max(5, 10.5 * avail / need) : 10.5;
-      s += '<text x="' + (mL + 2) + '" y="' + (13 + grow * 10) + '" font-size="' + tfs.toFixed(2)
+      // baseline은 글자 ascent(≈1.26×fs)보다 아래여야 상단이 잘리지 않는다
+      s += '<text x="' + (mL + 2) + '" y="' + Math.max(13, 13.3 * SZ.font) + '" font-size="' + tfs.toFixed(2)
         + '" fill="#20242a">' + o.title + '</text>';
     }
-    if (o.xlabel) s += '<text x="' + ((mL + W - mR) / 2) + '" y="' + (H - TFS * .7) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + o.xlabel + '</text>';
+    if (o.xlabel) s += '<text x="' + ((mL + W - mR) / 2) + '" y="' + (H - Math.max(6, TFS * .7)) + '" text-anchor="middle" font-size="8.5" fill="' + C.gray + '">' + o.xlabel + '</text>';
     let lx = mL + 5, ly = mT + TFS + 2.5;
     (o.series || []).forEach(sr => {
       if (!sr.label) return;
@@ -203,9 +258,9 @@ window.MNA = (function () {
       });
     }
     // 제목 baseline·크기도 글자 배율을 따라간다 (상단/좌우 잘림 방지)
-    const rtNeed = String(title).length * 0.55 * 10.5 * SZ.font;
+    const rtNeed = String(title).length * 0.62 * 10.5 * SZ.font;
     const rtFs = rtNeed > W - 6 ? Math.max(5, 10.5 * (W - 6) / rtNeed) : 10.5;
-    s += '<text x="' + cx + '" y="' + (11 + Math.max(0, SZ.font - 1) * 10)
+    s += '<text x="' + cx + '" y="' + (11 + Math.max(0, SZ.font - 1) * 14)
       + '" text-anchor="middle" font-size="' + rtFs.toFixed(2) + '" fill="#20242a">' + title + '</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 0.5) + '" text-anchor="middle" font-size="7.5" fill="' + C.fail + '">100%</text>'
       + '<text x="' + cx + '" y="' + (cy - R * 1.02) + '" text-anchor="middle" font-size="7.5" fill="' + C.gray + '">200%</text>';
@@ -238,7 +293,7 @@ window.MNA = (function () {
   // V-I SOA map — v4 drawSOAMap 원형: safe region 음영 + Vlim/Ilim 점선 + sweep 궤적 + 동작점
   function soaMap(el, o) {
     remember(el, soaMap, arguments);
-    const W = o.w || 340, H = (o.h || 225) * SZ.h, mL = 44, mR = 12, mT = o.title ? 20 : 10, mB = 30;
+    const W = o.w || 340, H = (o.h || 225) * SZ.h * H_BASE, mL = 44, mR = 12, mT = o.title ? 20 : 10, mB = 30;
     const iw = W - mL - mR, ih = H - mT - mB;
     const pairs = o.pairs || [];
     const vmax = Math.max(o.Vlim * 2.0, o.V * 1.15, ...pairs.map(p => p.V * 1.05), 1e-9);
